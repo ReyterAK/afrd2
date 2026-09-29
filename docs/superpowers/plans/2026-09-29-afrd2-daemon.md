@@ -108,7 +108,7 @@ static void t_estimate(void)
     assert(f > 23.97 && f < 23.98);
     /* вырожденные случаи -> 0 */
     assert(fps_estimate(500, 0, 500, 2000000) == 0.0);   /* видео на паузе */
-    assert(fps_estimate(500, 0, 501, 2000000) == 0.0);   /* слишком короткое окно */
+    assert(fps_estimate(500, 0, 501, 2000000) == 0.0);   /* 0.5 fps — ниже FPS_MIN */
     assert(fps_estimate(0, 0, 100000, 1000000) == 0.0);  /* мусор (100000 fps) */
 }
 
@@ -119,7 +119,7 @@ static void t_classify(void)
     assert(fps_classify(23.976) == fps_rate_hz(0));
     assert(fps_classify(29.97) == fps_rate_hz(3));
     assert(fps_classify(59.94) == fps_rate_hz(6));
-    assert(fps_classify(35.0) == 0);   /* ровно между 30 и 25 — не угадываем */
+    assert(fps_classify(35.0) == 0);   /* отн. ошибка >6% и к 30, и к 25 */
     assert(fps_classify(0.0) == 0);
     assert(fps_classify(24.05) == 24 * 256); /* чуть выше 24 -> 24 */
     assert(fps_classify(23.5) == fps_rate_hz(0)); /* отн. ошибка меньше к 23.976, чем к 24 */
@@ -193,8 +193,9 @@ static const struct { const char *name; double fps; } k_rates [FPS_RATE_COUNT] =
 	{ "60",     60.0 },
 };
 
-/* Допуск 6%: много меньше половины шага между 23.976 и 25 (4.1%), */
-/* так что 35 fps (между 30 и 25) не классифицируется вовсе.       */
+/* Допуск 6% от частоты: окна соседних стандартных частот перекрываются, */
+/* поэтому выбирается ближайшая по относительной ошибке (fps_classify).   */
+/* 35 fps не классифицируется: отн. ошибка >6% и к 30 (16.7%), и к 25.    */
 #define FPS_TOLERANCE	0.06
 #define FPS_MIN		15.0
 #define FPS_MAX		130.0
