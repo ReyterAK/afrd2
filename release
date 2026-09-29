@@ -3,7 +3,7 @@
 # This script will build a release APK from scratch.
 #
 
-test -z "$NDK" && export NDK=/usr/local/app/Android/SDK/ndk-bundle
+test -z "$NDK" && export NDK=$HOME/Android/Sdk/android-ndk-r26d
 
 # abort on first error
 set -e
