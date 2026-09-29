@@ -10,3 +10,6 @@
 
 # SDD worktrees
 .worktrees/
+
+# артефакты сборки host-тестов
+*.o

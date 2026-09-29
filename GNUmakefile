@@ -1,4 +1,4 @@
-.PHONY: all clean
+.PHONY: all clean test tests
 
 # release or debug
 MODE = debug
@@ -21,6 +21,10 @@ all: $(OUT)afrd
 
 clean:
 	rm -rf $(OUT)
+
+# host-юнит-тесты (gcc, без Android)
+test tests:
+	sh tests/run_tests.sh
 
 $(OUT)%.o: %.c $(OUT).stamp.dir
 	$(CC) $(CFLAGS.local) $(CFLAGS) -o $@ $<
