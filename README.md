@@ -1,6 +1,159 @@
 Auto Frame Rate Daemon (AFRD)
 -----------------------------
 
+AFRd2: Android 10–14 и Android TV 14 (ядро 5.x, Amlogic S905X5M)
+----------------------------------------------------------------
+
+Этот репозиторий — форк [AFRd](https://github.com/anpaza/afrd) (upstream 0.3.2).
+Форк аддитивный: путь для Android 6–9 (ядра 3.14/4.9) сохранён без изменений, а
+для Android 10–14 добавлен рабочий — там декодер больше не рассылает uevent'ы, а
+запись в `/sys/class/display/mode` режим не переключает. Нужная ветка выбирается
+на старте автоматически (`platform_detect()`): если есть `/sys/class/vdec/vdec_status`
+и доступен backdoor SurfaceFlinger — работает новая ветка, иначе прежняя.
+
+Что делает новая ветка:
+
+* следит за декодером, опрашивая `/sys/class/vdec/vdec_status` (`device name` —
+  признак видео, рост `frame count` — что видео не на паузе);
+* определяет частоту по приросту `frame count` (поля `frame rate`/`frame dur` на
+  ядрах 5.x врут), а если есть — по подсказке плеера через API (`fps.prefer.api`);
+* переключает режим backdoor-транзакцией SurfaceFlinger
+  (`service call SurfaceFlinger 1035 i32 <modeId>`), поэтому SurfaceFlinger и HDMI
+  остаются синхронными;
+* возвращает исходный режим на остановке видео и снимает флаг backdoor (также по
+  `SIGTERM`/`SIGINT`, на старте демона и по таймауту «видео потеряно»);
+* сохраняет API UDP 50505 (`frame_rate_hint`, `refresh_rate`, `status`, ...).
+
+### Сборка
+
+Нужен NDK (проверен r26d):
+
+```sh
+NDK=$HOME/Android/Sdk/android-ndk-r26d ./mka          # оба ABI
+AFRD_ABIS=armeabi-v7a ./mka                           # только бинарник для бокса
+```
+
+Результат для бокса — `libs/armeabi-v7a/afrd` (ELF 32-bit ARM, API 21,
+зависимости только libc/libm/libdl). `./mka` без аргументов дополнительно
+раскладывает бинарники и профили в `android/app/src/main/res/raw/` (для сборки
+APK) и правит `versionName` в `android/app/build.gradle`.
+
+### Установка и запуск
+
+Демону нужен root (чтение sysfs и backdoor SurfaceFlinger). Установка — вариант B,
+как в оригинале: бинарник кладётся на устройство и запускается под root;
+автозапуск появится вместе с приложением (отдельный этап).
+
+```sh
+D=192.168.88.50:5555
+adb connect $D
+adb -s $D root        # если прошивка разрешает adb root; иначе выполняйте команды через su
+D=$D sh tools/stand/build_push.sh
+```
+
+`build_push.sh` делает всё сразу: снимает прошлый экземпляр демона, копирует
+`libs/armeabi-v7a/afrd` → `/data/local/tmp/afrd` и `config/afrd2.ini` →
+`/data/local/tmp/afrd.ini`, делает бинарник исполняемым, запускает
+`/data/local/tmp/afrd -v -D /data/local/tmp/afrd.ini` и печатает pid с хвостом лога.
+
+Те же шаги вручную:
+
+```sh
+adb -s $D push libs/armeabi-v7a/afrd /data/local/tmp/afrd
+adb -s $D push config/afrd2.ini /data/local/tmp/afrd.ini
+adb -s $D shell chmod 755 /data/local/tmp/afrd
+adb -s $D shell '/data/local/tmp/afrd -D /data/local/tmp/afrd.ini'
+```
+
+Полезное:
+
+```sh
+adb -s $D shell 'pidof afrd'                                          # демон жив?
+adb -s $D shell 'tail -20 /data/local/afrd.log'                       # лог (log.file; прошлый — afrd.log~)
+adb -s $D shell '/data/local/tmp/afrd -k'                             # остановить (pid-файл /dev/run/afrd.pid)
+adb -s $D shell '/data/local/tmp/afrd -k -D /data/local/tmp/afrd.ini' # перезапуск (нужен после правки конфига)
+adb -s $D shell '/data/local/tmp/afrd -s'                             # статистика (shmem /dev/run/afrd.ipc)
+adb -s $D shell 'echo status | nc -u -w1 127.0.0.1 50505'             # статус через API
+```
+
+### Профиль config/afrd2.ini
+
+Ключи, которые использует новая ветка (полный список — в самом файле):
+
+| ключ | смысл |
+|---|---|
+| `enable` | включить демон |
+| `log.file`, `log.enable` | файл лога (по умолчанию `/data/local/afrd.log`) |
+| `trigger.poll.ms` | период опроса `vdec_status` |
+| `trigger.start.debounce.ms`, `trigger.stop.debounce.ms` | дебаунс старта/стопа видео |
+| `fps.measure.window.ms`, `fps.measure.retries` | окно и число попыток измерения частоты |
+| `fps.prefer.api` | предпочитать подсказку плеера (`frame_rate_hint`) собственному замеру |
+| `mode.prefer.exact`, `mode.use.fract` | выбор режима (как в upstream) |
+| `switch.delay.on`, `switch.delay.off` | задержки переключения и возврата |
+| `switch.restore.on.stop` | возвращать исходный режим при остановке видео |
+| `pause.keep` | 1 — на паузе режим удерживать (по умолчанию), 0 — возвращать исходный |
+
+### Как убедиться, что AFR работает
+
+```sh
+sh tools/stand/check_mode.sh     # другой бокс: D=<ip:port> sh tools/stand/check_mode.sh
+```
+
+печатает одну строку: `kernel mode | HDMI timing | SF activeMode | backdoor flag`.
+
+Если проиграть клип 23.976 fps в VLC (у него нет своего AFR), ожидается (эталон
+плана; на стенде прогоном пока не подтверждён — см. «Статус приёмки»):
+
+* до старта: `1080p60hz | ... | activeMode=59.94 Hz | debugDisplayModeSetByBackdoor=false`
+* во время: `1080p24hz | ... | activeMode=23.98 Hz | debugDisplayModeSetByBackdoor=true`
+* после остановки: исходный режим и `backdoor=false`
+
+Матрица приёмки и дополнительные проверки:
+
+```sh
+sh tools/stand/acceptance_matrix.sh                        # 23.976/25/50: удержание и возврат
+PAUSE_TEST=1 sh tools/stand/acceptance_matrix.sh           # + пауза (PAUSE_EXPECT=restore для pause.keep=0)
+OWN_AFR_TEST=1 sh tools/stand/acceptance_matrix.sh         # + плеер со своим AFR
+API_TEST=1 sh tools/stand/acceptance_matrix.sh             # + API, подсказка плеера, сброс счётчика (R34в)
+LOG=acceptance.log sh tools/stand/acceptance_matrix.sh     # + протокол в файл
+sh tools/stand/guard_test.sh                               # SIGTERM: режим возвращён, флаг снят
+```
+
+Клипы ожидаются в `/sdcard/Download/afr/` (23.976/24/25/50/60 fps). Скрипты сами
+печатают `ls -l` этого каталога и пропускают отсутствующие клипы как `SKIP`, а не
+выдают их за пройденные. Полезные переменные: `D` (адрес устройства),
+`CLIPS`/`CLIP_DIR` (что играть), `ORIG_MODE` (куда обязан вернуться демон,
+по умолчанию `1080p60hz`).
+
+### Статус приёмки
+
+Код порта завершён и отревьюирован, скрипты приёмки готовы. **Живая приёмка не
+выполнена**: стенд `192.168.88.50:5555` недоступен (`No route to host`, ping без
+ответа), поэтому ни матрица, ни `guard_test.sh` на устройстве не прогонялись. Всё,
+что в этом разделе помечено как «ожидается», — эталон из плана, а не результат
+измерения.
+
+### Ограничения (осознанные, а не баги)
+
+1. **Цветовые пространства и HDR не переключаются.** На ATV14-пути цвета (`attr`,
+   `dc_cap`, ключ `cs.select`) не применяются — цветами управляет система/плеер.
+   Тема отдельного этапа.
+2. **HDCP не управляется.** Узлов `/sys/module/hdmitx20/...` на ядрах 5.x нет,
+   HDCP-ветка upstream здесь не работает (тоже тема отдельного этапа).
+3. **`reconf` и `color_space` через API не действуют.** Перечитки конфига на ходу
+   в новой ветке нет: после правки `afrd.ini` демон нужно перезапустить
+   (`/data/local/tmp/afrd -k -D /data/local/tmp/afrd.ini`).
+4. **Нужен backdoor SurfaceFlinger.** Если прошивка его не поддерживает (другой
+   вендор, будущие версии Android), демон пишет в лог «backdoor SurfaceFlinger
+   недоступен — пассивный режим» и AFR не работает.
+5. **Меняется только частота.** Разрешение не трогается (режим ищется для текущего
+   разрешения), экран на время переключения не гасится — дешёвого способа на ATV14
+   нет, экран моргает как при обычной смене режима.
+6. **Только Amlogic.** На не-AmLogic устройствах и на Android < 10 работает
+   upstream-ветка (как раньше).
+
+Ниже — описание upstream (Android 6–9), оно сохранено как есть.
+
 This is a Linux daemon for AMLogic SoC based boxes to switch screen
 framerate to most suitable during video play. The daemon uses kernel
 uevent-based notifications, available in AMLogic 3.14 kernels from
