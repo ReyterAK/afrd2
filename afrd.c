@@ -1136,6 +1136,40 @@ static int preferred_mode_id (const platform_t *plat)
 	return (id >= 0) ? id : -1;
 }
 
+/* Ожидание событий API (UDP 127.0.0.1:50505) вместо msleep: демон должен
+ * принимать подсказки плеера (frame_rate_hint) и afrd -s.
+ * Возврат: 0 = ок (в т.ч. EINTR), -1 = poll сорвался. */
+static int atv14_wait (int ms)
+{
+	struct pollfd pfd [4];
+	memset (pfd, 0, sizeof (pfd));
+
+	int n = apisock_prep_poll (pfd, ARRAY_SIZE (pfd));
+	int rc = poll (pfd, n, ms);
+	if (rc < 0)
+		return (errno == EINTR) ? 0 : -1;
+
+	if (rc > 0)
+		apisock_handle (pfd, n);
+
+	return 0;
+}
+
+/* Отказ от удержания режима: частоту определить не удалось — вернуть исходный
+ * режим, снять флаг backdoor и забыть состояние удержания. */
+static void atv14_give_up (const platform_t *plat,
+                           int *orig_sf_id, int *cur_sf_id, bool *held)
+{
+	if (!*held)
+		return;
+
+	sink_apply (plat->sink, g_mode_path, *orig_sf_id, NULL);
+	sink_release_backdoor (plat->sink);
+	guard_note_restored (held);
+	*cur_sf_id = *orig_sf_id;
+	*orig_sf_id = -1;
+}
+
 static int run_atv14 (const platform_t *plat)
 {
 	guard_action_t act;
@@ -1144,7 +1178,10 @@ static int run_atv14 (const platform_t *plat)
 	bool video = false;
 	vdec_status_t v0, v1;
 	int retries = 0;
-	int preferred_id = preferred_mode_id (plat);
+	/* частоту в этом видео определить не удалось — больше не мерить
+	 * до его конца (сбрасывается, когда видео закончилось) */
+	bool measure_failed = false;
+	int preferred_id;
 
 	/* Поведенческие ключи профиля (R28). */
 	int prefer_api = cfg_get_int ("fps.prefer.api", 1);
@@ -1157,15 +1194,29 @@ static int run_atv14 (const platform_t *plat)
 	bool paused = false;
 	int still = 0;
 
+	int cur_hz = cfg_get_int ("trigger.poll.ms", 300);
+	if (cur_hz < 100) cur_hz = 100;
+
+	/* Backdoor недоступен — переключать режимы нечем. Пассивный режим
+	 * (спека §3.2.6): ни одного sink_apply, только обслуживание API, чтобы
+	 * работали frame_rate_hint и afrd -s. */
+	if (!plat->sf_backdoor)
+	{
+		trace (0, "backdoor SurfaceFlinger недоступен — пассивный режим\n");
+		while (!g_shutdown)
+			if (atv14_wait (cur_hz) != 0)
+				msleep (cur_hz);
+		return 0;
+	}
+
+	preferred_id = preferred_mode_id (plat);
+
 	sf_modes_refresh (plat);
 
 	trace (1, "предпочтительный режим ТВ: %d\n", preferred_id);
 
 	/* страховка: снять «залипший» флаг прошлого запуска */
 	sink_release_backdoor (plat->sink);
-
-	int cur_hz = cfg_get_int ("trigger.poll.ms", 300);
-	if (cur_hz < 100) cur_hz = 100;
 
 	int window_ms = cfg_get_int ("fps.measure.window.ms", 1500);
 	int max_retries = cfg_get_int ("fps.measure.retries", 3);
@@ -1178,7 +1229,12 @@ static int run_atv14 (const platform_t *plat)
 		 * не обновляет, а от него зависит срок жизни fps-подсказки API */
 		mstime_update ();
 
-		msleep (cur_hz);
+		/* вместо msleep: заодно обслуживаем UDP-сокет API */
+		if (atv14_wait (cur_hz) != 0)
+			msleep (cur_hz);
+
+		if (g_shutdown)
+			break;
 
 		if (vdec_read (plat->vdec_status, &v0) != 0)
 			continue;
@@ -1223,8 +1279,10 @@ static int run_atv14 (const platform_t *plat)
 		if (!video)
 		{
 			want_sf_id = -1;
+			/* видео закончилось — следующее мерим заново */
+			measure_failed = false;
 		}
-		else if (want_sf_id < 0)
+		else if (!measure_failed && (want_sf_id < 0))
 		{
 			int hz = 0;
 
@@ -1242,21 +1300,42 @@ static int run_atv14 (const platform_t *plat)
 			}
 			else
 			{
-				/* замер: две выборки с окном window_ms.
-				 * v0 перечитываем здесь: к этому моменту мог пройти
-				 * дебаунс старта, и прочитанное в начале цикла значение
-				 * оказалось бы на дебаунс старше — тогда дельта счётчика
-				 * покроет больше времени, чем dt, и частота завысится
-				 * (23.976 -> ~31 -> 30 Гц). */
+				/* Замер: окно window_ms, разбитое на три под-среза.
+				 * Выборка годится, только если декодер активен всё окно и
+				 * счётчик строго растёт в каждом под-срезе: если середина
+				 * окна попала на паузу/буферизацию, дельта окажется меньше
+				 * реальной, и частота «уедет» в чужой стандарт (напр. 50 Гц
+				 * при полуокне простоя дадут ровно 25 Гц). v0 читаем здесь
+				 * же: к этому моменту мог пройти дебаунс старта, и прочитанное
+				 * в начале цикла значение было бы на дебаунс старше.
+				 * Дельта кадров и dt считаются по одному интервалу —
+				 * от первого до последнего чтения выборки. */
 				if (vdec_read (plat->vdec_status, &v0) != 0)
 					continue;
 
 				unsigned long long t0 = now_us ();
-				msleep (window_ms);
-				if (vdec_read (plat->vdec_status, &v1) != 0)
-					continue;
+				int slice_ms = window_ms / 3;
+				if (slice_ms < 1)
+					slice_ms = 1;
 
-				double fps = fps_estimate (v0.frames, t0, v1.frames, now_us ());
+				bool grown = v0.active;
+				v1 = v0;
+				for (int s = 0; (s < 3) && grown; s++)
+				{
+					msleep (slice_ms);
+
+					vdec_status_t cur;
+					if (vdec_read (plat->vdec_status, &cur) != 0)
+						grown = false;
+					else if (!cur.active || (cur.frames <= v1.frames))
+						grown = false;
+					else
+						v1 = cur;
+				}
+
+				double fps = grown
+				           ? fps_estimate (v0.frames, t0, v1.frames, now_us ())
+				           : 0.0;
 				hz = fps_classify (fps);
 
 				if (!hz)
@@ -1264,11 +1343,14 @@ static int run_atv14 (const platform_t *plat)
 					if (++retries >= max_retries)
 					{
 						trace (1, "частоту определить не удалось (%d попыток), пропускаю\n", retries);
-						want_sf_id = -2;	/* до конца этого видео не пытаться */
+						measure_failed = true;
+						atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
+						want_sf_id = -1;
 					}
 					continue;
 				}
 
+				retries = 0;
 				trace (1, "видео: %.3f fps (%s), ищу режим\n", fps,
 				       fps_rate_name (fps_rate_index_for_hz (hz)));
 			}
@@ -1292,7 +1374,9 @@ static int run_atv14 (const platform_t *plat)
 			{
 				trace (1, "режим для %d.%02d Гц не найден в списке\n",
 				       HZ_ARGS (hz));
-				want_sf_id = -2;
+				measure_failed = true;
+				atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
+				want_sf_id = -1;
 				continue;
 			}
 			want_sf_id = cur_sf_id;
@@ -1343,20 +1427,6 @@ static int run_atv14 (const platform_t *plat)
 		{
 			sink_release_backdoor (plat->sink);
 			guard_note_restored (&held);
-		}
-
-		if (want_sf_id == -2)
-		{
-			/* не смогли определить: ждём конца видео, но флаг не держим */
-			if (held)
-			{
-				sink_apply (plat->sink, g_mode_path, orig_sf_id, NULL);
-				sink_release_backdoor (plat->sink);
-				guard_note_restored (&held);
-				cur_sf_id = orig_sf_id;
-				orig_sf_id = -1;
-			}
-			want_sf_id = -1;
 		}
 	}
 
@@ -1500,6 +1570,15 @@ void afrd_frame_rate_hint (int hz)
 
 void afrd_refresh_rate (int hz)
 {
+	/* в ATV14-режиме принудительный refresh_rate не поддержан: переключением
+	 * управляет только run_atv14 (иначе API молча дёргал бы legacy-состояние
+	 * g_state/framerate_switch без всякого эффекта) */
+	if (g_plat.kind == PLAT_ATV14)
+	{
+		trace (1, "refresh_rate в ATV14 не поддержан\n");
+		return;
+	}
+
 	bool ok = (hz && (hz >= HZ_MIN) && (hz < HZ_MAX));
 	if (!ok)
 		hz = 0;
