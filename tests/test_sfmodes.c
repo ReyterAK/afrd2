@@ -23,7 +23,8 @@ int main (void)
 
 	assert (n == 9);
 	assert (modes [0].id == 0 && modes [0].hz == 59 * 256 + 241); /* 59.94 -> 15345 */
-	assert (modes [6].id == 6 && modes [6].hz == 6138);           /* 23.98 */
+	/* 23.98*256 = 6138.88 -> 6139 (6138 получилось бы для 23.976) */
+	assert (modes [6].id == 6 && modes [6].hz == 6139);
 	assert (modes [6].width == 1920 && modes [6].height == 1080);
 
 	/* поиск: 23.976 в 1080p -> id 6 */
