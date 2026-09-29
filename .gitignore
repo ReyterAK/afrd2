@@ -7,3 +7,6 @@
 /settings
 /unused
 /screenshot
+
+# SDD worktrees
+.worktrees/
