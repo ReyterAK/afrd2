@@ -1079,6 +1079,12 @@ static void sf_modes_refresh (const platform_t *plat)
 	}
 
 	g_sf_modes_n = sfmodes_parse (dump, g_sf_modes, SF_MODE_MAX);
+	if (g_sf_modes_n <= 0)
+		/* Уровень 0 — иначе ровно этот случай (дамп усечён >64 КБ или
+		 * команда ничего не вернула) оставался только в stdout и AFR
+		 * молча не переключал (живая приёмка ATV14). */
+		trace (0, "таблица режимов SurfaceFlinger не разобрана (пусто/усечён дамп: %d байт?)\n",
+		       (int) strlen (dump));
 	trace (1, "режимов SurfaceFlinger: %d\n", g_sf_modes_n);
 }
 
@@ -1113,7 +1119,9 @@ static bool sf_modes_equal (const sf_mode_t *a, int na, const sf_mode_t *b, int 
 /* Следит за таблицей режимов по свежему дампу SurfaceFlinger. Возврат: 1, если
  * таблица сменилась (кэш обновлён). Усечённый/неразобранный дамп игнорируется,
  * а систематическое усечение безвредно: кэш разбирается тем же буфером, что и
- * свежий дамп, поэтому обе таблицы окажутся одинаковыми. */
+ * свежий дамп, поэтому обе таблицы окажутся одинаковыми. Пустой разбор здесь
+ * не логируется намеренно (функция вызывается каждую итерацию цикла) — о нём
+ * сообщает sf_modes_refresh уровнем 0. */
 static int sf_modes_sync (const char *dump)
 {
 	int n = sfmodes_parse (dump, g_sf_live, SF_MODE_MAX);

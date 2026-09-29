@@ -16,8 +16,8 @@ typedef struct
 	sink_kind_t sink;
 	const char *vdec_status;	/* /sys/class/vdec/vdec_status */
 	const char *hdmi_state;		/* признак подключённого HDMI */
-	const char *sf_dump_cmd;	/* команда получения таблицы режимов */
-	const char *display_dump_cmd;	/* команда активного разрешения (dumpsys display) */
+	const char *sf_dump_cmd;	/* команда получения таблицы режимов (с фильтром: дамп SF больше буфера) */
+	const char *display_dump_cmd;	/* команда активного разрешения и предпочтения (dumpsys display, с фильтром) */
 	bool sf_backdoor;		/* доступна ли транзакция 1035 */
 } platform_t;
 

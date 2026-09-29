@@ -29,8 +29,20 @@ platform_t platform_detect (void)
 	memset (&p, 0, sizeof (p));
 
 	p.vdec_status = VDVC_STATUS;
-	p.sf_dump_cmd = "dumpsys SurfaceFlinger";
-	p.display_dump_cmd = "dumpsys display";
+	/* Дампы фильтруются на стороне команды: на ATV14 `dumpsys SurfaceFlinger`
+	 * отдаёт 126–150 КБ (зависит от того, что на экране), а буферы приёма
+	 * в afrd.c — 64 КБ (static). Усечённый дамп доходил до парсера без
+	 * таблицы режимов и без activeMode, и AFR молча не переключал (живая
+	 * приёмка). Нужны ровно две вещи: строка "activeMode=" и строки
+	 * таблицы "{id=…, hwcId=…, resolution=…}".
+	 * `[{]` вместо `\{` — чтобы `{` не читался как начало интервала ERE.
+	 * grep берётся из PATH (/system/bin, toybox) — как и `pidof` ниже. */
+	p.sf_dump_cmd = "dumpsys SurfaceFlinger | grep -E 'activeMode=|^ *[{]id='";
+	/* display-дамп (~30 КБ) тоже режем: нужны только активное разрешение
+	 * ("real 1920 x 1080") и предпочтение пользователя. -o обязателен: строка
+	 * mBaseDisplayInfo содержит и то, и другое, но целиком длиннее буфера. */
+	p.display_dump_cmd = "dumpsys display | grep -o -E "
+	                     "'mUserPreferredModeId=-?[0-9]+|real [0-9]+ x [0-9]+'";
 
 	bool have_vdec = (sysfs_exists (VDVC_STATUS) == 0);
 	/* Android 6/7: switch/hdmi/state; Android 8/9: switch/hdmi/cable.0/state.
