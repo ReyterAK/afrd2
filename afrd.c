@@ -1082,6 +1082,55 @@ static void sf_modes_refresh (const platform_t *plat)
 	trace (1, "режимов SurfaceFlinger: %d\n", g_sf_modes_n);
 }
 
+/* Таблица режимов из последнего разобранного дампа. Нужна, чтобы заметить смену
+ * нумерации id сразу (рестарт SurfaceFlinger), не дожидаясь проверки PID:
+ * иначе устаревший want_sf_id уходил бы в транзакцию 1035. */
+static sf_mode_t g_sf_live [SF_MODE_MAX];
+static bool g_sf_table_changed = false;
+
+/* Сравнение таблиц без учёта порядка строк (порядок вывода dumpsys не гарантирован). */
+static bool sf_modes_equal (const sf_mode_t *a, int na, const sf_mode_t *b, int nb)
+{
+	if (na != nb)
+		return false;
+
+	for (int i = 0; i < na; i++)
+	{
+		int j;
+		for (j = 0; j < nb; j++)
+			if ((a [i].id == b [j].id) &&
+			    (a [i].width == b [j].width) &&
+			    (a [i].height == b [j].height) &&
+			    (a [i].hz == b [j].hz))
+				break;
+		if (j == nb)
+			return false;
+	}
+
+	return true;
+}
+
+/* Следит за таблицей режимов по свежему дампу SurfaceFlinger. Возврат: 1, если
+ * таблица сменилась (кэш обновлён). Усечённый/неразобранный дамп игнорируется,
+ * а систематическое усечение безвредно: кэш разбирается тем же буфером, что и
+ * свежий дамп, поэтому обе таблицы окажутся одинаковыми. */
+static int sf_modes_sync (const char *dump)
+{
+	int n = sfmodes_parse (dump, g_sf_live, SF_MODE_MAX);
+	if (n <= 0)
+		return 0;
+
+	if (sf_modes_equal (g_sf_live, n, g_sf_modes, g_sf_modes_n))
+		return 0;
+
+	memcpy (g_sf_modes, g_sf_live, (size_t) n * sizeof (g_sf_modes [0]));
+	g_sf_modes_n = n;
+	g_sf_table_changed = true;
+
+	trace (1, "таблица режимов SurfaceFlinger сменилась: %d режимов\n", n);
+	return 1;
+}
+
 /* Активное разрешение из DisplayManager ("real 1920 x 1080").
  * Нужно независимо от частоты: в списке SurfaceFlinger одна и та же частота
  * встречается на разных разрешениях (напр. 59.94 Гц -> 1080p id 0 и 720p id 8). */
@@ -1111,6 +1160,9 @@ static int sf_active_mode (const platform_t *plat, sf_mode_t *out)
 
 	if (exec_capture (plat->sf_dump_cmd, dump, sizeof (dump)) != 0)
 		return -1;
+
+	/* дамп всё равно прочитан: заодно следим за сменой таблицы режимов */
+	sf_modes_sync (dump);
 
 	const char *p = strstr (dump, "activeMode=");
 	if (!p)
@@ -1229,6 +1281,27 @@ static void atv14_stats_sync (int cur_sf_id, int orig_sf_id, bool held)
 		held ? orig_sf_id : cur_sf_id);
 }
 
+/* Сброс кэша решений: нумерация id режимов изменилась (рестарт SurfaceFlinger).
+ * Новый инстанс SF флаг mode-set-by-backdoor не держит, поэтому удержание
+ * снимаем без sink_apply по устаревшему id — цикл замерит частоту и
+ * перерезолвит режим заново по свежей таблице. */
+static void atv14_invalidate (const platform_t *plat, int *want_sf_id,
+                              int *orig_sf_id, int *cur_sf_id, bool *held,
+                              bool *measure_failed, int *retries)
+{
+	*want_sf_id = -1;
+	*measure_failed = false;
+	*retries = 0;
+
+	if (*held)
+	{
+		sink_release_backdoor (plat->sink);
+		guard_note_restored (held);
+		*orig_sf_id = -1;
+		*cur_sf_id = -1;
+	}
+}
+
 static int run_atv14 (const platform_t *plat)
 {
 	guard_action_t act;
@@ -1291,6 +1364,13 @@ static int run_atv14 (const platform_t *plat)
 	/* страховка: снять «залипший» флаг прошлого запуска */
 	sink_release_backdoor (plat->sink);
 
+	/* PID SurfaceFlinger на старте: с ним сравнивает проверка рестарта ниже.
+	 * Если pidof не ответил, останется -1 и первая проверка просто запомнит
+	 * значение (без ложного «перезапуска»). */
+	pid_t last_sf_pid = pidof ("surfaceflinger");
+	if (last_sf_pid <= 0)
+		last_sf_pid = -1;
+
 	int window_ms = cfg_get_int ("fps.measure.window.ms", 1500);
 	int max_retries = cfg_get_int ("fps.measure.retries", 3);
 	int start_deb = cfg_get_int ("trigger.start.debounce.ms", 500);
@@ -1309,19 +1389,6 @@ static int run_atv14 (const platform_t *plat)
 		if (g_shutdown)
 			break;
 
-		/* R34а: страховка «видео потерялось». Декодер молчит дольше
-		 * страховочного таймаута (драйвер перестал отдавать vdec_status),
-		 * а режим всё ещё удержан — снимаем удержание, иначе флаг backdoor
-		 * залипнет до перезагрузки. */
-		if (held && (now_us () - g_vdec_last_ok_us) > (unsigned long long) timeout_ms * 1000)
-		{
-			trace (0, "видео потеряно: %d мс без данных декодера — возвращаю режим\n",
-			       (int) ((now_us () - g_vdec_last_ok_us) / 1000));
-			atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
-			video = false;
-			want_sf_id = -1;
-		}
-
 		ticks++;
 
 		/* R34б: статистика для GUI и API (afrd -s, status) — в ATV14 её
@@ -1332,21 +1399,32 @@ static int run_atv14 (const platform_t *plat)
 			update_stats ();
 		}
 
-		/* Step 2: PID SurfaceFlinger сменился — новый инстанс поднял свою
-		 * таблицу режимов и, возможно, новый preferred id (спека §7) */
+		/* Step 2: рестарт SurfaceFlinger. Признак — смена PID (проверяем редко,
+		 * pidof — это fork/exec) либо смена самой таблицы режимов (видна сразу
+		 * в дампе, который всё равно читается каждый цикл). */
 		if (ticks % 16 == 0)
 		{
-			static pid_t last_sf_pid = -1;
 			pid_t sf_pid = pidof ("surfaceflinger");
-			if (sf_pid != last_sf_pid)
+
+			if (sf_pid <= 0)
+			{
+				/* PID не определился — проверка недостоверна */
+			}
+			else if ((last_sf_pid > 0) && (sf_pid != last_sf_pid))
 			{
 				last_sf_pid = sf_pid;
 				trace (1, "SurfaceFlinger: новый pid %d, перечитываю режимы\n",
 				       (int) sf_pid);
 				sf_modes_refresh (plat);
+				g_sf_table_changed = false;
 				preferred_id = preferred_mode_id (plat);
 				trace (1, "предпочтительный режим ТВ: %d\n", preferred_id);
+				atv14_invalidate (plat, &want_sf_id, &orig_sf_id, &cur_sf_id,
+				                  &held, &measure_failed, &retries);
+				trace (1, "SF перезапустился: удержание снято, режимы перерезолвятся\n");
 			}
+			else
+				last_sf_pid = sf_pid;	/* первая достоверная проверка */
 		}
 
 		if (vdec_poll (plat->vdec_status, &v0) != 0)
@@ -1355,6 +1433,22 @@ static int run_atv14 (const platform_t *plat)
 			if (++vdec_fails == max_vdec_fails)
 				trace (0, "vdec_status не читается: %d отказов подряд (%d мс)\n",
 				       vdec_fails, vdec_fails * cur_hz);
+
+			/* R34а: страховка «видео потерялось». Проверяется только на отказе
+			 * чтения: возраст таймера отсчитывается от последней УСПЕШНОЙ
+			 * выборки, поэтому медленная не-vdec работа хвоста итерации
+			 * (dumpsys SurfaceFlinger, service call) за потерю данных не
+			 * принимается. Декодер молчит дольше страховочного таймаута,
+			 * а режим всё ещё удержан — снимаем удержание, иначе флаг
+			 * backdoor залипнет до перезагрузки. */
+			if (held && (now_us () - g_vdec_last_ok_us) > (unsigned long long) timeout_ms * 1000)
+			{
+				trace (0, "видео потеряно: %d мс без данных декодера — возвращаю режим\n",
+				       (int) ((now_us () - g_vdec_last_ok_us) / 1000));
+				atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
+				video = false;
+				want_sf_id = -1;
+			}
 			continue;
 		}
 		vdec_fails = 0;
@@ -1521,6 +1615,27 @@ static int run_atv14 (const platform_t *plat)
 		sf_mode_t active;
 		if (sf_active_mode (plat, &active) == 0)
 			cur_sf_id = active.id;
+
+		/* Таблица режимов сменилась (рестарт SurfaceFlinger) — нумерация id
+		 * уже другая, и кэшированный want_sf_id в транзакцию 1035 пускать
+		 * нельзя. Проверка по PID (выше) срабатывает реже, а этот признак
+		 * виден сразу: он и закрывает окно до неё. */
+		if (g_sf_table_changed)
+		{
+			g_sf_table_changed = false;
+
+			/* рестарт уже учтён по таблице — чтобы проверка PID не сработала
+			 * по тому же событию второй раз */
+			pid_t sf_pid = pidof ("surfaceflinger");
+			if (sf_pid > 0)
+				last_sf_pid = sf_pid;
+
+			preferred_id = preferred_mode_id (plat);
+			trace (1, "таблица режимов SurfaceFlinger сменилась: снимаю удержание, перерезолвлю режим\n");
+			atv14_invalidate (plat, &want_sf_id, &orig_sf_id, &cur_sf_id,
+			                  &held, &measure_failed, &retries);
+			continue;
+		}
 
 		act = guard_decide (video_eff, want_sf_id, cur_sf_id, &orig_sf_id, &held);
 

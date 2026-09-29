@@ -35,8 +35,26 @@ sleep 3
 
 mode_held=$(adb -s "$D" shell 'cat /sys/class/display/mode' | tr -d '\r')
 bd_held=$(adb -s "$D" shell 'dumpsys SurfaceFlinger | grep debugDisplayModeSetByBackdoor' | tr -d '\r')
+daemon_pid=$(adb -s "$D" shell 'pidof afrd' | tr -d '\r')
 echo "режим в удержании: $mode_held"
 echo "флаг backdoor в удержании: $bd_held"
+echo "pid демона: $daemon_pid"
+
+# Предусловие: проверять путь SIGTERM бессмысленно, если демон не поднялся или
+# удержание не состоялось — иначе провал демона выглядел бы как «OK».
+if [ -z "$daemon_pid" ]; then
+	echo "FAIL: демон не запустился (pidof afrd пуст) — путь SIGTERM не проверен" >&2
+	exit 1
+fi
+case "$bd_held" in
+	*true*) ;;
+	*)
+		if [ "$mode_held" = "$mode_before" ]; then
+			echo "FAIL: удержание не поднято (режим $mode_held = исходный, флаг backdoor: $bd_held) — путь SIGTERM не проверен" >&2
+			exit 1
+		fi
+		;;
+esac
 
 echo "== SIGTERM: демон обязан вернуть режим и снять флаг =="
 adb -s "$D" shell 'kill -TERM $(pidof afrd)'
