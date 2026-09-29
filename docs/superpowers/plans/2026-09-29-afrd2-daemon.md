@@ -410,11 +410,7 @@ Expected: ошибка компиляции `sfmodes.h: No such file`.
 #define SFMODES_H
 
 #define SF_MODE_MAX	64
-
-/* Допуск сравнения частот: 32 единицы 24.8 = 0.125 Гц.
- * Нужен, потому что SurfaceFlinger печатает округлённые значения
- * (23.98 Hz -> 6139), а fps_classify() даёт 6138 для 23.976. */
-#define SF_HZ_TOL	32
+/* Допуск сравнения частот (0.125 Гц) живёт в sfmodes.c как SF_HZ_TOL */
 
 /* Режим SurfaceFlinger (то, что печатает dumpsys SurfaceFlinger). */
 typedef struct
@@ -1318,7 +1314,29 @@ static void sf_modes_refresh (const platform_t *plat)
 	trace (1, "режимов SurfaceFlinger: %d\n", g_sf_modes_n);
 }
 
-/* Активный режим по данным SurfaceFlinger (строка "activeMode=23.98 Hz"). */
+/* Активное разрешение из DisplayManager ("real 1920 x 1080").
+ * Нужно независимо от частоты: в списке SurfaceFlinger одна и та же частота
+ * встречается на разных разрешениях (напр. 59.94 Гц -> 1080p id 0 и 720p id 8). */
+static int active_display_size (int *w, int *h)
+{
+	static char dump [64 * 1024];
+
+	if (exec_capture ("dumpsys display", dump, sizeof (dump)) != 0)
+		return -1;
+
+	const char *p = strstr (dump, "real ");
+	if (!p)
+		return -1;
+
+	if (sscanf (p, "real %d x %d", w, h) != 2)
+		return -1;
+
+	return 0;
+}
+
+/* Активный режим: частота из SurfaceFlinger ("activeMode=23.98 Hz"),
+ * разрешение — из DisplayManager. Совпадение по (частота, разрешение)
+ * однозначно; если разрешение узнать не удалось, откатываемся на поиск по частоте. */
 static int sf_active_mode (const platform_t *plat, sf_mode_t *out)
 {
 	static char dump [64 * 1024];
@@ -1334,7 +1352,15 @@ static int sf_active_mode (const platform_t *plat, sf_mode_t *out)
 	if (g_sf_modes_n <= 0)
 		sf_modes_refresh (plat);
 
-	int id = sfmodes_find_hz (g_sf_modes, g_sf_modes_n, hz);
+	int w = 0, h = 0, id;
+	if (active_display_size (&w, &h) == 0)
+		id = sfmodes_find (g_sf_modes, g_sf_modes_n, hz, w, h);
+	else
+	{
+		trace (1, "не удалось определить активное разрешение, ищу по частоте\n");
+		id = sfmodes_find_hz (g_sf_modes, g_sf_modes_n, hz);
+	}
+
 	if (id < 0)
 		return -1;
 
