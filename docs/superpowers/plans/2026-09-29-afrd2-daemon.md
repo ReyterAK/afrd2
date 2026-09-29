@@ -373,7 +373,7 @@ int main (void)
 
 	assert (n == 9);
 	assert (modes [0].id == 0 && modes [0].hz == 59 * 256 + 241); /* 59.94 -> 15345 */
-	assert (modes [6].id == 6 && modes [6].hz == 6138);           /* 23.98 */
+	assert (modes [6].id == 6 && modes [6].hz == 6139);           /* 23.98 Hz -> 23.98*256+0.5 */
 	assert (modes [6].width == 1920 && modes [6].height == 1080);
 
 	/* поиск: 23.976 в 1080p -> id 6 */
@@ -411,6 +411,11 @@ Expected: ошибка компиляции `sfmodes.h: No such file`.
 
 #define SF_MODE_MAX	64
 
+/* Допуск сравнения частот: 32 единицы 24.8 = 0.125 Гц.
+ * Нужен, потому что SurfaceFlinger печатает округлённые значения
+ * (23.98 Hz -> 6139), а fps_classify() даёт 6138 для 23.976. */
+#define SF_HZ_TOL	32
+
 /* Режим SurfaceFlinger (то, что печатает dumpsys SurfaceFlinger). */
 typedef struct
 {
@@ -425,6 +430,9 @@ int sfmodes_parse (const char *dump, sf_mode_t *out, int max);
 
 /* Поиск id режима по частоте (24.8) и разрешению. -1, если нет. */
 int sfmodes_find (const sf_mode_t *modes, int n, int hz, int width, int height);
+
+/* Поиск id режима по одной частоте (без учёта разрешения). -1, если ничего не ближе SF_HZ_TOL. */
+int sfmodes_find_hz (const sf_mode_t *modes, int n, int hz);
 
 /* Частота (24.8) по id режима. 0, если id не найден. */
 int sfmodes_current_hz (const sf_mode_t *modes, int n, int id);
@@ -493,7 +501,8 @@ int sfmodes_find (const sf_mode_t *modes, int n, int hz, int width, int height)
 		}
 	}
 
-	return best;
+	/* допуск SF_HZ_TOL: иначе для 50 Гц в 720p вернём далёкий 59.94-режим */
+	return (best_d <= SF_HZ_TOL) ? best : -1;
 }
 
 int sfmodes_current_hz (const sf_mode_t *modes, int n, int id)
@@ -519,9 +528,9 @@ int sfmodes_find_hz (const sf_mode_t *modes, int n, int hz)
 		}
 	}
 
-	/* допуск 0.125 Гц: частота активного режима должна совпасть точно,
-	 * иначе это не наш режим (например, 100 Гц в списке отсутствует) */
-	return (best_d <= 32) ? best : -1;
+	/* допуск SF_HZ_TOL (0.125 Гц): частота активного режима должна совпасть
+	 * практически точно, иначе это не наш режим (100 Гц в списке нет) */
+	return (best_d <= SF_HZ_TOL) ? best : -1;
 }
 ```
 
