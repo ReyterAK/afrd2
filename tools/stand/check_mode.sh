@@ -1,7 +1,7 @@
 #!/bin/sh
 # Стенд ATV14: снимок тракта «AFR» одной строкой.
 #
-# Печатает: kernel mode | HDMI timing (sname) | SF activeMode | backdoor flag
+# Печатает: kernel mode | HDMI timing (sname, h_freq, v_freq) | SF activeMode | backdoor flag
 #
 # Запуск:
 #   sh tools/stand/check_mode.sh
@@ -29,12 +29,17 @@ fi
 # чтения (например, когда ядро не смонтировало нужный узел).
 adb -s "$D" shell '
 	mode=$(cat /sys/class/display/mode 2>/dev/null)
-	hdmi=$(grep -m1 sname /sys/class/amhdmitx/amhdmitx0/disp_mode 2>/dev/null)
+	dpm=$(cat /sys/class/amhdmitx/amhdmitx0/disp_mode 2>/dev/null)
+	sname=$(printf "%s\n" "$dpm" | grep -m1 -oE "sname:? *[^ ]+" | head -1)
+	hf=$(printf "%s\n" "$dpm" | grep -m1 -oE "h_freq:? *[0-9]+" | head -1)
+	vf=$(printf "%s\n" "$dpm" | grep -m1 -oE "v_freq:? *[0-9]+" | head -1)
 	sf=$(dumpsys SurfaceFlinger 2>/dev/null)
 	active=$(echo "$sf" | grep -oE "activeMode=[0-9.]+ Hz" | head -1)
 	backdoor=$(echo "$sf" | grep -oE "debugDisplayModeSetByBackdoor=[a-z]+" | head -1)
+	[ -n "$sname" ] || sname=n/a
+	[ -n "$hf" ] || hf=n/a
+	[ -n "$vf" ] || vf=n/a
 	[ -n "$active" ] || active=n/a
 	[ -n "$backdoor" ] || backdoor=n/a
-	[ -n "$hdmi" ] || hdmi=n/a
-	printf "%s | %s | %s | %s\n" "$mode" "$hdmi" "$active" "$backdoor"
+	printf "%s | %s, %s, %s | %s | %s\n" "$mode" "$sname" "$hf" "$vf" "$active" "$backdoor"
 '

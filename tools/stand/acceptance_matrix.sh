@@ -46,8 +46,8 @@
 #   adb -s $D shell '/data/local/tmp/afrd -k -D /data/local/tmp/afrd.ini'
 #   PAUSE_TEST=1 PAUSE_EXPECT=restore sh tools/stand/acceptance_matrix.sh
 #
-# Код возврата: 0 — все проверки OK, 1 — есть FAIL, 2 — стенд недоступен
-#               (ни одна проверка не выполнена).
+# Код возврата: 0 — все проверки OK, 1 — есть FAIL, 2 — проверка не выполнена
+#               (стенд недоступен, демон не запущен или одни SKIP).
 
 D=${ADB_DEV:-${D:-192.168.88.50:5555}}
 SDIR=$(cd "$(dirname "$0")" && pwd)
@@ -117,13 +117,13 @@ if ! adb -s "$D" shell true >/dev/null 2>&1; then
 	exit 2
 fi
 
-# Без запущенного демона матрица измеряет не то, что нужно, а «SKIP по всем
-# пунктам» скрыл бы это. Поэтому это ошибка, а не пропуск.
+# Без запущенного демона проверять нечего: по контракту скрипта это «ни одна
+# проверка не выполнена» (код 2), а не провал приёмки.
 daemon_pid=$(adb -s "$D" shell pidof afrd | tr -d '\r')
 if [ -z "$daemon_pid" ]; then
-	echo "FAIL: демон afrd не запущен на $D — матрица бессмысленна." >&2
-	echo "      Запустите его: D=$D sh tools/stand/build_push.sh" >&2
-	exit 1
+	echo "SKIP: демон afrd не запущен на $D — ни одна проверка не выполнена" >&2
+	echo "      Запустите его и повторите: D=$D sh tools/stand/build_push.sh" >&2
+	exit 2
 fi
 echo "демон afrd: pid $daemon_pid"
 
@@ -195,23 +195,35 @@ if [ "$PAUSE_TEST" = 1 ]; then
 	echo
 	echo "=== пауза ($PAUSE_CLIP, ожидание: $PAUSE_EXPECT)"
 
+	before=
+	pp=
+	pn=
+
 	if ! sh "$SDIR/play_clip.sh" start "$PAUSE_CLIP"; then
 		skip "пауза: клип $PAUSE_CLIP не запущен — проверка не выполнена"
 	else
 		sleep "$HOLD_WAIT"
 		before=$(snap)
-		echo "до паузы: $before"
+		echo "до паузы: ${before:-<пустой снимок>}"
 
 		adb -s "$D" shell 'input keyevent KEYCODE_MEDIA_PAUSE' >/dev/null
 		sleep 4
 		pp=$(snap)
-		echo "на паузе: $pp"
+		echo "на паузе: ${pp:-<пустой снимок>}"
 
 		adb -s "$D" shell 'input keyevent KEYCODE_MEDIA_PLAY' >/dev/null
 		sleep 4
 		pn=$(snap)
-		echo "после возобновления: $pn"
+		echo "после возобновления: ${pn:-<пустой снимок>}"
 
+		sh "$SDIR/play_clip.sh" stop
+	fi
+
+	# Пустой снимок (стенд отвалился на check_mode) сравнивать нельзя: пустые
+	# поля «равны» друг другу и дали бы OK без измерения.
+	if [ -z "$before" ] || [ -z "$pp" ] || [ -z "$pn" ]; then
+		skip "пауза: состояние снять не удалось (пустой снимок) — проверка не выполнена"
+	else
 		hold_mode=$(fld "$before" 1)
 		if [ "$hold_mode" = "$ORIG_MODE" ]; then
 			# без состоявшегося удержания обе ветки выглядят одинаково —
@@ -246,8 +258,6 @@ if [ "$PAUSE_TEST" = 1 ]; then
 				fail "после возобновления режим $rm, ожидался $hold_mode"
 			fi
 		fi
-
-		sh "$SDIR/play_clip.sh" stop
 	fi
 fi
 
@@ -267,18 +277,24 @@ if [ "$OWN_AFR_TEST" = 1 ]; then
 		adb -s "$D" shell "am start -n $OWN_AFR_ACT -a android.intent.action.VIEW -d file://$file -t video/mp4" >/dev/null
 		sleep "$HOLD_WAIT"
 		s=$(snap)
-		echo "состояние: $s"
-		m=$(fld "$s" 1)
-		b=$(fld "$s" 4)
-		if [ "$m" = 1080p24hz ]; then
-			ok "плеер выставил режим сам ($m)"
+		echo "состояние: ${s:-<пустой снимок>}"
+		if [ -z "$s" ]; then
+			# пустой снимок дал бы «режим выставлен нашим демоном (backdoor=)» —
+			# это неверный вердикт, а не измерение
+			skip "свой AFR: снимок состояния не снят — проверка не выполнена"
 		else
-			fail "режим $m, ожидался 1080p24hz"
+			m=$(fld "$s" 1)
+			b=$(fld "$s" 4)
+			if [ "$m" = 1080p24hz ]; then
+				ok "плеер выставил режим сам ($m)"
+			else
+				fail "режим $m, ожидался 1080p24hz"
+			fi
+			case "$b" in
+				*false*) ok "демон не вмешался (backdoor=false)" ;;
+				*)       fail "режим выставлен нашим демоном (backdoor=$b) — совместимость нарушена" ;;
+			esac
 		fi
-		case "$b" in
-			*false*) ok "демон не вмешался (backdoor=false)" ;;
-			*)       fail "режим выставлен нашим демоном (backdoor=$b) — совместимость нарушена" ;;
-		esac
 		adb -s "$D" shell "am force-stop ${OWN_AFR_ACT%%/*}" >/dev/null
 	fi
 fi
@@ -345,18 +361,25 @@ if [ "$API_TEST" = 1 ]; then
 	if ! adb -s "$D" shell "test -f '$file'" >/dev/null 2>&1; then
 		skip "подсказка: клип $file не найден — проверка не выполнена"
 	else
+		# Смотрим только строки, появившиеся ПОСЛЕ отправки подсказки: иначе
+		# строка от прошлого прогона дала бы OK без применения подсказки.
+		lines0=$(adb -s "$D" shell "wc -l < $AFRD_LOG 2>/dev/null" | tr -cd '0-9')
+		[ -n "$lines0" ] || lines0=0
+
 		adb -s "$D" shell "am start -n $PLAYER -a android.intent.action.VIEW -d file://$file -t video/mp4" >/dev/null
 		adb -s "$D" shell 'echo "frame_rate_hint 23976" | nc -u -w1 127.0.0.1 50505' >/dev/null
 		sleep "$HOLD_WAIT"
 
-		hint=$(adb -s "$D" shell "grep 'по подсказке' $AFRD_LOG | tail -1" | tr -d '\r')
+		hint=$(adb -s "$D" shell "tail -n +$((lines0 + 1)) $AFRD_LOG 2>/dev/null | grep 'по подсказке' | tail -1" | tr -d '\r')
 		s=$(snap)
-		echo "подсказка в логе: ${hint:-нет}"
+		echo "подсказка в новых строках лога (после $lines0): ${hint:-нет}"
 		echo "состояние: $s"
-		if [ -n "$hint" ]; then
-			ok "подсказка плеера применена: $hint"
+		if [ -z "$hint" ]; then
+			fail "в новых строках лога ($AFRD_LOG, ключ log.file) нет «по подсказке плеера» — подсказка не применена"
+		elif printf '%s' "$hint" | grep -q '23\.98'; then
+			ok "подсказка плеера применена (23.98 Гц): $hint"
 		else
-			fail "в логе ($AFRD_LOG, ключ log.file) нет строки «по подсказке плеера» — подсказка не применена"
+			fail "подсказка применена не с ожидаемой частотой 23.98 Гц: $hint"
 		fi
 		# режим печатаем информативно: подсказка живёт 1 с, и при неудачном
 		# стечении с дебаунсом 500 мс она может истечь до решения демона
