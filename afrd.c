@@ -9,6 +9,13 @@
 #include "uevent_filter.h"
 #include "colorspace.h"
 #include "androp.h"
+#include "platform.h"
+#include "vdec.h"
+#include "sfmodes.h"
+#include "sink.h"
+#include "guard.h"
+#include "exec.h"
+#include "fps_class.h"
 
 #define __USE_GNU
 #include <unistd.h>
@@ -1019,8 +1026,362 @@ static void safe_mstime_update (int to)
 
 static time_t g_config_mtime;
 
+/* --------- * --------- * --------- * --------- * --------- * --------- */
+
+/* ---- ATV14: поллинг декодера + измерение fps + backdoor SurfaceFlinger ---- */
+
+/* Таблица режимов, полученная от SurfaceFlinger (заполняется sf_modes_refresh). */
+static sf_mode_t g_sf_modes [SF_MODE_MAX];
+static int g_sf_modes_n = 0;
+
+/* Сон с оглядкой на завершение: просыпаемся не реже, чем раз в 200 мс. */
+static void msleep (int ms)
+{
+	while (ms > 0 && !g_shutdown)
+	{
+		int chunk = ms > 200 ? 200 : ms;
+		usleep (chunk * 1000);
+		ms -= chunk;
+	}
+}
+
+static void sf_modes_refresh (const platform_t *plat)
+{
+	char dump [64 * 1024];
+	if (exec_capture (plat->sf_dump_cmd, dump, sizeof (dump)) != 0)
+	{
+		trace (1, "не удалось получить список режимов SurfaceFlinger\n");
+		g_sf_modes_n = 0;
+		return;
+	}
+
+	g_sf_modes_n = sfmodes_parse (dump, g_sf_modes, SF_MODE_MAX);
+	trace (1, "режимов SurfaceFlinger: %d\n", g_sf_modes_n);
+}
+
+/* Активное разрешение из DisplayManager ("real 1920 x 1080").
+ * Нужно независимо от частоты: в списке SurfaceFlinger одна и та же частота
+ * встречается на разных разрешениях (напр. 59.94 Гц -> 1080p id 0 и 720p id 8). */
+static int active_display_size (const platform_t *plat, int *w, int *h)
+{
+	static char dump [64 * 1024];
+
+	if (exec_capture (plat->display_dump_cmd, dump, sizeof (dump)) != 0)
+		return -1;
+
+	const char *p = strstr (dump, "real ");
+	if (!p)
+		return -1;
+
+	if (sscanf (p, "real %d x %d", w, h) != 2)
+		return -1;
+
+	return 0;
+}
+
+/* Активный режим: частота из SurfaceFlinger ("activeMode=23.98 Hz"),
+ * разрешение — из DisplayManager. Совпадение по (частота, разрешение)
+ * однозначно; если разрешение узнать не удалось, откатываемся на поиск по частоте. */
+static int sf_active_mode (const platform_t *plat, sf_mode_t *out)
+{
+	static char dump [64 * 1024];
+
+	if (exec_capture (plat->sf_dump_cmd, dump, sizeof (dump)) != 0)
+		return -1;
+
+	const char *p = strstr (dump, "activeMode=");
+	if (!p)
+		return -1;
+
+	int hz = (int)(atof (p + strlen ("activeMode=")) * 256.0 + 0.5);
+	if (g_sf_modes_n <= 0)
+		sf_modes_refresh (plat);
+
+	int w = 0, h = 0, id;
+	if (active_display_size (plat, &w, &h) == 0)
+		id = sfmodes_find (g_sf_modes, g_sf_modes_n, hz, w, h);
+	else
+	{
+		trace (1, "не удалось определить активное разрешение, ищу по частоте\n");
+		id = sfmodes_find_hz (g_sf_modes, g_sf_modes_n, hz);
+	}
+
+	if (id < 0)
+		return -1;
+
+	for (int i = 0; i < g_sf_modes_n; i++)
+		if (g_sf_modes [i].id == id)
+		{
+			*out = g_sf_modes [i];
+			return 0;
+		}
+
+	return -1;
+}
+
+/* Предпочтительный режим пользователя (настройка Android TV).
+ * Возврат: mode id или -1, если пользователь его не задавал. */
+static int preferred_mode_id (const platform_t *plat)
+{
+	static char dump [64 * 1024];
+
+	if (exec_capture (plat->display_dump_cmd, dump, sizeof (dump)) != 0)
+		return -1;
+
+	const char *p = strstr (dump, "mUserPreferredModeId=");
+	if (!p)
+		return -1;
+
+	int id = atoi (p + strlen ("mUserPreferredModeId="));
+	return (id >= 0) ? id : -1;
+}
+
+static int run_atv14 (const platform_t *plat)
+{
+	guard_action_t act;
+	int orig_sf_id = -1, cur_sf_id = -1, want_sf_id = -1;
+	bool held = false;
+	bool video = false;
+	vdec_status_t v0, v1;
+	int retries = 0;
+	int preferred_id = preferred_mode_id (plat);
+
+	/* Поведенческие ключи профиля (R28). */
+	int prefer_api = cfg_get_int ("fps.prefer.api", 1);
+	int pause_keep = cfg_get_int ("pause.keep", 1);
+	int restore_on_stop = cfg_get_int ("switch.restore.on.stop", 1);
+
+	/* Отслеживание «паузы»: декодер активен, а счётчик кадров не растёт. */
+	unsigned long long prev_frames = 0;
+	bool have_prev_frames = false;
+	bool paused = false;
+	int still = 0;
+
+	sf_modes_refresh (plat);
+
+	trace (1, "предпочтительный режим ТВ: %d\n", preferred_id);
+
+	/* страховка: снять «залипший» флаг прошлого запуска */
+	sink_release_backdoor (plat->sink);
+
+	int cur_hz = cfg_get_int ("trigger.poll.ms", 300);
+	if (cur_hz < 100) cur_hz = 100;
+
+	int window_ms = cfg_get_int ("fps.measure.window.ms", 1500);
+	int max_retries = cfg_get_int ("fps.measure.retries", 3);
+	int start_deb = cfg_get_int ("trigger.start.debounce.ms", 500);
+	int stop_deb = cfg_get_int ("trigger.stop.debounce.ms", 1500);
+
+	while (!g_shutdown)
+	{
+		/* g_mstime обслуживает mstime_* ; в этом цикле его больше никто
+		 * не обновляет, а от него зависит срок жизни fps-подсказки API */
+		mstime_update ();
+
+		msleep (cur_hz);
+
+		if (vdec_read (plat->vdec_status, &v0) != 0)
+			continue;
+
+		bool new_video = v0.active;
+
+		if (new_video != video)
+		{
+			msleep (new_video ? start_deb : stop_deb);
+
+			vdec_status_t again;
+			if (vdec_read (plat->vdec_status, &again) == 0 && again.active == new_video)
+				video = new_video;
+			else
+				continue;	/* дребезг старта/стопа — игнорируем */
+		}
+
+		/* «пауза»: счётчик кадров не растёт на двух соседних опросах подряд */
+		if (v0.active)
+		{
+			if (have_prev_frames && (v0.frames == prev_frames))
+				still++;
+			else
+				still = 0;
+
+			paused = (still >= 2);
+			prev_frames = v0.frames;
+			have_prev_frames = true;
+		}
+		else
+		{
+			still = 0;
+			paused = false;
+			have_prev_frames = false;
+		}
+
+		/* pause.keep==0: пауза обрабатывается как стоп (guard вернёт режим) */
+		bool video_eff = video;
+		if (!pause_keep && paused)
+			video_eff = false;
+
+		if (!video)
+		{
+			want_sf_id = -1;
+		}
+		else if (want_sf_id < 0)
+		{
+			int hz = 0;
+
+			/* fps.prefer.api: подсказку плеера (24.8 fixed-point, живёт 1 с)
+			 * предпочитаем собственному замеру — она точнее и мгновенна */
+			int api_hz = 0;
+			if (prefer_api && mstime_running (&g_frame_rate_hint.stamp))
+				api_hz = g_frame_rate_hint.fps;
+
+			if (api_hz)
+			{
+				hz = fps_rate_hz (fps_rate_index_for_hz (api_hz));
+				trace (1, "видео: " HZ_FMT " Гц по подсказке плеера, ищу режим\n",
+				       HZ_ARGS (hz));
+			}
+			else
+			{
+				/* замер: две выборки с окном window_ms.
+				 * v0 перечитываем здесь: к этому моменту мог пройти
+				 * дебаунс старта, и прочитанное в начале цикла значение
+				 * оказалось бы на дебаунс старше — тогда дельта счётчика
+				 * покроет больше времени, чем dt, и частота завысится
+				 * (23.976 -> ~31 -> 30 Гц). */
+				if (vdec_read (plat->vdec_status, &v0) != 0)
+					continue;
+
+				unsigned long long t0 = now_us ();
+				msleep (window_ms);
+				if (vdec_read (plat->vdec_status, &v1) != 0)
+					continue;
+
+				double fps = fps_estimate (v0.frames, t0, v1.frames, now_us ());
+				hz = fps_classify (fps);
+
+				if (!hz)
+				{
+					if (++retries >= max_retries)
+					{
+						trace (1, "частоту определить не удалось (%d попыток), пропускаю\n", retries);
+						want_sf_id = -2;	/* до конца этого видео не пытаться */
+					}
+					continue;
+				}
+
+				trace (1, "видео: %.3f fps (%s), ищу режим\n", fps,
+				       fps_rate_name (fps_rate_index_for_hz (hz)));
+			}
+
+			retries = 0;
+
+			/* текущий режим / исходный id */
+			if (g_sf_modes_n <= 0)
+				sf_modes_refresh (plat);
+
+			sf_mode_t active;
+			int w = 1920, h = 1080;
+			if (sf_active_mode (plat, &active) == 0)
+			{
+				w = active.width;
+				h = active.height;
+			}
+
+			cur_sf_id = sfmodes_find (g_sf_modes, g_sf_modes_n, hz, w, h);
+			if (cur_sf_id < 0)
+			{
+				trace (1, "режим для %d.%02d Гц не найден в списке\n",
+				       HZ_ARGS (hz));
+				want_sf_id = -2;
+				continue;
+			}
+			want_sf_id = cur_sf_id;
+		}
+
+		/* актуальный режим перечитываем у SurfaceFlinger: так мы видим и то,
+		 * что переключило приложение со своим AFR, и не расходимся с реальностью */
+		sf_mode_t active;
+		if (sf_active_mode (plat, &active) == 0)
+			cur_sf_id = active.id;
+
+		act = guard_decide (video_eff, want_sf_id, cur_sf_id, &orig_sf_id, &held);
+
+		if (act == GUARD_SWITCH && (preferred_id >= 0))
+			orig_sf_id = preferred_id;	/* возврат — в предпочтительный режим ТВ */
+
+		if (act == GUARD_SWITCH)
+		{
+			if (sink_apply (plat->sink, g_mode_path, want_sf_id, NULL) == 0)
+				cur_sf_id = want_sf_id;
+			else
+				trace (1, "переключение режима не удалось\n");
+		}
+		else if (act == GUARD_RESTORE)
+		{
+			/* Возврат по настоящему стопу (декодер исчез) отключается ключом
+			 * switch.restore.on.stop; возврат по паузе (pause.keep==0)
+			 * выполняется всегда. Флаг backdoor снимаем в любом случае. */
+			if (restore_on_stop || v0.active)
+			{
+				if (sink_apply (plat->sink, g_mode_path, orig_sf_id, NULL) == 0)
+				{
+					guard_note_restored (&held);
+					cur_sf_id = orig_sf_id;
+					orig_sf_id = -1;
+				}
+			}
+			else
+			{
+				guard_note_restored (&held);
+				orig_sf_id = -1;
+			}
+			sink_release_backdoor (plat->sink);
+			want_sf_id = -1;
+			continue;
+		}
+		else if (act == GUARD_NONE && !video && held)
+		{
+			sink_release_backdoor (plat->sink);
+			guard_note_restored (&held);
+		}
+
+		if (want_sf_id == -2)
+		{
+			/* не смогли определить: ждём конца видео, но флаг не держим */
+			if (held)
+			{
+				sink_apply (plat->sink, g_mode_path, orig_sf_id, NULL);
+				sink_release_backdoor (plat->sink);
+				guard_note_restored (&held);
+				cur_sf_id = orig_sf_id;
+				orig_sf_id = -1;
+			}
+			want_sf_id = -1;
+		}
+	}
+
+	/* выход: гарантированно вернуть систему в исходное состояние */
+	if (held)
+	{
+		sink_apply (plat->sink, g_mode_path, orig_sf_id, NULL);
+		sink_release_backdoor (plat->sink);
+		guard_note_restored (&held);
+	}
+
+	return 0;
+}
+
+/* --------- * --------- * --------- * --------- * --------- * --------- */
+
+static platform_t g_plat;
+
 int afrd_run ()
 {
+	g_plat = platform_detect ();
+
+	if (g_plat.kind == PLAT_ATV14)
+		return run_atv14 (&g_plat);
+
 	if (g_uevent_sock == -1)
 		return -1;
 
