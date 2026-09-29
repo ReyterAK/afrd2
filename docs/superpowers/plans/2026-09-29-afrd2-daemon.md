@@ -1265,7 +1265,9 @@ Expected: тесты `OK`; сборка `make` создаёт `out/debug/afrd`.
 Обязательно (R16): в `GNUmakefile` список `AFRD_SRC` дополняется **всеми** модулями задач 1–5
 (`fps_class.c sfmodes.c sink.c guard.c exec.c vdec.c platform.c` — какие ещё не в списке),
 иначе `make` не слинкуется (`undefined reference` на `exec_capture`, `sink_build_sf_reset`).
-`fps_class.c` использует `math.h` → в `LDFLAGS` нужен `-lm`.
+`fps_class.c` использует `math.h` → `-lm` нужен в команде линковки **после** списка объектов
+(`$(LD) … -o $@ $^ -lm`): `LDFLAGS.local` подставляется до объектов, и при `--as-needed` библиотека
+могла бы выпасть из `DT_NEEDED` (R29).
 **`jni/Android.mk` не трогать** — его владелец Task 8 (R4).
 
 - [ ] **Step 4: Коммит**
@@ -1569,6 +1571,40 @@ int run_atv14 (const platform_t *plat)
 > читают `dumpsys` один раз за итерацию цикла — на 300-мс периоде это допустимо (проверено на стенде:
 > вызов ~30–60 мс). Если профилирование покажет иначе, кэшировать `dumpsys display` на 5 с.
 
+- [ ] **Step 2a: Поведенческие ключи профиля (R28): `fps.prefer.api`, `pause.keep`, `switch.restore.on.stop`**
+
+Спека §3.2–3.3 (binding authority) требует эти ключи; Step 2 их не читал — ключи были бы инертными
+(finding ревью Task 5). В начале `run_atv14()`:
+
+```c
+	int prefer_api = cfg_get_int ("fps.prefer.api", 1);
+	int pause_keep = cfg_get_int ("pause.keep", 1);
+	int restore_on_stop = cfg_get_int ("switch.restore.on.stop", 1);
+```
+
+1. **`fps.prefer.api` (по умолчанию 1)** — перед замером Δ`frames` проверить подсказку плеера
+   (upstream-механизм живёт в этом же файле): `g_frame_rate_hint` заполняется `afrd_frame_rate_hint()`
+   (afrd.c:1134) из API `frame_rate_hint`, значение уже fixed-point 24.8, срок жизни 1 с
+   (`mstime_arm (&g_frame_rate_hint.stamp, 1000)`).
+   ```c
+   int api_hz = 0;
+   if (prefer_api && mstime_running (&g_frame_rate_hint.stamp))
+   	api_hz = g_frame_rate_hint.fps;
+   ```
+   Если `api_hz != 0` — не мерить: `hz = fps_rate_hz (fps_rate_index_for_hz (api_hz));`
+   Подсказку не сбрасывать вручную (истечёт сама).
+2. **`pause.keep` (по умолчанию 1)** — «пауза» = декодер активен, а счётчик кадров не растёт:
+   `v0.frames` равен предыдущему значению на **двух** соседних опросах подряд. При `pause_keep==1` —
+   ничего не делаем (текущее поведение). При `pause_keep==0` — обрабатываем паузу как стоп,
+   передавая в `guard_decide()` `video == false` (тогда вернётся `GUARD_RESTORE`).
+   Замечание: во время окна замера (`msleep (window_ms)`) счётчик на паузе стоит → `fps_estimate()` == 0,
+   срабатывает ветка `retries` — она и раньше была безопасна.
+3. **`switch.restore.on.stop` (по умолчанию 1)** — в ветке `GUARD_RESTORE` при **настоящем стопе**
+   (декодер исчез, `v0.active == false`), а не при паузе: если `restore_on_stop == 0` — `sink_apply()`
+   для возврата **не** вызываем, но `sink_release_backdoor()`, `guard_note_restored()`,
+   `orig_sf_id = -1`, `want_sf_id = -1` выполняем обязательно (флаг backdoor не залипает).
+   Возврат по паузе (`pause_keep==0`) выполняется всегда.
+
 - [ ] **Step 3: Заглушки (`msleep`, `g_shutdown`)**
 
 `msleep()` реализовать рядом (обёртка `usleep`):
@@ -1805,6 +1841,19 @@ Expected (эталон):
 | 25 | `1080p50hz` + `50.00 Hz` | `1080p60hz` + `59.94` + `backdoor=false` |
 | 50 | `1080p50hz` + `50.00 Hz` | `1080p60hz` + `59.94` + `backdoor=false` |
 
+- [ ] **Step 2a: Пауза (`pause.keep`)**
+
+Run (на стенде, `long_24000_1001` играет через VLC):
+```sh
+D=192.168.88.50:5555
+adb -s $D shell 'input keyevent KEYCODE_MEDIA_PAUSE'; sleep 4; sh tools/stand/check_mode.sh
+adb -s $D shell 'input keyevent KEYCODE_MEDIA_PLAY';  sleep 4; sh tools/stand/check_mode.sh
+```
+Expected: при `pause.keep=1` (профиль по умолчанию) режим на паузе **не** меняется (остаётся `1080p24hz`),
+после возобновления — тоже; при `pause.keep=0` на паузе режим возвращается к исходному
+(`1080p60hz`, `backdoor=false`), после возобновления снова `1080p24hz`.
+Проверить оба значения: правка `config/afrd2.ini` на стенде (`/data/local/tmp/afrd.ini`) + рестарт демона.
+
 - [ ] **Step 3: Совместимость с приложением со своим AFR**
 
 Run:
@@ -1838,9 +1887,11 @@ git commit -m "test(atv14): матрица приёмки на стенде + д
 - §5 упаковка APK → **отдельный план** (объявлено в спеке §8.1 и в шапке этого плана).
 - §6 тесты → Task 9 (+ юнит-тесты в Task 1-4).
 - §7 риски → Task 3 (снятие флага), Task 7 (страховки), Task 6 (`-2` ветка при неудачном замере).
-- §8 решения → учтены: пауза (при `video == false` только по дебаунсу стопа; на паузе счётчик стоит,
-  `fps_estimate` вернёт 0 и переключения не будет), затемнения нет (нет вызова `display_mode_null`),
-  preferred mode — `preferred_mode_id()` (Task 6) и возврат в него в ветке `GUARD_SWITCH`.
+- §8 решения → учтены: пауза (R28: `pause.keep=1` — на паузе счётчик стоит, `fps_estimate` вернёт 0 и
+  переключения не будет; `pause.keep=0` — пауза обрабатывается как стоп, Task 6 Step 2a),
+  затемнения нет (нет вызова `display_mode_null`),
+  preferred mode — `preferred_mode_id()` (Task 6) и возврат в него в ветке `GUARD_SWITCH`; `fps.prefer.api`
+  и `switch.restore.on.stop` — Task 6 Step 2a.
 
 **2. Плейсхолдеры:** отсутствуют (проверено поиском по «TODO/TBD/позже/implement»).
 
