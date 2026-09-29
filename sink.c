@@ -55,9 +55,12 @@ int sink_apply (sink_kind_t kind, const char *mode_path, int sf_mode_id,
 	if (exec_capture (cmd, out, sizeof (out)) != 0)
 		return -1;
 
-	/* Успех: "Result: Parcel(	00000000    '....')" (пустой ответ, код 0),
-	 * либо NULL (Parcel(NULL) — тоже успех в этом API). */
-	if (strstr (out, "Error:"))
+	/* Успех подтверждается только положительно: "Result: " тул печатает после
+	 * реально выполненного transact (AOSP service.cpp). Если сервиса нет
+	 * ("Service SurfaceFlinger does not exist"), команда не найдена
+	 * ("not found") или транзакция вернула исключение (Parcel(Error: ...)),
+	 * "Result: " в выводе отсутствует — это провал, а не успех. */
+	if (!strstr (out, "Result:") || strstr (out, "Error:"))
 	{
 		trace (1, "backdoor вернул ошибку: %s\n", out);
 		return -1;
