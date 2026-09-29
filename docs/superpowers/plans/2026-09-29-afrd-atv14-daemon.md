@@ -1,4 +1,4 @@
-# AFRd-ATV14 (демон) — план реализации
+# AFRd2 (демон) — план реализации
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -14,7 +14,7 @@
 ADB-скрипты стенда, Android 14 (`service call SurfaceFlinger 1035`).
 
 **Spec:** `docs/superpowers/specs/2026-09-29-afrd-atv14-design.md` (журнал анализа:
-`/home/reyter/AI/afrd-atv14-journal.md`).
+`/home/reyter/AI/afrd2-journal.md`).
 
 ## Global Constraints
 
@@ -1206,7 +1206,7 @@ platform_t platform_detect (void)
 `config/afrd-atv14.ini`:
 
 ```ini
-# AFRd-ATV14: Android 10-14, ядро 5.x (S905X5M и подобные)
+# AFRd2: Android 10-14, ядро 5.x (S905X5M и подобные)
 
 enable=1
 log.file=/data/local/afrd.log
