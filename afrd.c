@@ -1542,7 +1542,14 @@ static int run_atv14 (const platform_t *plat)
 		if (!pause_keep && paused)
 			video_eff = false;
 
-		if (!video)
+		/* R50: сброс состояния замера висит на video_eff, а не на video.
+		 * Пауза при pause.keep==0 для замера равносильна концу видео: пока
+		 * счётчик кадров стоит, окно замера бессмысленно (и, исчерпав
+		 * fps.measure.retries, оно выставляло measure_failed, который затем
+		 * сбрасывался только по концу видео — после возобновления AFR больше
+		 * не включался). При pause.keep==1 video_eff == video, поведение
+		 * прежнее. */
+		if (!video_eff)
 		{
 			want_sf_id = -1;
 			/* видео закончилось — следующее мерим заново: и счётчик попыток,
