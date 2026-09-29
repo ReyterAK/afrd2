@@ -1572,8 +1572,11 @@ static int run_atv14 (const platform_t *plat)
 					{
 						trace (1, "частоту определить не удалось (%d попыток), пропускаю\n", retries);
 						measure_failed = true;
-						atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
 						want_sf_id = -1;
+						/* как и выше: при сменившейся таблице режимов
+						 * orig_sf_id может быть из старой нумерации */
+						if (!g_sf_table_changed)
+							atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
 					}
 					continue;
 				}
@@ -1603,8 +1606,14 @@ static int run_atv14 (const platform_t *plat)
 				trace (1, "режим для %d.%02d Гц не найден в списке\n",
 				       HZ_ARGS (hz));
 				measure_failed = true;
-				atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
 				want_sf_id = -1;
+
+				/* Если таблица режимов сменилась прямо во время замера, id в
+				 * orig_sf_id — из старой нумерации, и в транзакцию 1035 его
+				 * отправлять нельзя (R41/R43). Удержание снимет блок обработки
+				 * g_sf_table_changed на следующей итерации. */
+				if (!g_sf_table_changed)
+					atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
 				continue;
 			}
 			want_sf_id = cur_sf_id;
@@ -1679,10 +1688,17 @@ static int run_atv14 (const platform_t *plat)
 		}
 	}
 
-	/* выход: гарантированно вернуть систему в исходное состояние */
+	/* выход: гарантированно вернуть систему в исходное состояние.
+	 * Если таблица режимов успела смениться, а обработка флага не дошла
+	 * (выход во время замера), id в orig_sf_id — из старой нумерации:
+	 * в 1035 его не отправляем, только снимаем флаг. */
 	if (held)
 	{
-		sink_apply (plat->sink, g_mode_path, orig_sf_id, NULL);
+		if (g_sf_table_changed)
+			trace (1, "выход при сменившейся таблице режимов: исходный id не применяю\n");
+		else
+			sink_apply (plat->sink, g_mode_path, orig_sf_id, NULL);
+
 		sink_release_backdoor (plat->sink);
 		guard_note_restored (&held);
 	}
