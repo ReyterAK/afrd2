@@ -79,7 +79,8 @@ adb -s $D shell 'tail -20 /data/local/afrd.log'                       # лог (
 adb -s $D shell '/data/local/tmp/afrd -k'                             # остановить (pid-файл /dev/run/afrd.pid)
 adb -s $D shell '/data/local/tmp/afrd -k -D /data/local/tmp/afrd.ini' # перезапуск (нужен после правки конфига)
 adb -s $D shell '/data/local/tmp/afrd -s'                             # статистика (shmem /dev/run/afrd.ipc)
-adb -s $D shell 'echo status | nc -u -w1 127.0.0.1 50505'             # статус через API
+# toybox nc с -u на этой прошивке не завершается после ответа — под timeout (124 — норма):
+adb -s $D shell 'echo status | timeout 2 nc -u -w1 127.0.0.1 50505'   # статус через API
 ```
 
 ### Профиль config/afrd2.ini
@@ -101,9 +102,9 @@ adb -s $D shell 'echo status | nc -u -w1 127.0.0.1 50505'             # стат
 Ключи legacy-ветки в ATV14-пути **не читаются**, их правка ни на что не влияет:
 `mode.prefer.exact`, `mode.use.fract`, `switch.delay.on`, `switch.delay.off`,
 `switch.delay.retry`, `switch.blackout`, `switch.ignore`, `switch.hdmi`,
-`cs.select`, `cs.list.path`, `cs.path`, `mode.path`, `vdec.sysfs`, `hdmi.dev`,
-`uevent.*`. Пути sysfs на новой ветке определяются автодетектом (`platform_detect()`),
-а не конфигом.
+`cs.select`, `cs.list.path`, `cs.path`, `mode.path`, `vdec.sysfs`, `hdmi.sysfs`,
+`hdmi.state`, `uevent.*`. Пути sysfs на новой ветке определяются автодетектом
+(`platform_detect()`), а не конфигом.
 
 ### Как убедиться, что AFR работает
 
@@ -111,16 +112,16 @@ adb -s $D shell 'echo status | nc -u -w1 127.0.0.1 50505'             # стат
 sh tools/stand/check_mode.sh     # другой бокс: D=<ip:port> sh tools/stand/check_mode.sh
 ```
 
-печатает одну строку: `kernel mode | HDMI: sname, h_freq, v_freq | SF activeMode | backdoor flag`
-(поля `h_freq`/`v_freq` — из `amhdmitx0/disp_mode`, как требует §6 спеки; если узел
-недоступен или поля в нём нет, печатается `n/a`).
+печатает одну строку: `kernel mode | HDMI: sname, h_freq, v_freq | SF activeMode | backdoor flag`.
+Частоты берутся из одной строки `disp_mode` — `h/v_freq: <h>/<v>`, где `h` в Гц, а
+`v` в мГц (для 1080p59.94 это `67433/59940`); нечитаемое поле печатается как `n/a`.
 
-Если проиграть клип 23.976 fps в VLC (у него нет своего AFR), ожидается (эталон
-плана; на стенде прогоном пока не подтверждён — см. «Статус приёмки»):
+Если проиграть клип 23.976 fps в VLC (у него нет своего AFR), фактическая картина
+(живой прогон 2026-09-29 22:08/22:27, см. «Статус приёмки»):
 
-* до старта: `1080p60hz | ... | activeMode=59.94 Hz | debugDisplayModeSetByBackdoor=false`
-* во время: `1080p24hz | ... | activeMode=23.98 Hz | debugDisplayModeSetByBackdoor=true`
-* после остановки: исходный режим и `backdoor=false`
+* до старта: `1080p60hz | sname: 1080p60hz, 67433, 59940 | activeMode=59.94 Hz | debugDisplayModeSetByBackdoor=false`
+* во время: `1080p24hz | sname: 1080p24hz, 26973, 23976 | activeMode=23.98 Hz | debugDisplayModeSetByBackdoor=true`
+* после остановки: снова `1080p60hz` и `debugDisplayModeSetByBackdoor=false`
 
 Матрица приёмки и дополнительные проверки:
 
@@ -145,13 +146,33 @@ sh tools/stand/guard_test.sh                               # SIGTERM: режим
 
 ### Статус приёмки
 
-Код порта завершён и отревьюирован, скрипты приёмки готовы. **Живая приёмка не
-выполнена**: стенд `192.168.88.50:5555` недоступен (`No route to host`, ping без
-ответа), поэтому ни матрица, ни `guard_test.sh` на устройстве не прогонялись. Всё,
-что в этом разделе помечено как «ожидается», — эталон из плана, а не результат
-измерения. Фактические результаты живого прогона (вывод матрицы, снимки
-`check_mode.sh`, строки лога) будут внесены в этот раздел после приёмки на стенде —
-место для них ниже.
+Прогон на стенде `192.168.88.50:5555` **выполнен** для основных шагов (2026-09-29):
+матрица трёх клипов, пауза, плеер со своим AFR и фаза API — `OK=19 FAIL=0 SKIP=0`
+(`/tmp/afrd-acceptance-fix2.log`; первичный прогон — `/tmp/afrd-acceptance-2208.log`,
+фаза API отдельно — `/tmp/api-phase.log`). Клипы `/sdcard/Download/afr/`, плеер VLC
+(без своего AFR), демон не перезапускался.
+
+Подтверждено вживую:
+
+| шаг | результат |
+|---|---|
+| `long_24000_1001` (23.976 fps) | удержание `1080p24hz` + `activeMode=23.98 Hz` + `backdoor=true`; после стопа `1080p60hz` + `59.94` + `backdoor=false` |
+| `long_25` (25 fps) | удержание `1080p25hz` + `25.00 Hz` + `backdoor=true`; после стопа `1080p60hz` + `59.94` + `backdoor=false` |
+| `long_50` (50 fps) | удержание `1080p50hz` + `50.00 Hz` + `backdoor=true`; после стопа `1080p60hz` + `59.94` + `backdoor=false` |
+| пауза (`pause.keep=1`) | режим `1080p24hz` удержан и на паузе, и после возобновления |
+| плеер со своим AFR (GTBox) | выставил `1080p24hz` сам, демон не вмешался (`backdoor=false`) |
+| API `status` | `enabled:1`, `version:0.3.2`, `build:2026-09-29 20:13:36`; `current hz` не нулевой (в покое `59941`, при удержании `23980`) |
+| подсказка плеера | после `frame_rate_hint 23976` в логе появилась строка «видео: 23.98 Гц по подсказке плеера, ищу режим», режим стал `1080p24hz` даже на 50-fps клипе |
+| R34в (сброс счётчика кадров) | подтверждено: `frame count` нового инстанса декодера начинается с нуля (`11`/`12` сразу после старта нового файла против `173`/`174` в конце предыдущего) |
+| снимок `check_mode.sh` | `disp_mode` даёт `sname` и пару `h/v_freq` (`26973, 23976` для 24 Гц; `67433, 59940` для 60 Гц) |
+
+Ожидание для 25 fps в плане (`1080p50hz`) оказалось неверным: резолвер ATV14 берёт
+точную частоту из таблицы SurfaceFlinger, поэтому 25 fps → `1080p25hz` (исправлено
+в матрице и проверено живым прогоном, R48).
+
+Ещё **не прогонялось**: `pause.keep=0` (`PAUSE_TEST=1 PAUSE_EXPECT=restore`),
+`guard_test.sh` (SIGTERM), `kill -9` и восстановление после падения, не-регресс по
+`dump_vdec_*`, автостарт после перезагрузки (появится вместе с приложением).
 
 <!-- Результаты живого прогона: вносить сюда после приёмки (дата, вывод
      tools/stand/acceptance_matrix.sh, вердикт OK/FAIL по каждому пункту). -->

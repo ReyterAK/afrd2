@@ -9,13 +9,18 @@
 # Опционально: шаг 2a — пауза/возобновление (PAUSE_TEST=1) и шаг 3 — плеер
 # со своим AFR (OWN_AFR_TEST=1).
 #
-# Эталон ожиданий (таблица из плана; это НЕ результат прогона — на момент
-# написания скрипта стенд 192.168.88.50:5555 недоступен, матрица не прогонялась):
+# Эталон ожиданий. Три клипа подтверждены живым прогоном 2026-09-29
+# (`/tmp/afrd-acceptance-2208.log`, затем полный прогон `/tmp/afrd-acceptance-fix2.log`:
+# OK=19 FAIL=0 SKIP=0), значения в таблице — измеренные:
 #
 #   клип             | во время видео                  | после стопа
 #   long_24000_1001  | 1080p24hz + activeMode=23.98 Hz | 1080p60hz + 59.94 Hz + backdoor=false
-#   long_25          | 1080p50hz + activeMode=50.00 Hz | 1080p60hz + 59.94 Hz + backdoor=false
+#   long_25          | 1080p25hz + activeMode=25.00 Hz | 1080p60hz + 59.94 Hz + backdoor=false
 #   long_50          | 1080p50hz + activeMode=50.00 Hz | 1080p60hz + 59.94 Hz + backdoor=false
+#
+# Для 25 fps ожидание было 1080p50hz (ошибка плана, R48): резолвер ATV14 берёт
+# точную частоту из таблицы SurfaceFlinger, поэтому 25 fps -> 1080p25hz, а не
+# удвоение. Исправлено по факту живого прогона.
 #
 # Запуск:
 #   sh tools/stand/acceptance_matrix.sh
@@ -38,6 +43,9 @@
 #                     плеера и допущение R34в (сброс счётчика кадров); AFRD_LOG —
 #                     путь к логу демона (/data/local/afrd.log), API_RESET_CLIP_A/B и
 #                     API_HINT_CLIP — клипы для этих проверок;
+#   API_TIMEOUT     — таймаут обёртки `timeout` вокруг вызовов `nc -u` (по умолчанию
+#                     2 с: на стенде toybox nc с -u не завершается после ответа,
+#                     код 124 от timeout — норма);
 #   LOG             — файл, в который дописывается протокол (иначе только stdout).
 #
 # Для PAUSE_EXPECT=restore нужно предварительно выставить pause.keep=0 в конфиге
@@ -65,6 +73,10 @@ OWN_AFR_ACT=${OWN_AFR_ACT:-net.gtvbox.videoplayer/.PlayerActivity}
 OWN_AFR_CLIP=${OWN_AFR_CLIP:-long_24000_1001}
 API_TEST=${API_TEST:-0}
 AFRD_LOG=${AFRD_LOG:-/data/local/afrd.log}
+# На стенде toybox `netcat 0.8.9-android` с -u не завершается после ответа
+# (-w для UDP игнорируется) — поэтому все вызовы API обёрнуты в `timeout`
+# (измерено вживую: ответ приходит, команда висит). Код 124 от timeout нормален.
+API_TIMEOUT=${API_TIMEOUT:-2}
 API_RESET_CLIP_A=${API_RESET_CLIP_A:-long_24000_1001}
 API_RESET_CLIP_B=${API_RESET_CLIP_B:-long_50}
 API_HINT_CLIP=${API_HINT_CLIP:-long_50}
@@ -108,6 +120,18 @@ fld ()
 	printf '%s\n' "$1" | cut -d'|' -f"$2" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
 }
 
+# Годен ли снимок для сравнений: он непустой и в нём есть поле режима.
+# Пустые поля «равны» друг другу, поэтому любое сравнение по снимку без режима
+# дало бы ложный OK (снимок с нечитаемым /sys/class/display/mode выглядит как
+# непустая строка с пустым первым полем).
+snap_ok ()
+{
+	_sn=$1
+	[ -n "$_sn" ] || return 1
+	_sm=$(fld "$_sn" 1)
+	[ -n "$_sm" ] && [ "$_sm" != n/a ]
+}
+
 echo "== матрица приёмки afrd2/ATV14 =="
 echo "дата: $(date '+%Y-%m-%d %H:%M:%S %Z')"
 echo "устройство: $D"
@@ -145,15 +169,18 @@ for clip in $CLIPS; do
 
 	sleep "$HOLD_WAIT"
 	hold=$(snap)
-	echo "в удержании: $hold"
+	echo "в удержании: ${hold:-<пустой снимок>}"
 
 	case "$clip" in
 		*23976*|*24000*) exp_hz=23.98; exp_mode=1080p24hz ;;
-		*_25|*_50)       exp_hz=50.00; exp_mode=1080p50hz ;;
+		*_25)            exp_hz=25.00; exp_mode=1080p25hz ;;
+		*_50)            exp_hz=50.00; exp_mode=1080p50hz ;;
 		*)               exp_hz=;      exp_mode= ;;
 	esac
 
-	if [ -z "$exp_mode" ]; then
+	if ! snap_ok "$hold"; then
+		skip "$clip: снимок удержания не снят (пустой снимок или пустое поле режима) — вердикт не выносится"
+	elif [ -z "$exp_mode" ]; then
 		skip "$clip: эталона в плане нет — вердикт не выносится (снимок выше)"
 	else
 		m=$(fld "$hold" 1)
@@ -173,19 +200,23 @@ for clip in $CLIPS; do
 	sh "$SDIR/play_clip.sh" stop
 	sleep "$STOP_WAIT"
 	after=$(snap)
-	echo "после стопа: $after"
+	echo "после стопа: ${after:-<пустой снимок>}"
 
-	m=$(fld "$after" 1)
-	b=$(fld "$after" 4)
-	if [ "$m" = "$ORIG_MODE" ]; then
-		ok "$clip: возврат в $ORIG_MODE"
+	if ! snap_ok "$after"; then
+		skip "$clip: снимок после стопа не снят (пустой снимок или пустое поле режима) — вердикт не выносится"
 	else
-		fail "$clip: после стопа режим $m, ожидался $ORIG_MODE"
+		m=$(fld "$after" 1)
+		b=$(fld "$after" 4)
+		if [ "$m" = "$ORIG_MODE" ]; then
+			ok "$clip: возврат в $ORIG_MODE"
+		else
+			fail "$clip: после стопа режим $m, ожидался $ORIG_MODE"
+		fi
+		case "$b" in
+			*false*) ok "$clip: флаг backdoor снят ($b)" ;;
+			*)       fail "$clip: флаг backdoor НЕ снят ($b)" ;;
+		esac
 	fi
-	case "$b" in
-		*false*) ok "$clip: флаг backdoor снят ($b)" ;;
-		*)       fail "$clip: флаг backdoor НЕ снят ($b)" ;;
-	esac
 done
 
 # Шаг 2a: пауза. Эталон — план Task 9: при pause.keep=1 режим на паузе не
@@ -219,10 +250,10 @@ if [ "$PAUSE_TEST" = 1 ]; then
 		sh "$SDIR/play_clip.sh" stop
 	fi
 
-	# Пустой снимок (стенд отвалился на check_mode) сравнивать нельзя: пустые
-	# поля «равны» друг другу и дали бы OK без измерения.
-	if [ -z "$before" ] || [ -z "$pp" ] || [ -z "$pn" ]; then
-		skip "пауза: состояние снять не удалось (пустой снимок) — проверка не выполнена"
+	# Пустой снимок или пустое ПОЛЕ РЕЖИМА сравнивать нельзя: пустые поля
+	# «равны» друг другу и дали бы OK без измерения.
+	if ! snap_ok "$before" || ! snap_ok "$pp" || ! snap_ok "$pn"; then
+		skip "пауза: состояние снять не удалось (пустой снимок или пустой режим) — проверка не выполнена"
 	else
 		hold_mode=$(fld "$before" 1)
 		if [ "$hold_mode" = "$ORIG_MODE" ]; then
@@ -278,10 +309,10 @@ if [ "$OWN_AFR_TEST" = 1 ]; then
 		sleep "$HOLD_WAIT"
 		s=$(snap)
 		echo "состояние: ${s:-<пустой снимок>}"
-		if [ -z "$s" ]; then
-			# пустой снимок дал бы «режим выставлен нашим демоном (backdoor=)» —
-			# это неверный вердикт, а не измерение
-			skip "свой AFR: снимок состояния не снят — проверка не выполнена"
+		if ! snap_ok "$s"; then
+			# снимок без поля режима дал бы «режим выставлен нашим демоном
+			# (backdoor=)» — это неверный вердикт, а не измерение
+			skip "свой AFR: снимок состояния (или поле режима) не снят — проверка не выполнена"
 		else
 			m=$(fld "$s" 1)
 			b=$(fld "$s" 4)
@@ -307,7 +338,7 @@ if [ "$API_TEST" = 1 ]; then
 
 	# 1) status: на ATV14-пути update_stats() берёт поля из состояния цикла,
 	#    поэтому current hz обязан быть не нулевым
-	st=$(adb -s "$D" shell 'echo status | nc -u -w1 127.0.0.1 50505' | tr -d '\r')
+	st=$(adb -s "$D" shell "echo status | timeout $API_TIMEOUT nc -u -w1 127.0.0.1 50505" | tr -d '\r')
 	echo "status: $(printf '%s' "$st" | tr '\n' ' ')"
 	if printf '%s' "$st" | grep -qE '^current hz:[1-9]'; then
 		ok "API: status отвечает, current hz не нулевой"
@@ -367,7 +398,7 @@ if [ "$API_TEST" = 1 ]; then
 		[ -n "$lines0" ] || lines0=0
 
 		adb -s "$D" shell "am start -n $PLAYER -a android.intent.action.VIEW -d file://$file -t video/mp4" >/dev/null
-		adb -s "$D" shell 'echo "frame_rate_hint 23976" | nc -u -w1 127.0.0.1 50505' >/dev/null
+		adb -s "$D" shell "echo 'frame_rate_hint 23976' | timeout $API_TIMEOUT nc -u -w1 127.0.0.1 50505" >/dev/null
 		sleep "$HOLD_WAIT"
 
 		hint=$(adb -s "$D" shell "tail -n +$((lines0 + 1)) $AFRD_LOG 2>/dev/null | grep 'по подсказке' | tail -1" | tr -d '\r')
