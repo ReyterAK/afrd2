@@ -1,6 +1,6 @@
 #!/bin/sh
 
-test -z "$NDK" && export NDK=/usr/local/app/Android/SDK/ndk-bundle
+test -z "$NDK" && export NDK=$HOME/Android/Sdk/android-ndk-r26d
 $NDK/ndk-build $* || exit $?
 
 test -n "$*" && exit 0
