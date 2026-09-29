@@ -1102,13 +1102,13 @@ git commit -m "feat: чтение состояния декодера (vdec_stat
 
 **Files:**
 - Create: `platform.h`, `platform.c`, `config/afrd2.ini`
-- Modify: `afrd.h` (новые extern'ы), `GNUmakefile`, `jni/Android.mk`
+- Modify: `afrd.h`, `GNUmakefile` (`AFRD_SRC` += новые модули, `-lm`)
 
 **Interfaces:**
 - Consumes: `exec_capture()` (Task 3), `sink_build_sf_reset()` (Task 3), `sfmodes*` (Task 2).
 - Produces:
   - `typedef enum { PLAT_LEGACY = 0, PLAT_ATV14 = 1 } platform_kind_t;`
-  - `typedef struct { platform_kind_t kind; sink_kind_t sink; const char *vdec_status; const char *hdmi_state; const char *sf_dump_cmd; bool sf_backdoor; } platform_t;`
+  - `typedef struct { platform_kind_t kind; sink_kind_t sink; const char *vdec_status; const char *hdmi_state; const char *sf_dump_cmd; const char *display_dump_cmd; bool sf_backdoor; } platform_t;`
   - `platform_t platform_detect (void);`
 
 - [ ] **Step 1: Написать модуль детекта**
@@ -1135,6 +1135,7 @@ typedef struct
 	const char *vdec_status;	/* /sys/class/vdec/vdec_status */
 	const char *hdmi_state;		/* признак подключённого HDMI */
 	const char *sf_dump_cmd;	/* команда получения таблицы режимов */
+	const char *display_dump_cmd;	/* команда активного разрешения (dumpsys display) */
 	bool sf_backdoor;		/* доступна ли транзакция 1035 */
 } platform_t;
 
@@ -1148,14 +1149,15 @@ platform_t platform_detect (void);
 ```c
 #include <unistd.h>
 #include <string.h>
+#include "afrd.h"
 #include "exec.h"
 #include "platform.h"
 #include "sink.h"
-#include "sysfs.h"
 
 #define VDVC_STATUS	"/sys/class/vdec/vdec_status"
 #define HDMI_STATE_NEW	"/sys/class/extcon/extcon0/state"
 #define HDMI_STATE_OLD	"/sys/class/switch/hdmi/state"
+#define HDMI_STATE_OLD_CABLE	"/sys/class/switch/hdmi/cable.0/state"
 
 static bool sf_backdoor_available (void)
 {
@@ -1177,9 +1179,14 @@ platform_t platform_detect (void)
 
 	p.vdec_status = VDVC_STATUS;
 	p.sf_dump_cmd = "dumpsys SurfaceFlinger";
+	p.display_dump_cmd = "dumpsys display";
 
 	bool have_vdec = (sysfs_exists (VDVC_STATUS) == 0);
-	bool have_old_hdmi = (sysfs_exists (HDMI_STATE_OLD) == 0);
+	/* Android 6/7: switch/hdmi/state; Android 8/9: switch/hdmi/cable.0/state.
+	 * Оба пути обязаны увести на legacy-ветку: иначе живым A8/A9-боксам
+	 * выключится их штатный AFR (R18). */
+	bool have_old_hdmi = (sysfs_exists (HDMI_STATE_OLD) == 0) ||
+	                     (sysfs_exists (HDMI_STATE_OLD_CABLE) == 0);
 
 	if (have_vdec && !have_old_hdmi)
 	{
@@ -1192,7 +1199,8 @@ platform_t platform_detect (void)
 	{
 		p.kind = PLAT_LEGACY;
 		p.sink = SINK_LEGACY;
-		p.hdmi_state = HDMI_STATE_OLD;
+		p.hdmi_state = (sysfs_exists (HDMI_STATE_OLD) == 0)
+		             ? HDMI_STATE_OLD : HDMI_STATE_OLD_CABLE;
 		p.sf_backdoor = false;
 	}
 
@@ -1245,20 +1253,25 @@ cs.select=2160p[4-9].*=420 .*=444
 cs.list.path=/sys/class/amhdmitx/amhdmitx0/dc_cap
 cs.path=/sys/class/amhdmitx/amhdmitx0/attr
 
-# окружение (переопределяется автодетектом, если пусто)
-vdec.sysfs=/sys/class/vdec
-hdmi.state=/sys/class/extcon/extcon0/state
+# Пути sysfs (vdec_status, состояние HDMI) задаются автодетектом окружения
+# (platform_detect); в конфиге они не переопределяются.
 ```
 
 - [ ] **Step 3: Сборка (host) + тесты не должны сломаться**
 
 Run: `sh tests/run_tests.sh && make -f GNUmakefile MODE=debug`
-Expected: тесты `OK`; сборка `make` создаёт `out/debug/afrd` (с новыми файлами в `AFRD_SRC`).
+Expected: тесты `OK`; сборка `make` создаёт `out/debug/afrd`.
+
+Обязательно (R16): в `GNUmakefile` список `AFRD_SRC` дополняется **всеми** модулями задач 1–5
+(`fps_class.c sfmodes.c sink.c guard.c exec.c vdec.c platform.c` — какие ещё не в списке),
+иначе `make` не слинкуется (`undefined reference` на `exec_capture`, `sink_build_sf_reset`).
+`fps_class.c` использует `math.h` → в `LDFLAGS` нужен `-lm`.
+**`jni/Android.mk` не трогать** — его владелец Task 8 (R4).
 
 - [ ] **Step 4: Коммит**
 
 ```bash
-git add platform.h platform.c config/afrd2.ini GNUmakefile jni/Android.mk afrd.h
+git add platform.h platform.c config/afrd2.ini GNUmakefile afrd.h
 git commit -m "feat: автодетект окружения и конфиг-профиль для Android 10-14"
 ```
 
@@ -1317,11 +1330,11 @@ static void sf_modes_refresh (const platform_t *plat)
 /* Активное разрешение из DisplayManager ("real 1920 x 1080").
  * Нужно независимо от частоты: в списке SurfaceFlinger одна и та же частота
  * встречается на разных разрешениях (напр. 59.94 Гц -> 1080p id 0 и 720p id 8). */
-static int active_display_size (int *w, int *h)
+static int active_display_size (const platform_t *plat, int *w, int *h)
 {
 	static char dump [64 * 1024];
 
-	if (exec_capture ("dumpsys display", dump, sizeof (dump)) != 0)
+	if (exec_capture (plat->display_dump_cmd, dump, sizeof (dump)) != 0)
 		return -1;
 
 	const char *p = strstr (dump, "real ");
@@ -1353,7 +1366,7 @@ static int sf_active_mode (const platform_t *plat, sf_mode_t *out)
 		sf_modes_refresh (plat);
 
 	int w = 0, h = 0, id;
-	if (active_display_size (&w, &h) == 0)
+	if (active_display_size (plat, &w, &h) == 0)
 		id = sfmodes_find (g_sf_modes, g_sf_modes_n, hz, w, h);
 	else
 	{
@@ -1376,11 +1389,11 @@ static int sf_active_mode (const platform_t *plat, sf_mode_t *out)
 
 /* Предпочтительный режим пользователя (настройка Android TV).
  * Возврат: mode id или -1, если пользователь его не задавал. */
-static int preferred_mode_id (void)
+static int preferred_mode_id (const platform_t *plat)
 {
 	static char dump [64 * 1024];
 
-	if (exec_capture ("dumpsys display", dump, sizeof (dump)) != 0)
+	if (exec_capture (plat->display_dump_cmd, dump, sizeof (dump)) != 0)
 		return -1;
 
 	const char *p = strstr (dump, "mUserPreferredModeId=");
@@ -1399,7 +1412,7 @@ int run_atv14 (const platform_t *plat)
 	bool video = false;
 	vdec_status_t v0, v1;
 	int retries = 0;
-	int preferred_id = preferred_mode_id ();
+	int preferred_id = preferred_mode_id (plat);
 
 	sf_modes_refresh (plat);
 
