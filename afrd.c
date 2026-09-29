@@ -1230,6 +1230,34 @@ static int atv14_wait (int ms)
 	return 0;
 }
 
+/* Единственная точка, где id режима уходит в транзакцию 1035 (R44): id обязан
+ * присутствовать в ТЕКУЩЕЙ таблице режимов, иначе SurfaceFlinger получил бы
+ * чужой или уже не существующий id (сменилась нумерация, дамп не прочитался,
+ * таблица ещё не получена). Заодно здесь же логируется провал применения.
+ * Возврат: 0 — режим переключён; -1 — id нет в текущей таблице;
+ *          -2 — транзакция не удалась. */
+static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skipped)
+{
+	if (sf_id < 0)
+		return -1;
+
+	if ((g_sf_modes_n <= 0) ||
+	    (sfmodes_current_hz (g_sf_modes, g_sf_modes_n, sf_id) == 0))
+	{
+		trace (1, "id %d отсутствует в текущей таблице режимов — %s\n",
+		       sf_id, skipped);
+		return -1;
+	}
+
+	if (sink_apply (plat->sink, g_mode_path, sf_id, NULL) != 0)
+	{
+		trace (1, "backdoor не применил режим id %d\n", sf_id);
+		return -2;
+	}
+
+	return 0;
+}
+
 /* Отказ от удержания режима: частоту определить не удалось — вернуть исходный
  * режим, снять флаг backdoor и забыть состояние удержания. */
 static void atv14_give_up (const platform_t *plat,
@@ -1238,10 +1266,14 @@ static void atv14_give_up (const platform_t *plat,
 	if (!*held)
 		return;
 
-	sink_apply (plat->sink, g_mode_path, *orig_sf_id, NULL);
+	/* устаревший id в 1035 не уходит: atv14_apply_mode проверит его по
+	 * текущей таблице, а удержание снимется в любом случае */
+	if (atv14_apply_mode (plat, *orig_sf_id,
+	                      "возврат пропущен, флаг backdoor снят") == 0)
+		*cur_sf_id = *orig_sf_id;
+
 	sink_release_backdoor (plat->sink);
 	guard_note_restored (held);
-	*cur_sf_id = *orig_sf_id;
 	*orig_sf_id = -1;
 }
 
@@ -1653,10 +1685,8 @@ static int run_atv14 (const platform_t *plat)
 
 		if (act == GUARD_SWITCH)
 		{
-			if (sink_apply (plat->sink, g_mode_path, want_sf_id, NULL) == 0)
+			if (atv14_apply_mode (plat, want_sf_id, "переключение пропущено") == 0)
 				cur_sf_id = want_sf_id;
-			else
-				trace (1, "переключение режима не удалось\n");
 		}
 		else if (act == GUARD_RESTORE)
 		{
@@ -1665,10 +1695,20 @@ static int run_atv14 (const platform_t *plat)
 			 * выполняется всегда. Флаг backdoor снимаем в любом случае. */
 			if (restore_on_stop || v0.active)
 			{
-				if (sink_apply (plat->sink, g_mode_path, orig_sf_id, NULL) == 0)
+				int rc = atv14_apply_mode (plat, orig_sf_id,
+				                           "возврат пропущен, флаг backdoor снят");
+				if (rc == 0)
 				{
 					guard_note_restored (&held);
 					cur_sf_id = orig_sf_id;
+					orig_sf_id = -1;
+				}
+				else if (rc == -1)
+				{
+					/* id исчез из таблицы (сменилась нумерация) — возвращать
+					 * нечего: удержание снимаем, иначе каждый оборот цикла
+					 * повторяли бы эту ветку и лог */
+					guard_note_restored (&held);
 					orig_sf_id = -1;
 				}
 			}
@@ -1689,16 +1729,11 @@ static int run_atv14 (const platform_t *plat)
 	}
 
 	/* выход: гарантированно вернуть систему в исходное состояние.
-	 * Если таблица режимов успела смениться, а обработка флага не дошла
-	 * (выход во время замера), id в orig_sf_id — из старой нумерации:
-	 * в 1035 его не отправляем, только снимаем флаг. */
+	 * Id из кэша проверяет atv14_apply_mode: если его в текущей таблице уже
+	 * нет (или таблица неизвестна), в 1035 он не уходит — снимаем только флаг. */
 	if (held)
 	{
-		if (g_sf_table_changed)
-			trace (1, "выход при сменившейся таблице режимов: исходный id не применяю\n");
-		else
-			sink_apply (plat->sink, g_mode_path, orig_sf_id, NULL);
-
+		atv14_apply_mode (plat, orig_sf_id, "возврат пропущен, флаг backdoor снят");
 		sink_release_backdoor (plat->sink);
 		guard_note_restored (&held);
 	}
