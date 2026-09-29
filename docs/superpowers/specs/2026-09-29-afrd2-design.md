@@ -68,7 +68,7 @@ service call SurfaceFlinger 1035 i32 <несущ. modeId>   # вернуть BAD
 Один демон (c, bionic, armeabi-v7a), запуск под root. Никаких HAL/патчей прошивки.
 
 ```
-   ┌────────────── afrd-atv14 (root) ──────────────┐
+   ┌────────────── afrd2 (root) ──────────────┐
    │ 1 trigger    poll /sys/class/vdec/vdec_status │
    │ 2 fps        Δframe_count/Δt → класс частоты   │
    │ 3 resolver   список режимов SF (id↔Hz)         │
@@ -77,7 +77,7 @@ service call SurfaceFlinger 1035 i32 <несущ. modeId>   # вернуть BAD
    │ 6 api        UDP 50505 (совместим с upstream)  │
    │ 7 state      shmem-файл статуса                │
    └───────────────────────────────────────────────┘
-         файл конфига: /data/adb/afrd-atv14/afrd.ini
+         файл конфига: <кэш приложения>/afrd.ini  (вариант B, §8.1)
 ```
 
 ### 3.1 Компоненты и интерфейсы
@@ -145,7 +145,7 @@ cs.list.path=/sys/class/amhdmitx/amhdmitx0/dc_cap
 cs.path=/sys/class/amhdmitx/amhdmitx0/attr
 hdmi.state=/sys/class/extcon/extcon0/state
 vdec.sysfs=/sys/class/vdec
-log.file=/data/adb/afrd-atv14/afrd.log
+log.file=/data/local/afrd.log
 log.enable=1
 ```
 

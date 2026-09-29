@@ -13,7 +13,7 @@
 **Tech Stack:** C (bionic, armeabi-v7a), NDK (`ndk-build`), host-сборка gcc для юнит-тестов,
 ADB-скрипты стенда, Android 14 (`service call SurfaceFlinger 1035`).
 
-**Spec:** `docs/superpowers/specs/2026-09-29-afrd-atv14-design.md` (журнал анализа:
+**Spec:** `docs/superpowers/specs/2026-09-29-afrd2-design.md` (журнал анализа:
 `/home/reyter/AI/afrd2-journal.md`).
 
 ## Global Constraints
@@ -57,7 +57,7 @@ ADB-скрипты стенда, Android 14 (`service call SurfaceFlinger 1035`)
 | `tests/run_tests.sh` | host-раннер юнит-тестов (gcc, без Android) |
 | `tests/test_fps_class.c`, `tests/test_sfmodes.c`, `tests/test_sink.c`, `tests/test_guard.c`, `tests/test_vdec.c` | юнит-тесты |
 | `tests/fixtures/sf_modes.txt`, `tests/fixtures/vdec_status_playing.txt`, `tests/fixtures/vdec_status_idle.txt` | реальные образцы вывода с бокса |
-| `config/afrd-atv14.ini` | профиль конфига для Android 10–14 |
+| `config/afrd2.ini` | профиль конфига для Android 10–14 |
 | `tools/stand/*.sh` | сценарии стенда (запуск клипа, проверка режима, матрица приёмки) |
 
 Изменяются:
@@ -1094,7 +1094,7 @@ git commit -m "feat: чтение состояния декодера (vdec_stat
 ### Task 5: Детект окружения (`platform`) и профиль конфига ATV14
 
 **Files:**
-- Create: `platform.h`, `platform.c`, `config/afrd-atv14.ini`
+- Create: `platform.h`, `platform.c`, `config/afrd2.ini`
 - Modify: `afrd.h` (новые extern'ы), `GNUmakefile`, `jni/Android.mk`
 
 **Interfaces:**
@@ -1203,7 +1203,7 @@ platform_t platform_detect (void)
 
 - [ ] **Step 2: Профиль конфига**
 
-`config/afrd-atv14.ini`:
+`config/afrd2.ini`:
 
 ```ini
 # AFRd2: Android 10-14, ядро 5.x (S905X5M и подобные)
@@ -1251,7 +1251,7 @@ Expected: тесты `OK`; сборка `make` создаёт `out/debug/afrd` (
 - [ ] **Step 4: Коммит**
 
 ```bash
-git add platform.h platform.c config/afrd-atv14.ini GNUmakefile jni/Android.mk afrd.h
+git add platform.h platform.c config/afrd2.ini GNUmakefile jni/Android.mk afrd.h
 git commit -m "feat: автодетект окружения и конфиг-профиль для Android 10-14"
 ```
 
@@ -1685,7 +1685,7 @@ Expected: `libs/armeabi-v7a/afrd` создан; `file libs/armeabi-v7a/afrd` →
 set -e
 D=${D:-192.168.88.50:5555}
 adb -s $D push libs/armeabi-v7a/afrd /data/local/tmp/afrd
-adb -s $D push config/afrd-atv14.ini /data/local/tmp/afrd.ini
+adb -s $D push config/afrd2.ini /data/local/tmp/afrd.ini
 adb -s $D shell 'chmod 755 /data/local/tmp/afrd'
 adb -s $D shell '/data/local/tmp/afrd -v -D /data/local/tmp/afrd.ini' &
 sleep 3
@@ -1706,7 +1706,7 @@ git commit -m "build: сборка armeabi-v7a через NDK r26d, скрипт
 
 **Files:**
 - Create: `tools/stand/play_clip.sh`, `tools/stand/check_mode.sh`, `tools/stand/acceptance_matrix.sh`
-- Modify: `README.md`, `ChangeLog-ru.txt`, `docs/superpowers/specs/2026-09-29-afrd-atv14-design.md` (отметка о статусе)
+- Modify: `README.md`, `ChangeLog-ru.txt`, `docs/superpowers/specs/2026-09-29-afrd2-design.md` (отметка о статусе)
 
 **Interfaces:**
 - Consumes: собранный демон на стенде (Task 8).
