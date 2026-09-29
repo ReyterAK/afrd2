@@ -1,0 +1,15 @@
+vdec channel 0 statistics:
+  device name : ammvdec_h264_v4
+  frame width : 1920
+ frame height : 1080
+   frame rate : 24 fps
+     bit rate : 3640 kbps
+       status : 6
+    frame dur : 4004
+   frame data : 0 KB
+  frame count : 13516
+   drop count : 0
+fra err count : 0
+ hw err count : 0
+   total data : 0 KB
+ratio_control : 9000

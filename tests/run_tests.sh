@@ -15,4 +15,5 @@ run test_sfmodes sfmodes.c
 run test_guard guard.c
 run test_exec exec.c
 run test_sink sink.c exec.c tests/stub.c
+run test_vdec vdec.c fps_class.c
 exit $status
