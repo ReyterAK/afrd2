@@ -37,7 +37,8 @@ $(OUT).stamp.dir:
 	touch $@
 
 AFRD_SRC = main.c afrd.c sysfs.c cfg_parse.c cfg.c modes.c mstime.c uevent_filter.c \
-	colorspace.c strfun.c shmem.c apisock.c crc32.c androp.c
+	colorspace.c strfun.c shmem.c apisock.c crc32.c androp.c hdcp.c \
+	fps_class.c sfmodes.c sink.c guard.c exec.c vdec.c platform.c
 
 $(OUT)afrd: $(addprefix $(OUT),$(AFRD_SRC:.c=.o))
-	$(LD) $(LDFLAGS.local) $(LDFLAGS) -o $@ $^
+	$(LD) $(LDFLAGS.local) $(LDFLAGS) -o $@ $^ -lm
