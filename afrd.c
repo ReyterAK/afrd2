@@ -1279,8 +1279,10 @@ static int run_atv14 (const platform_t *plat)
 		if (!video)
 		{
 			want_sf_id = -1;
-			/* видео закончилось — следующее мерим заново */
+			/* видео закончилось — следующее мерим заново: и счётчик попыток,
+			 * и признак «частота не определилась» относятся к текущему видео */
 			measure_failed = false;
+			retries = 0;
 		}
 		else if (!measure_failed && (want_sf_id < 0))
 		{
