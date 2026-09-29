@@ -1642,6 +1642,24 @@ git commit -m "feat(atv14): новый путь run_atv14 — поллинг д�
 
 ---
 
+**Фактическое состояние после Task 6** (проверено ревью и re-review; коммиты `487f6c8`, `d55a135`, `6320135`):
+код Step 2 выше — черновик; реализация отличается в пяти местах, и именно она прошла ревью
+(4 Important + 1 регрессия закрыты) и смоук 52/52:
+
+1. `v0` перечитывается непосредственно перед окном замера (иначе `trigger.start.debounce.ms` входит в
+   дельту кадров, но не в `dt`: 23.976 → ~31 fps → 30 Гц на весь фильм).
+2. Окно замера бьётся на 3 под-среза; выборка принимается, только если декодер активен на краях и
+   счётчик строго растёт в каждом под-срезе, иначе — в `retries`.
+3. Сентинел `want_sf_id = -2` удалён; вместо него `bool measure_failed` + `atv14_give_up()`;
+   `measure_failed` и `retries` сбрасываются на конце видео.
+4. Ожидание в цикле — `atv14_wait(ms)` (`apisock_prep_poll` + `poll` + `apisock_handle`) вместо
+   `msleep`, плюс `mstime_update()` в цикле; `afrd_refresh_rate()` при `PLAT_ATV14` рано выходит с логом.
+5. `!plat->sf_backdoor` → пассивный режим (лог уровня 0 + `atv14_wait` в цикле, без `sink_apply`).
+
+Источник истины по коду — `afrd.c` (`run_atv14`, `atv14_wait`, `atv14_give_up`); этот блок — карта отличий.
+
+---
+
 ### Task 7: Guard-обработчики, стартовая страховка, инвалидация таблицы режимов
 
 **Files:**
@@ -1669,9 +1687,46 @@ static void on_term (int sig)
 	signal (SIGINT, on_term);
 ```
 
-- [ ] **Step 2: Инвалидация таблицы режимов при рестарте SurfaceFlinger**
+- [ ] **Step 1a: Страховки в ATV14-цикле (R34): «потерянное видео», статистика для API, новое видео внутри `stop_deb`**
 
-В цикле `run_atv14()` (каждые ~5 с):
+1. **Страховочный таймаут «видео потерялось»** (спека §3.1: guard снимает флаг в том числе «при
+   истечении страховочного таймаута, если видео потерялось»). Сейчас при устойчивом отказе
+   `vdec_read()` цикл делает `continue`, поэтому `held` и флаг backdoor могут залипнуть навсегда
+   (сценарий: драйвер перестал отдавать `vdec_status`). Реализация: помнить время последнего
+   **успешного** чтения, в котором декодер был активен (`last_ok_us`), и при
+   `held && (now_us() - last_ok_us > timeout_ms)` выполнить `atv14_give_up()`, лог уровня 0
+   («видео потеряно: N мс без данных декодера»), `video = false`, `want_sf_id = -1`.
+   `timeout_ms` — существующий upstream-ключ `switch.timeout` (дефолт 3000; в профиль добавлять не
+   нужно, `cfg_get_int` вернёт дефолт).
+2. **Статистика для API `status`**: `update_stats()`/`shmem_update()` вызываются только в legacy-цикле,
+   поэтому `afrd -s`/`status` в ATV14 отвечает нулями. Вызывать в ATV14-цикле по тикам (напр.
+   `ticks % 3 == 0`) — с той же частотой, что и в legacy.
+3. **Новое видео внутри `stop_deb`**: если следующее видео начнётся раньше истечения
+   `trigger.stop.debounce.ms`, `vdec_read()` не отдаст «пусто», `video` не переключится, и старое
+   `want_sf_id`/`measure_failed` останутся — новое видео отыграет в прежнем режиме без AFR.
+   Детект: `v0.frames < prev_frames` (декодер поднял новый инстанс и счётчик сбросился) → сбросить
+   `want_sf_id = -1`, `measure_failed = false`, `retries = 0`. `held`/`orig_sf_id` не трогать: режим
+   уже наш. Допущение «счётчик сбрасывается на новом инстансе» подтвердить на стенде (Task 9); при
+   ложном срабатывании цена мала — повторный замер даст тот же режим и `GUARD_NONE`.
+4. **Отказ чтения `vdec_status`**: вести счётчик подряд идущих отказов и один раз логировать уровень 0,
+   если серия превысила `switch.timeout / trigger.poll.ms`. Backoff — задача на будущее (§5 спеки),
+   здесь не делаем.
+
+- [ ] **Step 2: Инвалидация таблицы режимов и предпочтительного режима при рестарте SurfaceFlinger**
+
+Реальный вид цикла после Task 6 (`afrd.c`, `run_atv14`):
+
+```c
+	while (!g_shutdown)
+	{
+		mstime_update ();
+		if (atv14_wait (cur_hz) != 0)		/* poll + apisock_handle */
+			msleep (cur_hz);
+		…
+	}
+```
+
+Счётчик тиков объявляется среди локальных `run_atv14()` (R5) — `int ticks = 0;`:
 
 ```c
 		if (++ticks % 16 == 0)		/* ~каждые 5 с при 300 мс */
@@ -1682,11 +1737,16 @@ static void on_term (int sig)
 			{
 				last_sf_pid = sf_pid;
 				sf_modes_refresh (plat);
+				preferred_id = preferred_mode_id (plat);	/* id тоже кэширован (спека §7) */
 			}
 		}
 ```
 
-`pidof()` — маленькая обёртка (`exec_capture("pidof surfaceflinger")` + `atoi`), реализуется тут же:
+`preferred_id` в `run_atv14()` сейчас вычисляется один раз и не меняется — сделать его изменяемой
+локальной, которую инвалидация перезаписывает. В пассивном режиме (нет backdoor) инвалидировать
+нечего (переключений нет), но цикл обязан продолжать обслуживать API через `atv14_wait()`.
+
+`pidof()` — обёртка в ATV14-секции:
 
 ```c
 static pid_t pidof (const char *name)
@@ -1714,6 +1774,10 @@ adb -s 192.168.88.50:5555 shell 'cat /sys/class/display/mode; dumpsys SurfaceFli
 ```
 Expected: режим вернулся к исходному (`1080p60hz`), `debugDisplayModeSetByBackdoor=false`.
 
+**Если стенд недоступен** (проверено 2026-09-29: `adb connect 192.168.88.50:5555` → `No route to host`,
+`ping` без ответа) — шаг не блокирует задачу: отметить в отчёте как непроверенное, живая приёмка
+переносится в Task 9 (нужен включённый бокс).
+
 - [ ] **Step 4: Коммит**
 
 ```bash
@@ -1733,12 +1797,15 @@ git commit -m "feat(atv14): корректное завершение (SIGTERM/S
 - Consumes: исходники демона.
 - Produces: `libs/armeabi-v7a/afrd`, залитый в `/data/local/tmp/afrd` на стенде.
 
-- [ ] **Step 1: Установить NDK и указать путь**
+- [ ] **Step 1: NDK и путь к нему**
+
+NDK r26d **уже установлен** (2026-09-29) в `/home/reyter/Android/Sdk/android-ndk-r26d`
+(`ndk-build --version` → GNU Make 4.3). Повторить установку при необходимости:
 
 ```bash
-sudo apt-get install -y -qq unzip
-cd /opt && sudo curl -sLO https://dl.google.com/android/repository/android-ndk-r26d-linux.zip && sudo unzip -q android-ndk-r26d-linux.zip
+cd $HOME/Android/Sdk && curl -LO https://dl.google.com/android/repository/android-ndk-r26d-linux.zip && unzip -q android-ndk-r26d-linux.zip
 ```
+
 `jni/Application.mk`:
 ```
 APP_OPTIM := release
@@ -1755,12 +1822,12 @@ LOCAL_SRC_FILES := $(addprefix ../,main.c afrd.c sysfs.c cfg_parse/cfg_parse.c \
 ```
 `mka`/`mkad` — путь NDK по умолчанию:
 ```sh
-test -z "$NDK" && export NDK=/opt/android-ndk-r26d
+test -z "$NDK" && export NDK=$HOME/Android/Sdk/android-ndk-r26d
 ```
 
 - [ ] **Step 2: Собрать**
 
-Run: `NDK=/opt/android-ndk-r26d ./mka`
+Run: `NDK=$HOME/Android/Sdk/android-ndk-r26d ./mka`
 Expected: `libs/armeabi-v7a/afrd` создан; `file libs/armeabi-v7a/afrd` → `ELF 32-bit LSB ... ARM`.
 
 - [ ] **Step 3: Залить и запустить на стенде**
