@@ -1,0 +1,9 @@
+        {id=0, hwcId=0, resolution=1920x1080, refreshRate=59.94 Hz, dpi=47.81x48.13, group=0}
+        {id=1, hwcId=1, resolution=1920x1080, refreshRate=60.00 Hz, dpi=47.81x48.13, group=1}
+        {id=2, hwcId=2, resolution=1920x1080, refreshRate=50.00 Hz, dpi=47.81x48.13, group=4}
+        {id=3, hwcId=3, resolution=1920x1080, refreshRate=29.97 Hz, dpi=47.81x48.13, group=6}
+        {id=4, hwcId=4, resolution=1920x1080, refreshRate=30.00 Hz, dpi=47.81x48.13, group=7}
+        {id=5, hwcId=5, resolution=1920x1080, refreshRate=25.00 Hz, dpi=47.81x48.13, group=8}
+        {id=6, hwcId=6, resolution=1920x1080, refreshRate=23.98 Hz, dpi=47.81x48.13, group=9}
+        {id=7, hwcId=7, resolution=1920x1080, refreshRate=24.00 Hz, dpi=47.81x48.13, group=10}
+        {id=8, hwcId=8, resolution=1280x720, refreshRate=59.94 Hz, dpi=31.87x32.08, group=11}

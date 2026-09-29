@@ -11,4 +11,5 @@ run() { # run <test.c> <extra-sources...>
 	./out/host-tests/$name || status=1
 }
 run test_fps_class fps_class.c
+run test_sfmodes sfmodes.c
 exit $status
