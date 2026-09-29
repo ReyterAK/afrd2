@@ -142,6 +142,15 @@ static void signal_handler (int sig)
 	g_shutdown = 1;
 }
 
+/* Завершение (SIGTERM/SIGINT): основной цикл вернёт исходный режим и снимет
+ * флаг backdoor. Второй такой сигнал — немедленный выход: значит, цикл не
+ * ответил и завершение затянулось. */
+static void on_term (int sig)
+{
+	g_shutdown = 1;
+	signal (sig, SIG_DFL);
+}
+
 static void signal_emerg (int sig)
 {
 	// shit happened, just remove files and quit
@@ -394,9 +403,9 @@ int main (int argc, char *const *argv)
 			break;
 
 	signal (SIGHUP, SIG_IGN);
-	signal (SIGINT, signal_handler);
 	signal (SIGQUIT, signal_handler);
-	signal (SIGTERM, signal_handler);
+	signal (SIGINT, on_term);
+	signal (SIGTERM, on_term);
 
 	signal (SIGFPE, signal_emerg);
 	signal (SIGILL, signal_emerg);

@@ -214,14 +214,37 @@ static bool uevent_open (int buf_sz)
 	return true;
 }
 
+/* ---- ATV14: состояние для статистики API (afrd -s, status) ----
+ * run_atv14() не ведёт legacy-структуры g_state/g_current_mode, поэтому
+ * актуальные значения складываются сюда, а update_stats() их подхватывает. */
+static struct
+{
+	bool valid;		/* ATV14-цикл уже заполнил поля */
+	bool switched;		/* режим уведён от исходного (backdoor поднят) */
+	int current_hz;		/* 24.8 fixed-point */
+	int original_hz;	/* 24.8 fixed-point */
+} g_atv14_state;
+
 static void update_stats ()
 {
 	g_afrd_stats.enabled = g_enable;
-	g_afrd_stats.switched = (g_state.orig_mode.name [0] != 0);
-	g_afrd_stats.blackened = g_blackened;
-	g_afrd_stats.current_hz = display_mode_hz (&g_current_mode);
-	g_afrd_stats.original_hz = display_mode_hz (g_afrd_stats.switched ?
-		&g_state.orig_mode : &g_current_mode);
+
+	if (g_atv14_state.valid)
+	{
+		g_afrd_stats.switched = g_atv14_state.switched;
+		g_afrd_stats.blackened = false;
+		g_afrd_stats.current_hz = g_atv14_state.current_hz;
+		g_afrd_stats.original_hz = g_atv14_state.original_hz;
+	}
+	else
+	{
+		g_afrd_stats.switched = (g_state.orig_mode.name [0] != 0);
+		g_afrd_stats.blackened = g_blackened;
+		g_afrd_stats.current_hz = display_mode_hz (&g_current_mode);
+		g_afrd_stats.original_hz = display_mode_hz (g_afrd_stats.switched ?
+			&g_state.orig_mode : &g_current_mode);
+	}
+
 	shmem_update ();
 }
 
@@ -1170,6 +1193,42 @@ static void atv14_give_up (const platform_t *plat,
 	*orig_sf_id = -1;
 }
 
+/* Время последнего успешного чтения, в котором декодер был активен.
+ * Обновляется на КАЖДОЙ успешной выборке, в том числе внутри окна замера:
+ * цикл на это время блокируется, и таймер «видео потерялось» не должен
+ * принимать блокировку за потерю данных. */
+static unsigned long long g_vdec_last_ok_us;
+
+static int vdec_poll (const char *path, vdec_status_t *st)
+{
+	int rc = vdec_read (path, st);
+	if ((rc == 0) && st->active)
+		g_vdec_last_ok_us = now_us ();
+	return rc;
+}
+
+/* PID процесса по имени (toybox pidof); -1, если PID определить не удалось. */
+static pid_t pidof (const char *name)
+{
+	char cmd [64], out [64];
+	snprintf (cmd, sizeof (cmd), "pidof %s", name);
+	if (exec_capture (cmd, out, sizeof (out)) != 0)
+		return -1;
+	return (pid_t) atoi (out);
+}
+
+/* Статистика для GUI/API (afrd -s, status): legacy-структуры в ATV14 не
+ * ведутся, поэтому отдаём id текущего режима и id режима возврата. */
+static void atv14_stats_sync (int cur_sf_id, int orig_sf_id, bool held)
+{
+	g_atv14_state.valid = true;
+	g_atv14_state.switched = held;
+	g_atv14_state.current_hz =
+		sfmodes_current_hz (g_sf_modes, g_sf_modes_n, cur_sf_id);
+	g_atv14_state.original_hz = sfmodes_current_hz (g_sf_modes, g_sf_modes_n,
+		held ? orig_sf_id : cur_sf_id);
+}
+
 static int run_atv14 (const platform_t *plat)
 {
 	guard_action_t act;
@@ -1196,6 +1255,20 @@ static int run_atv14 (const platform_t *plat)
 
 	int cur_hz = cfg_get_int ("trigger.poll.ms", 300);
 	if (cur_hz < 100) cur_hz = 100;
+
+	/* Страховки ATV14-цикла (R34). */
+	int timeout_ms = cfg_get_int ("switch.timeout", DEFAULT_SWITCH_TIMEOUT);
+	/* столько опросов подряд должен молчать декодер, чтобы отказ чтения
+	 * считался серией (тот же порог, что у страховочного таймаута) */
+	int max_vdec_fails = timeout_ms / cur_hz;
+	if (max_vdec_fails < 1)
+		max_vdec_fails = 1;
+	/* время последнего успешного чтения с активным декодером —
+	 * обновляется внутри vdec_poll() */
+	g_vdec_last_ok_us = now_us ();
+	int vdec_fails = 0;
+	/* инвалидация таблицы режимов по PID SurfaceFlinger */
+	int ticks = 0;
 
 	/* Backdoor недоступен — переключать режимы нечем. Пассивный режим
 	 * (спека §3.2.6): ни одного sink_apply, только обслуживание API, чтобы
@@ -1236,8 +1309,55 @@ static int run_atv14 (const platform_t *plat)
 		if (g_shutdown)
 			break;
 
-		if (vdec_read (plat->vdec_status, &v0) != 0)
+		/* R34а: страховка «видео потерялось». Декодер молчит дольше
+		 * страховочного таймаута (драйвер перестал отдавать vdec_status),
+		 * а режим всё ещё удержан — снимаем удержание, иначе флаг backdoor
+		 * залипнет до перезагрузки. */
+		if (held && (now_us () - g_vdec_last_ok_us) > (unsigned long long) timeout_ms * 1000)
+		{
+			trace (0, "видео потеряно: %d мс без данных декодера — возвращаю режим\n",
+			       (int) ((now_us () - g_vdec_last_ok_us) / 1000));
+			atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
+			video = false;
+			want_sf_id = -1;
+		}
+
+		ticks++;
+
+		/* R34б: статистика для GUI и API (afrd -s, status) — в ATV14 её
+		 * больше никто не обновляет */
+		if (ticks % 3 == 0)
+		{
+			atv14_stats_sync (cur_sf_id, orig_sf_id, held);
+			update_stats ();
+		}
+
+		/* Step 2: PID SurfaceFlinger сменился — новый инстанс поднял свою
+		 * таблицу режимов и, возможно, новый preferred id (спека §7) */
+		if (ticks % 16 == 0)
+		{
+			static pid_t last_sf_pid = -1;
+			pid_t sf_pid = pidof ("surfaceflinger");
+			if (sf_pid != last_sf_pid)
+			{
+				last_sf_pid = sf_pid;
+				trace (1, "SurfaceFlinger: новый pid %d, перечитываю режимы\n",
+				       (int) sf_pid);
+				sf_modes_refresh (plat);
+				preferred_id = preferred_mode_id (plat);
+				trace (1, "предпочтительный режим ТВ: %d\n", preferred_id);
+			}
+		}
+
+		if (vdec_poll (plat->vdec_status, &v0) != 0)
+		{
+			/* R34г: серия отказов чтения — сообщаем один раз, без шторма */
+			if (++vdec_fails == max_vdec_fails)
+				trace (0, "vdec_status не читается: %d отказов подряд (%d мс)\n",
+				       vdec_fails, vdec_fails * cur_hz);
 			continue;
+		}
+		vdec_fails = 0;
 
 		bool new_video = v0.active;
 
@@ -1246,7 +1366,7 @@ static int run_atv14 (const platform_t *plat)
 			msleep (new_video ? start_deb : stop_deb);
 
 			vdec_status_t again;
-			if (vdec_read (plat->vdec_status, &again) == 0 && again.active == new_video)
+			if (vdec_poll (plat->vdec_status, &again) == 0 && again.active == new_video)
 				video = new_video;
 			else
 				continue;	/* дребезг старта/стопа — игнорируем */
@@ -1255,6 +1375,18 @@ static int run_atv14 (const platform_t *plat)
 		/* «пауза»: счётчик кадров не растёт на двух соседних опросах подряд */
 		if (v0.active)
 		{
+			/* R34в: новое видео началось раньше, чем истёк stop_deb —
+			 * декодер поднял новый инстанс, счётчик сбросился. Старое
+			 * решение к новому видео не относится: режим уже наш,
+			 * а частоту мерим заново. */
+			if (have_prev_frames && (v0.frames < prev_frames))
+			{
+				trace (1, "счётчик кадров сброшен — новое видео, мерю заново\n");
+				want_sf_id = -1;
+				measure_failed = false;
+				retries = 0;
+			}
+
 			if (have_prev_frames && (v0.frames == prev_frames))
 				still++;
 			else
@@ -1312,7 +1444,7 @@ static int run_atv14 (const platform_t *plat)
 				 * в начале цикла значение было бы на дебаунс старше.
 				 * Дельта кадров и dt считаются по одному интервалу —
 				 * от первого до последнего чтения выборки. */
-				if (vdec_read (plat->vdec_status, &v0) != 0)
+				if (vdec_poll (plat->vdec_status, &v0) != 0)
 					continue;
 
 				unsigned long long t0 = now_us ();
@@ -1327,7 +1459,7 @@ static int run_atv14 (const platform_t *plat)
 					msleep (slice_ms);
 
 					vdec_status_t cur;
-					if (vdec_read (plat->vdec_status, &cur) != 0)
+					if (vdec_poll (plat->vdec_status, &cur) != 0)
 						grown = false;
 					else if (!cur.active || (cur.frames <= v1.frames))
 						grown = false;
