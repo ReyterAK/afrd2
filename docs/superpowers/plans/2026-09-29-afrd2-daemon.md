@@ -121,7 +121,8 @@ static void t_classify(void)
     assert(fps_classify(59.94) == fps_rate_hz(6));
     assert(fps_classify(35.0) == 0);   /* ровно между 30 и 25 — не угадываем */
     assert(fps_classify(0.0) == 0);
-    assert(fps_classify(23.5) == 24 * 256); /* ближайший стандартный */
+    assert(fps_classify(24.05) == 24 * 256); /* чуть выше 24 -> 24 */
+    assert(fps_classify(23.5) == fps_rate_hz(0)); /* отн. ошибка меньше к 23.976, чем к 24 */
 }
 
 static void t_table(void)
