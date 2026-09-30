@@ -1436,6 +1436,9 @@ static int run_atv14 (const platform_t *plat)
 	if (window_max_ms < window_ms)
 		window_max_ms = window_ms;   /* опечатка в конфиге не должна гасить замер */
 	int max_retries = cfg_get_int ("fps.measure.retries", 3);
+	/* Уточнение замера заявленной длительностью кадра (vdec_status: frame dur),
+	 * %: на IPTV счётчик кадров завышен на 2–4% (см. fps_refine_declared) */
+	int declared_pct = cfg_get_int ("fps.declared.crosscheck.pct", 5);
 	int start_deb = cfg_get_int ("trigger.start.debounce.ms", 500);
 	int stop_deb = cfg_get_int ("trigger.stop.debounce.ms", 1500);
 
@@ -1689,6 +1692,27 @@ static int run_atv14 (const platform_t *plat)
 					if (fps_classify_window (frames_delta, dt_us, dt_unc_us, &hz))
 					{
 						decided_ms = (int)(dt_us / 1000);
+
+						/* IPTV: счётчик кадров завышен — плеер повторно
+						 * декодирует кадры на границах HLS-сегментов (живой
+						 * замер 30.09: поток 23.976 -> счётчик 24.56, +2.4%,
+						 * и 24-фпс канал уходил в 25 Гц). Заявленная длина
+						 * кадра (`frame dur`) на живых потоках совпадает с
+						 * номиналом, поэтому уточняем ею решение — но только
+						 * если она рядом (иначе это мусор в поле). */
+						if (v1.decl_dur)
+						{
+							int refined = 0;
+							if (fps_refine_declared (hz, 96000.0 / (double)v1.decl_dur,
+							                         (double)declared_pct, &refined))
+							{
+								trace (1, "частота уточнена по frame dur (%u): "
+								       HZ_FMT " Гц вместо " HZ_FMT " Гц\n",
+								       v1.decl_dur, HZ_ARGS (refined), HZ_ARGS (hz));
+								hz = refined;
+							}
+						}
+
 						break;
 					}
 
@@ -1790,12 +1814,22 @@ static int run_atv14 (const platform_t *plat)
 			}
 
 			int hint_id = sfmodes_find (g_sf_modes, g_sf_modes_n, hint_hz, w, h);
-			if (hint_id >= 0)
+			if (hint_id < 0)
+			{
+				/* режима нет в текущей таблице (напр. частота есть только для
+				 * другого разрешения): сказать об этом в лог — иначе это
+				 * неотличимо от «подсказка потеряна» (симптом R53), и не
+				 * повторять резолв на каждой итерации, пока подсказка жива */
+				hint_seen = g_frame_rate_hint.stamp;
+				trace (1, "режим для " HZ_FMT " Гц (подсказка плеера) не найден в списке\n",
+				       HZ_ARGS (hint_hz));
+			}
+			else
 			{
 				hint_seen = g_frame_rate_hint.stamp;
 				measure_failed = false;
 				want_sf_id = hint_id;
-				trace (1, "подсказка плеера: " HZ_FMT " Гц, режим id %d\n",
+				trace (1, "видео: " HZ_FMT " Гц по подсказке плеера, режим id %d\n",
 				       HZ_ARGS (hint_hz), hint_id);
 			}
 		}

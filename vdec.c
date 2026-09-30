@@ -82,6 +82,16 @@ int vdec_parse (const char *text, vdec_status_t *out)
 	if (sscanf (p + 1, "%llu", &out->frames) != 1)
 		return 0;
 
+	/* frame dur — в тиках 1/96000 с (96000/4004 = 23.976). Поле необязательное:
+	 * его отсутствие/мусор не отменяет видео, просто не будет уточнения. */
+	p = strstr (text, "frame dur");
+	if (p && (p = strchr (p, ':')))
+	{
+		unsigned dur = 0;
+		if (sscanf (p + 1, "%u", &dur) == 1)
+			out->decl_dur = dur;
+	}
+
 	out->active = true;
 	return 0;
 }

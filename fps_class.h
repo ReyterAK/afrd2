@@ -24,6 +24,23 @@ int fps_rate_group (int hz);
 int fps_classify_window (unsigned long long frames_delta, unsigned long long dt_us,
                          unsigned long long dt_unc_us, int *hz_out);
 
+/* Уточнение решения заявленной частотой кадра (vdec_status: `frame dur`).
+ *
+ * На живых IPTV-потоках замер по счётчику кадров систематически завышен: плеер
+ * повторно декодирует кадры на границах HLS-сегментов (измерено 2026-09-30:
+ * поток 23.976 fps — по PTS сегмента — счётчик показывал 24.56 fps, +2.4%), и
+ * 24-фпс контент уходил в 25 Гц. Заявленная частота в этом случае совпадает с
+ * номиналом, поэтому берём её — но только когда она близка к измеренной
+ * (не дальше max_pct): далёкое значение означает мусор в поле (на синтетических
+ * клипах драйвер рапортует 30 fps при реальных 23.976) и игнорируется.
+ *
+ * measured_hz — решение fps_classify_window() (fixed-point 24.8);
+ * declared_fps — 96000/frame dur из vdec_status;
+ * max_pct — допуск расхождения, % (0 — уточнение выключено).
+ * Возврат: 1 — решение уточнено (*hz_out = дробный представитель группы
+ * заявленной частоты), 0 — заявленная частота не годится. */
+int fps_refine_declared (int measured_hz, double declared_fps, double max_pct, int *hz_out);
+
 int fps_rate_hz (int index);
 const char *fps_rate_name (int index);
 int fps_rate_index_for_hz (int hz);

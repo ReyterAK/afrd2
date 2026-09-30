@@ -124,3 +124,28 @@ int fps_classify_window (unsigned long long frames_delta, unsigned long long dt_
 
 	return 1;
 }
+
+int fps_refine_declared (int measured_hz, double declared_fps, double max_pct, int *hz_out)
+{
+	if (hz_out)
+		*hz_out = 0;
+
+	if (!measured_hz || (declared_fps <= 0.0) || (max_pct <= 0.0))
+		return 0;
+
+	int declared = fps_classify (declared_fps);
+	if (!declared)
+		return 0;
+
+	double measured = (double)measured_hz / 256.0;
+	double decl = (double)declared / 256.0;
+	double diff = (measured > decl) ? (measured - decl) : (decl - measured);
+
+	if (diff / decl > max_pct / 100.0)
+		return 0;	/* далеко — это мусор в поле, а не уточнение */
+
+	if (hz_out)
+		*hz_out = fps_rate_hz (k_group_lead [fps_rate_index_for_hz (declared)]);
+
+	return 1;
+}

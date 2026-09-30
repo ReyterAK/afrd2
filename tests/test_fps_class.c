@@ -76,6 +76,50 @@ static void t_group(void)
 	assert(fps_rate_group(12345) == 0);   /* нестандартная частота */
 }
 
+static void t_refine_declared(void)
+{
+	int hz = -1;
+
+	/* Живой случай 30.09 (канал TEAM Bigbang HD): по PTS сегмента поток
+	 * 23.976 fps, счётчик кадров давал 24.562 -> классификация 25 Гц.
+	 * `frame dur` 4004 (23.976) рядом с замером => уточняем до группы 24. */
+	assert(fps_refine_declared(25 * 256, 96000.0 / 4004.0, 5.0, &hz) == 1);
+	assert(hz == fps_rate_hz(0));
+
+	/* 25-фпс поток (Первый канал): заявлено 25.0, замер 25.95 — та же группа */
+	assert(fps_refine_declared(25 * 256, 96000.0 / 3840.0, 5.0, &hz) == 1);
+	assert(hz == fps_rate_hz(2));
+
+	/* Локальный клип 23.976: драйвер рапортует 30 fps (мусор), от замера далеко —
+	 * уточнять нельзя, иначе 23.976 уехал бы в 30 Гц */
+	assert(fps_refine_declared(fps_rate_hz(0), 96000.0 / 3200.0, 5.0, &hz) == 0);
+
+	/* выключено и вырожденные случаи */
+	assert(fps_refine_declared(25 * 256, 23.976, 0.0, &hz) == 0);
+	assert(fps_refine_declared(0, 23.976, 5.0, &hz) == 0);
+	assert(fps_refine_declared(25 * 256, 0.0, 5.0, &hz) == 0);
+	assert(fps_refine_declared(25 * 256, 47.0, 5.0, &hz) == 0);  /* 47 не стандарт */
+}
+
+/* Сквозной путь замера, как он идёт в afrd.c: решение по окну -> уточнение
+ * заявленной длительностью кадра. Числа — из живых замеров канала
+ * TEAM Bigbang HD (OTT Navigator): 136 кадров за 5.507 с = 24.694 fps,
+ * frame dur 4004 (23.976). До правки демон выбирал 25 Гц (mode id 20/50),
+ * после — 24 Гц (id 21/51). */
+static void t_live_scenario(void)
+{
+	int hz = 0, refined = 0;
+
+	assert(fps_classify_window(136, 5507000, 0, &hz) == 1);
+	assert(hz == fps_rate_hz(2));                    /* 25 Гц — как было */
+	assert(fps_refine_declared(hz, 96000.0 / 4004.0, 5.0, &refined) == 1);
+	assert(refined == fps_rate_hz(0));               /* 23.976 -> 24 Гц, как надо */
+
+	/* а если бы frame dur был мусорным (30 fps, как на синтетических клипах),
+	 * уточнения нет и остаётся прежнее решение */
+	assert(fps_refine_declared(hz, 96000.0 / 3200.0, 5.0, &refined) == 0);
+}
+
 static void t_table(void)
 {
 	assert(strcmp(fps_rate_name(0), "23.976") == 0);
@@ -88,6 +132,8 @@ int main(void)
 {
 	t_classify();
 	t_classify_window();
+	t_refine_declared();
+	t_live_scenario();
 	t_group();
 	t_table();
 	printf("fps_class: OK\n");

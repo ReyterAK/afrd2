@@ -29,6 +29,8 @@ int main (void)
 	assert (st.active);
 	assert (strcmp (st.device, "ammvdec_h264_v4") == 0);
 	assert (st.frames == 13516);
+	/* frame dur парсится только как уточнение (96000/4004 = 23.976) */
+	assert (st.decl_dur == 4004);
 
 	/* мусор не должен "включать" видео */
 	assert (vdec_parse ("vdec channel 0 statistics:\n  frame count : 5\n", &st) == 0);
