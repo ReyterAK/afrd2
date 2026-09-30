@@ -24,7 +24,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
-import eu.chainfire.libsuperuser.Shell;
+import ru.cobra.zap.afrd.RootShell;
 import ru.cobra.zap.afrd.Control;
 
 public class LogFragment extends Fragment
@@ -218,7 +218,7 @@ public class LogFragment extends Fragment
 
         String[] cmd = new String [] { "rm -f '" + mLog.getPath ().replace ("'", "'\"'\"'") + "'" };
         Log.d ("afrd", "Run: " + Arrays.toString (cmd));
-        Shell.run ("su", cmd, null, false);
+        RootShell.run (cmd, null);
 
         Control ctl = new Control (getActivity ());
         ctl.reload ();

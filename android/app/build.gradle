@@ -39,7 +39,6 @@ android {
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
-    implementation 'eu.chainfire:libsuperuser:1.0.0.+'
 }
 
 android {

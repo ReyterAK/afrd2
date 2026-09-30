@@ -44,7 +44,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Vector;
 
-import eu.chainfire.libsuperuser.Shell;
+import ru.cobra.zap.afrd.RootShell;
 import ru.cobra.zap.afrd.Config;
 import ru.cobra.zap.afrd.Control;
 
@@ -277,7 +277,7 @@ public class MainActivity extends Activity
             @Override
             public void run ()
             {
-                if (!Shell.SU.available ())
+                if (!RootShell.suAvailable ())
                 {
                     showToast (R.string.afrd_requires_su, true);
                     return;

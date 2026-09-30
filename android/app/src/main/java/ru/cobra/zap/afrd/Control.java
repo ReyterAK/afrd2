@@ -17,7 +17,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
 
-import eu.chainfire.libsuperuser.Shell;
 import ru.cobra.zap.afrd.gui.R;
 
 /**
@@ -49,7 +48,7 @@ public class Control
         mAfrd.setExecutable (true);
         String[] cmd = new String[] { mAfrd.getPath () + " -k -D " + mIni.getPath () };
         Log.d ("afrd", "Run: " + Arrays.toString (cmd));
-        Shell.run ("su", cmd, null, false);
+        RootShell.run (cmd, null);
         // give status another chance
         Status.mFail.success ();
     }
@@ -105,6 +104,11 @@ public class Control
             !new File (SYSFS_NOT_MINIX_2).exists () &&
             !new File (SYSFS_NOT_MINIX_3).exists ())
             res_id = R.raw.afrd_minix7;
+        else if (kver.startsWith ("5.") && new File (SYSFS_NOT_MINIX_1).exists ())
+            // Android 10-14, ядро 5.x (ATV14): другой путь демона — опрос
+            // /sys/class/vdec/vdec_status и backdoor SurfaceFlinger; узлов
+            // /sys/class/switch/hdmi/* на этих ядрах нет. Конфиг — afrd2.ini.
+            res_id = R.raw.afrd_atv14;
         else if (kver.startsWith ("4.") && new File (SYSFS_ANDROID89).exists ())
             // Android 8 or 9
             res_id = R.raw.afrd_8;
@@ -149,7 +153,7 @@ public class Control
                     case 0:
                         String[] cmd = new String[] { mAfrd.getPath () + " -k", "rm -f " + mAfrd.getPath () };
                         Log.d ("afrd", "Run: " + Arrays.toString (cmd));
-                        Shell.run ("su", cmd, null, false);
+                        RootShell.run (cmd, null);
                         break;
 
                     case 1:

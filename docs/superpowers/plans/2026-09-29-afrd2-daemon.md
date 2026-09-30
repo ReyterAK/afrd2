@@ -108,7 +108,7 @@ static void t_estimate(void)
     assert(f > 23.97 && f < 23.98);
     /* вырожденные случаи -> 0 */
     assert(fps_estimate(500, 0, 500, 2000000) == 0.0);   /* видео на паузе */
-    assert(fps_estimate(500, 0, 501, 2000000) == 0.0);   /* слишком короткое окно */
+    assert(fps_estimate(500, 0, 501, 2000000) == 0.0);   /* 0.5 fps — ниже FPS_MIN */
     assert(fps_estimate(0, 0, 100000, 1000000) == 0.0);  /* мусор (100000 fps) */
 }
 
@@ -119,9 +119,10 @@ static void t_classify(void)
     assert(fps_classify(23.976) == fps_rate_hz(0));
     assert(fps_classify(29.97) == fps_rate_hz(3));
     assert(fps_classify(59.94) == fps_rate_hz(6));
-    assert(fps_classify(35.0) == 0);   /* ровно между 30 и 25 — не угадываем */
+    assert(fps_classify(35.0) == 0);   /* отн. ошибка >6% и к 30, и к 25 */
     assert(fps_classify(0.0) == 0);
-    assert(fps_classify(23.5) == 24 * 256); /* ближайший стандартный */
+    assert(fps_classify(24.05) == 24 * 256); /* чуть выше 24 -> 24 */
+    assert(fps_classify(23.5) == fps_rate_hz(0)); /* отн. ошибка меньше к 23.976, чем к 24 */
 }
 
 static void t_table(void)
@@ -192,8 +193,9 @@ static const struct { const char *name; double fps; } k_rates [FPS_RATE_COUNT] =
 	{ "60",     60.0 },
 };
 
-/* Допуск 6%: много меньше половины шага между 23.976 и 25 (4.1%), */
-/* так что 35 fps (между 30 и 25) не классифицируется вовсе.       */
+/* Допуск 6% от частоты: окна соседних стандартных частот перекрываются, */
+/* поэтому выбирается ближайшая по относительной ошибке (fps_classify).   */
+/* 35 fps не классифицируется: отн. ошибка >6% и к 30 (16.7%), и к 25.    */
 #define FPS_TOLERANCE	0.06
 #define FPS_MIN		15.0
 #define FPS_MAX		130.0
@@ -371,7 +373,7 @@ int main (void)
 
 	assert (n == 9);
 	assert (modes [0].id == 0 && modes [0].hz == 59 * 256 + 241); /* 59.94 -> 15345 */
-	assert (modes [6].id == 6 && modes [6].hz == 6138);           /* 23.98 */
+	assert (modes [6].id == 6 && modes [6].hz == 6139);           /* 23.98 Hz -> 23.98*256+0.5 */
 	assert (modes [6].width == 1920 && modes [6].height == 1080);
 
 	/* поиск: 23.976 в 1080p -> id 6 */
@@ -408,6 +410,7 @@ Expected: ошибка компиляции `sfmodes.h: No such file`.
 #define SFMODES_H
 
 #define SF_MODE_MAX	64
+/* Допуск сравнения частот (0.125 Гц) живёт в sfmodes.c как SF_HZ_TOL */
 
 /* Режим SurfaceFlinger (то, что печатает dumpsys SurfaceFlinger). */
 typedef struct
@@ -423,6 +426,9 @@ int sfmodes_parse (const char *dump, sf_mode_t *out, int max);
 
 /* Поиск id режима по частоте (24.8) и разрешению. -1, если нет. */
 int sfmodes_find (const sf_mode_t *modes, int n, int hz, int width, int height);
+
+/* Поиск id режима по одной частоте (без учёта разрешения). -1, если ничего не ближе SF_HZ_TOL. */
+int sfmodes_find_hz (const sf_mode_t *modes, int n, int hz);
 
 /* Частота (24.8) по id режима. 0, если id не найден. */
 int sfmodes_current_hz (const sf_mode_t *modes, int n, int id);
@@ -491,7 +497,8 @@ int sfmodes_find (const sf_mode_t *modes, int n, int hz, int width, int height)
 		}
 	}
 
-	return best;
+	/* допуск SF_HZ_TOL: иначе для 50 Гц в 720p вернём далёкий 59.94-режим */
+	return (best_d <= SF_HZ_TOL) ? best : -1;
 }
 
 int sfmodes_current_hz (const sf_mode_t *modes, int n, int id)
@@ -517,9 +524,9 @@ int sfmodes_find_hz (const sf_mode_t *modes, int n, int hz)
 		}
 	}
 
-	/* допуск 0.125 Гц: частота активного режима должна совпасть точно,
-	 * иначе это не наш режим (например, 100 Гц в списке отсутствует) */
-	return (best_d <= 32) ? best : -1;
+	/* допуск SF_HZ_TOL (0.125 Гц): частота активного режима должна совпасть
+	 * практически точно, иначе это не наш режим (100 Гц в списке нет) */
+	return (best_d <= SF_HZ_TOL) ? best : -1;
 }
 ```
 
@@ -1095,13 +1102,13 @@ git commit -m "feat: чтение состояния декодера (vdec_stat
 
 **Files:**
 - Create: `platform.h`, `platform.c`, `config/afrd2.ini`
-- Modify: `afrd.h` (новые extern'ы), `GNUmakefile`, `jni/Android.mk`
+- Modify: `afrd.h`, `GNUmakefile` (`AFRD_SRC` += новые модули, `-lm`)
 
 **Interfaces:**
 - Consumes: `exec_capture()` (Task 3), `sink_build_sf_reset()` (Task 3), `sfmodes*` (Task 2).
 - Produces:
   - `typedef enum { PLAT_LEGACY = 0, PLAT_ATV14 = 1 } platform_kind_t;`
-  - `typedef struct { platform_kind_t kind; sink_kind_t sink; const char *vdec_status; const char *hdmi_state; const char *sf_dump_cmd; bool sf_backdoor; } platform_t;`
+  - `typedef struct { platform_kind_t kind; sink_kind_t sink; const char *vdec_status; const char *hdmi_state; const char *sf_dump_cmd; const char *display_dump_cmd; bool sf_backdoor; } platform_t;`
   - `platform_t platform_detect (void);`
 
 - [ ] **Step 1: Написать модуль детекта**
@@ -1128,6 +1135,7 @@ typedef struct
 	const char *vdec_status;	/* /sys/class/vdec/vdec_status */
 	const char *hdmi_state;		/* признак подключённого HDMI */
 	const char *sf_dump_cmd;	/* команда получения таблицы режимов */
+	const char *display_dump_cmd;	/* команда активного разрешения (dumpsys display) */
 	bool sf_backdoor;		/* доступна ли транзакция 1035 */
 } platform_t;
 
@@ -1141,14 +1149,15 @@ platform_t platform_detect (void);
 ```c
 #include <unistd.h>
 #include <string.h>
+#include "afrd.h"
 #include "exec.h"
 #include "platform.h"
 #include "sink.h"
-#include "sysfs.h"
 
 #define VDVC_STATUS	"/sys/class/vdec/vdec_status"
 #define HDMI_STATE_NEW	"/sys/class/extcon/extcon0/state"
 #define HDMI_STATE_OLD	"/sys/class/switch/hdmi/state"
+#define HDMI_STATE_OLD_CABLE	"/sys/class/switch/hdmi/cable.0/state"
 
 static bool sf_backdoor_available (void)
 {
@@ -1170,9 +1179,14 @@ platform_t platform_detect (void)
 
 	p.vdec_status = VDVC_STATUS;
 	p.sf_dump_cmd = "dumpsys SurfaceFlinger";
+	p.display_dump_cmd = "dumpsys display";
 
 	bool have_vdec = (sysfs_exists (VDVC_STATUS) == 0);
-	bool have_old_hdmi = (sysfs_exists (HDMI_STATE_OLD) == 0);
+	/* Android 6/7: switch/hdmi/state; Android 8/9: switch/hdmi/cable.0/state.
+	 * Оба пути обязаны увести на legacy-ветку: иначе живым A8/A9-боксам
+	 * выключится их штатный AFR (R18). */
+	bool have_old_hdmi = (sysfs_exists (HDMI_STATE_OLD) == 0) ||
+	                     (sysfs_exists (HDMI_STATE_OLD_CABLE) == 0);
 
 	if (have_vdec && !have_old_hdmi)
 	{
@@ -1185,7 +1199,8 @@ platform_t platform_detect (void)
 	{
 		p.kind = PLAT_LEGACY;
 		p.sink = SINK_LEGACY;
-		p.hdmi_state = HDMI_STATE_OLD;
+		p.hdmi_state = (sysfs_exists (HDMI_STATE_OLD) == 0)
+		             ? HDMI_STATE_OLD : HDMI_STATE_OLD_CABLE;
 		p.sf_backdoor = false;
 	}
 
@@ -1238,20 +1253,27 @@ cs.select=2160p[4-9].*=420 .*=444
 cs.list.path=/sys/class/amhdmitx/amhdmitx0/dc_cap
 cs.path=/sys/class/amhdmitx/amhdmitx0/attr
 
-# окружение (переопределяется автодетектом, если пусто)
-vdec.sysfs=/sys/class/vdec
-hdmi.state=/sys/class/extcon/extcon0/state
+# Пути sysfs (vdec_status, состояние HDMI) задаются автодетектом окружения
+# (platform_detect); в конфиге они не переопределяются.
 ```
 
 - [ ] **Step 3: Сборка (host) + тесты не должны сломаться**
 
 Run: `sh tests/run_tests.sh && make -f GNUmakefile MODE=debug`
-Expected: тесты `OK`; сборка `make` создаёт `out/debug/afrd` (с новыми файлами в `AFRD_SRC`).
+Expected: тесты `OK`; сборка `make` создаёт `out/debug/afrd`.
+
+Обязательно (R16): в `GNUmakefile` список `AFRD_SRC` дополняется **всеми** модулями задач 1–5
+(`fps_class.c sfmodes.c sink.c guard.c exec.c vdec.c platform.c` — какие ещё не в списке),
+иначе `make` не слинкуется (`undefined reference` на `exec_capture`, `sink_build_sf_reset`).
+`fps_class.c` использует `math.h` → `-lm` нужен в команде линковки **после** списка объектов
+(`$(LD) … -o $@ $^ -lm`): `LDFLAGS.local` подставляется до объектов, и при `--as-needed` библиотека
+могла бы выпасть из `DT_NEEDED` (R29).
+**`jni/Android.mk` не трогать** — его владелец Task 8 (R4).
 
 - [ ] **Step 4: Коммит**
 
 ```bash
-git add platform.h platform.c config/afrd2.ini GNUmakefile jni/Android.mk afrd.h
+git add platform.h platform.c config/afrd2.ini GNUmakefile afrd.h
 git commit -m "feat: автодетект окружения и конфиг-профиль для Android 10-14"
 ```
 
@@ -1307,7 +1329,29 @@ static void sf_modes_refresh (const platform_t *plat)
 	trace (1, "режимов SurfaceFlinger: %d\n", g_sf_modes_n);
 }
 
-/* Активный режим по данным SurfaceFlinger (строка "activeMode=23.98 Hz"). */
+/* Активное разрешение из DisplayManager ("real 1920 x 1080").
+ * Нужно независимо от частоты: в списке SurfaceFlinger одна и та же частота
+ * встречается на разных разрешениях (напр. 59.94 Гц -> 1080p id 0 и 720p id 8). */
+static int active_display_size (const platform_t *plat, int *w, int *h)
+{
+	static char dump [64 * 1024];
+
+	if (exec_capture (plat->display_dump_cmd, dump, sizeof (dump)) != 0)
+		return -1;
+
+	const char *p = strstr (dump, "real ");
+	if (!p)
+		return -1;
+
+	if (sscanf (p, "real %d x %d", w, h) != 2)
+		return -1;
+
+	return 0;
+}
+
+/* Активный режим: частота из SurfaceFlinger ("activeMode=23.98 Hz"),
+ * разрешение — из DisplayManager. Совпадение по (частота, разрешение)
+ * однозначно; если разрешение узнать не удалось, откатываемся на поиск по частоте. */
 static int sf_active_mode (const platform_t *plat, sf_mode_t *out)
 {
 	static char dump [64 * 1024];
@@ -1323,7 +1367,15 @@ static int sf_active_mode (const platform_t *plat, sf_mode_t *out)
 	if (g_sf_modes_n <= 0)
 		sf_modes_refresh (plat);
 
-	int id = sfmodes_find_hz (g_sf_modes, g_sf_modes_n, hz);
+	int w = 0, h = 0, id;
+	if (active_display_size (plat, &w, &h) == 0)
+		id = sfmodes_find (g_sf_modes, g_sf_modes_n, hz, w, h);
+	else
+	{
+		trace (1, "не удалось определить активное разрешение, ищу по частоте\n");
+		id = sfmodes_find_hz (g_sf_modes, g_sf_modes_n, hz);
+	}
+
 	if (id < 0)
 		return -1;
 
@@ -1339,11 +1391,11 @@ static int sf_active_mode (const platform_t *plat, sf_mode_t *out)
 
 /* Предпочтительный режим пользователя (настройка Android TV).
  * Возврат: mode id или -1, если пользователь его не задавал. */
-static int preferred_mode_id (void)
+static int preferred_mode_id (const platform_t *plat)
 {
 	static char dump [64 * 1024];
 
-	if (exec_capture ("dumpsys display", dump, sizeof (dump)) != 0)
+	if (exec_capture (plat->display_dump_cmd, dump, sizeof (dump)) != 0)
 		return -1;
 
 	const char *p = strstr (dump, "mUserPreferredModeId=");
@@ -1362,7 +1414,7 @@ int run_atv14 (const platform_t *plat)
 	bool video = false;
 	vdec_status_t v0, v1;
 	int retries = 0;
-	int preferred_id = preferred_mode_id ();
+	int preferred_id = preferred_mode_id (plat);
 
 	sf_modes_refresh (plat);
 
@@ -1519,6 +1571,40 @@ int run_atv14 (const platform_t *plat)
 > читают `dumpsys` один раз за итерацию цикла — на 300-мс периоде это допустимо (проверено на стенде:
 > вызов ~30–60 мс). Если профилирование покажет иначе, кэшировать `dumpsys display` на 5 с.
 
+- [ ] **Step 2a: Поведенческие ключи профиля (R28): `fps.prefer.api`, `pause.keep`, `switch.restore.on.stop`**
+
+Спека §3.2–3.3 (binding authority) требует эти ключи; Step 2 их не читал — ключи были бы инертными
+(finding ревью Task 5). В начале `run_atv14()`:
+
+```c
+	int prefer_api = cfg_get_int ("fps.prefer.api", 1);
+	int pause_keep = cfg_get_int ("pause.keep", 1);
+	int restore_on_stop = cfg_get_int ("switch.restore.on.stop", 1);
+```
+
+1. **`fps.prefer.api` (по умолчанию 1)** — перед замером Δ`frames` проверить подсказку плеера
+   (upstream-механизм живёт в этом же файле): `g_frame_rate_hint` заполняется `afrd_frame_rate_hint()`
+   (afrd.c:1134) из API `frame_rate_hint`, значение уже fixed-point 24.8, срок жизни 1 с
+   (`mstime_arm (&g_frame_rate_hint.stamp, 1000)`).
+   ```c
+   int api_hz = 0;
+   if (prefer_api && mstime_running (&g_frame_rate_hint.stamp))
+   	api_hz = g_frame_rate_hint.fps;
+   ```
+   Если `api_hz != 0` — не мерить: `hz = fps_rate_hz (fps_rate_index_for_hz (api_hz));`
+   Подсказку не сбрасывать вручную (истечёт сама).
+2. **`pause.keep` (по умолчанию 1)** — «пауза» = декодер активен, а счётчик кадров не растёт:
+   `v0.frames` равен предыдущему значению на **двух** соседних опросах подряд. При `pause_keep==1` —
+   ничего не делаем (текущее поведение). При `pause_keep==0` — обрабатываем паузу как стоп,
+   передавая в `guard_decide()` `video == false` (тогда вернётся `GUARD_RESTORE`).
+   Замечание: во время окна замера (`msleep (window_ms)`) счётчик на паузе стоит → `fps_estimate()` == 0,
+   срабатывает ветка `retries` — она и раньше была безопасна.
+3. **`switch.restore.on.stop` (по умолчанию 1)** — в ветке `GUARD_RESTORE` при **настоящем стопе**
+   (декодер исчез, `v0.active == false`), а не при паузе: если `restore_on_stop == 0` — `sink_apply()`
+   для возврата **не** вызываем, но `sink_release_backdoor()`, `guard_note_restored()`,
+   `orig_sf_id = -1`, `want_sf_id = -1` выполняем обязательно (флаг backdoor не залипает).
+   Возврат по паузе (`pause_keep==0`) выполняется всегда.
+
 - [ ] **Step 3: Заглушки (`msleep`, `g_shutdown`)**
 
 `msleep()` реализовать рядом (обёртка `usleep`):
@@ -1556,6 +1642,24 @@ git commit -m "feat(atv14): новый путь run_atv14 — поллинг д�
 
 ---
 
+**Фактическое состояние после Task 6** (проверено ревью и re-review; коммиты `487f6c8`, `d55a135`, `6320135`):
+код Step 2 выше — черновик; реализация отличается в пяти местах, и именно она прошла ревью
+(4 Important + 1 регрессия закрыты) и смоук 52/52:
+
+1. `v0` перечитывается непосредственно перед окном замера (иначе `trigger.start.debounce.ms` входит в
+   дельту кадров, но не в `dt`: 23.976 → ~31 fps → 30 Гц на весь фильм).
+2. Окно замера бьётся на 3 под-среза; выборка принимается, только если декодер активен на краях и
+   счётчик строго растёт в каждом под-срезе, иначе — в `retries`.
+3. Сентинел `want_sf_id = -2` удалён; вместо него `bool measure_failed` + `atv14_give_up()`;
+   `measure_failed` и `retries` сбрасываются на конце видео.
+4. Ожидание в цикле — `atv14_wait(ms)` (`apisock_prep_poll` + `poll` + `apisock_handle`) вместо
+   `msleep`, плюс `mstime_update()` в цикле; `afrd_refresh_rate()` при `PLAT_ATV14` рано выходит с логом.
+5. `!plat->sf_backdoor` → пассивный режим (лог уровня 0 + `atv14_wait` в цикле, без `sink_apply`).
+
+Источник истины по коду — `afrd.c` (`run_atv14`, `atv14_wait`, `atv14_give_up`); этот блок — карта отличий.
+
+---
+
 ### Task 7: Guard-обработчики, стартовая страховка, инвалидация таблицы режимов
 
 **Files:**
@@ -1583,9 +1687,46 @@ static void on_term (int sig)
 	signal (SIGINT, on_term);
 ```
 
-- [ ] **Step 2: Инвалидация таблицы режимов при рестарте SurfaceFlinger**
+- [ ] **Step 1a: Страховки в ATV14-цикле (R34): «потерянное видео», статистика для API, новое видео внутри `stop_deb`**
 
-В цикле `run_atv14()` (каждые ~5 с):
+1. **Страховочный таймаут «видео потерялось»** (спека §3.1: guard снимает флаг в том числе «при
+   истечении страховочного таймаута, если видео потерялось»). Сейчас при устойчивом отказе
+   `vdec_read()` цикл делает `continue`, поэтому `held` и флаг backdoor могут залипнуть навсегда
+   (сценарий: драйвер перестал отдавать `vdec_status`). Реализация: помнить время последнего
+   **успешного** чтения, в котором декодер был активен (`last_ok_us`), и при
+   `held && (now_us() - last_ok_us > timeout_ms)` выполнить `atv14_give_up()`, лог уровня 0
+   («видео потеряно: N мс без данных декодера»), `video = false`, `want_sf_id = -1`.
+   `timeout_ms` — существующий upstream-ключ `switch.timeout` (дефолт 3000; в профиль добавлять не
+   нужно, `cfg_get_int` вернёт дефолт).
+2. **Статистика для API `status`**: `update_stats()`/`shmem_update()` вызываются только в legacy-цикле,
+   поэтому `afrd -s`/`status` в ATV14 отвечает нулями. Вызывать в ATV14-цикле по тикам (напр.
+   `ticks % 3 == 0`) — с той же частотой, что и в legacy.
+3. **Новое видео внутри `stop_deb`**: если следующее видео начнётся раньше истечения
+   `trigger.stop.debounce.ms`, `vdec_read()` не отдаст «пусто», `video` не переключится, и старое
+   `want_sf_id`/`measure_failed` останутся — новое видео отыграет в прежнем режиме без AFR.
+   Детект: `v0.frames < prev_frames` (декодер поднял новый инстанс и счётчик сбросился) → сбросить
+   `want_sf_id = -1`, `measure_failed = false`, `retries = 0`. `held`/`orig_sf_id` не трогать: режим
+   уже наш. Допущение «счётчик сбрасывается на новом инстансе» подтвердить на стенде (Task 9); при
+   ложном срабатывании цена мала — повторный замер даст тот же режим и `GUARD_NONE`.
+4. **Отказ чтения `vdec_status`**: вести счётчик подряд идущих отказов и один раз логировать уровень 0,
+   если серия превысила `switch.timeout / trigger.poll.ms`. Backoff — задача на будущее (§5 спеки),
+   здесь не делаем.
+
+- [ ] **Step 2: Инвалидация таблицы режимов и предпочтительного режима при рестарте SurfaceFlinger**
+
+Реальный вид цикла после Task 6 (`afrd.c`, `run_atv14`):
+
+```c
+	while (!g_shutdown)
+	{
+		mstime_update ();
+		if (atv14_wait (cur_hz) != 0)		/* poll + apisock_handle */
+			msleep (cur_hz);
+		…
+	}
+```
+
+Счётчик тиков объявляется среди локальных `run_atv14()` (R5) — `int ticks = 0;`:
 
 ```c
 		if (++ticks % 16 == 0)		/* ~каждые 5 с при 300 мс */
@@ -1596,11 +1737,16 @@ static void on_term (int sig)
 			{
 				last_sf_pid = sf_pid;
 				sf_modes_refresh (plat);
+				preferred_id = preferred_mode_id (plat);	/* id тоже кэширован (спека §7) */
 			}
 		}
 ```
 
-`pidof()` — маленькая обёртка (`exec_capture("pidof surfaceflinger")` + `atoi`), реализуется тут же:
+`preferred_id` в `run_atv14()` сейчас вычисляется один раз и не меняется — сделать его изменяемой
+локальной, которую инвалидация перезаписывает. В пассивном режиме (нет backdoor) инвалидировать
+нечего (переключений нет), но цикл обязан продолжать обслуживать API через `atv14_wait()`.
+
+`pidof()` — обёртка в ATV14-секции:
 
 ```c
 static pid_t pidof (const char *name)
@@ -1628,6 +1774,10 @@ adb -s 192.168.88.50:5555 shell 'cat /sys/class/display/mode; dumpsys SurfaceFli
 ```
 Expected: режим вернулся к исходному (`1080p60hz`), `debugDisplayModeSetByBackdoor=false`.
 
+**Если стенд недоступен** (проверено 2026-09-29: `adb connect 192.168.88.50:5555` → `No route to host`,
+`ping` без ответа) — шаг не блокирует задачу: отметить в отчёте как непроверенное, живая приёмка
+переносится в Task 9 (нужен включённый бокс).
+
 - [ ] **Step 4: Коммит**
 
 ```bash
@@ -1647,12 +1797,15 @@ git commit -m "feat(atv14): корректное завершение (SIGTERM/S
 - Consumes: исходники демона.
 - Produces: `libs/armeabi-v7a/afrd`, залитый в `/data/local/tmp/afrd` на стенде.
 
-- [ ] **Step 1: Установить NDK и указать путь**
+- [ ] **Step 1: NDK и путь к нему**
+
+NDK r26d **уже установлен** (2026-09-29) в `/home/reyter/Android/Sdk/android-ndk-r26d`
+(`ndk-build --version` → GNU Make 4.3). Повторить установку при необходимости:
 
 ```bash
-sudo apt-get install -y -qq unzip
-cd /opt && sudo curl -sLO https://dl.google.com/android/repository/android-ndk-r26d-linux.zip && sudo unzip -q android-ndk-r26d-linux.zip
+cd $HOME/Android/Sdk && curl -LO https://dl.google.com/android/repository/android-ndk-r26d-linux.zip && unzip -q android-ndk-r26d-linux.zip
 ```
+
 `jni/Application.mk`:
 ```
 APP_OPTIM := release
@@ -1669,12 +1822,12 @@ LOCAL_SRC_FILES := $(addprefix ../,main.c afrd.c sysfs.c cfg_parse/cfg_parse.c \
 ```
 `mka`/`mkad` — путь NDK по умолчанию:
 ```sh
-test -z "$NDK" && export NDK=/opt/android-ndk-r26d
+test -z "$NDK" && export NDK=$HOME/Android/Sdk/android-ndk-r26d
 ```
 
 - [ ] **Step 2: Собрать**
 
-Run: `NDK=/opt/android-ndk-r26d ./mka`
+Run: `NDK=$HOME/Android/Sdk/android-ndk-r26d ./mka`
 Expected: `libs/armeabi-v7a/afrd` создан; `file libs/armeabi-v7a/afrd` → `ELF 32-bit LSB ... ARM`.
 
 - [ ] **Step 3: Залить и запустить на стенде**
@@ -1752,8 +1905,59 @@ Expected (эталон):
 | клип | во время видео | после стопа |
 |---|---|---|
 | 23.976 | `1080p24hz` + `activeMode=23.98 Hz` | `1080p60hz` + `59.94` + `backdoor=false` |
-| 25 | `1080p50hz` + `50.00 Hz` | `1080p60hz` + `59.94` + `backdoor=false` |
+| 25 | `1080p25hz` + `25.00 Hz` | `1080p60hz` + `59.94` + `backdoor=false` |
 | 50 | `1080p50hz` + `50.00 Hz` | `1080p60hz` + `59.94` + `backdoor=false` |
+
+**Поправка по живой приёмке (2026-09-29, R48):** для 25 fps-клипа ожидается именно `1080p25hz`:
+резолвер ATV14 подбирает ближайшую частоту в таблице SurfaceFlinger, то есть точную (`25.00`),
+а не удвоенную `50.00` — `mode.prefer.exact`/`mode.use.fract` на новый путь не влияют (эти ключи
+относятся только к legacy `framerate_switch()`). Проверено на боксе: `long_25` → `1080p25hz`
+(`h/v_freq 28125/25000`, SF `25.00 Hz`, `backdoor=true`), возврат в `1080p60hz` с `backdoor=false`.
+Ранее в таблице стояло `1080p50hz` — это была ошибка ожидания (записано из ручного эксперимента
+с транзакцией 1035 `i32 2`, а не из поведения демона).
+
+- [ ] **Step 2a: Пауза (`pause.keep`)**
+
+Run (на стенде, `long_24000_1001` играет через VLC):
+```sh
+D=192.168.88.50:5555
+adb -s $D shell 'input keyevent KEYCODE_MEDIA_PAUSE'; sleep 4; sh tools/stand/check_mode.sh
+adb -s $D shell 'input keyevent KEYCODE_MEDIA_PLAY';  sleep 4; sh tools/stand/check_mode.sh
+```
+Expected: при `pause.keep=1` (профиль по умолчанию) режим на паузе **не** меняется (остаётся `1080p24hz`),
+после возобновления — тоже; при `pause.keep=0` на паузе режим возвращается к исходному
+(`1080p60hz`, `backdoor=false`), после возобновления снова `1080p24hz`.
+Проверить оба значения: правка `config/afrd2.ini` на стенде (`/data/local/tmp/afrd.ini`) + рестарт демона.
+
+- [ ] **Step 3a: Проверки ATV14-специфики (API, подсказка плеера, сброс счётчика)**
+
+Run (стенд; демон запущен, режим удержан или воспроизведение активно):
+```sh
+D=192.168.88.50:5555
+# 1) статус через API: не нули (Task 7 научил update_stats() состоянию ATV14)
+adb -s $D shell 'echo status | timeout 2 nc -u -w1 127.0.0.1 50505'
+# 2) подсказка плеера должна опережать замер (окно замера + дебаунс ~2 с, подсказка живёт 1 с)
+adb -s $D shell 'echo "frame_rate_hint 23976" | timeout 2 nc -u -w1 127.0.0.1 50505'
+sleep 1; adb -s $D shell 'grep -E "по подсказке|видео:" /data/local/afrd.log | tail -3'
+# 3) допущение R34в: счётчик кадров нового инстанса декодера начинается с нуля
+adb -s $D shell 'cat /sys/class/vdec/vdec_status'   # до и после старта нового файла
+```
+Expected: (1) в ответе есть ненулевые поля (`current hz`/`enabled`); (2) в логе строка
+«видео: 23.98 Гц по подсказке плеера» и **отсутствует** ветка замера для этого видео;
+(3) `frame count` после старта нового файла меньше, чем в конце предыдущего (подтверждает детект
+«нового видео внутри `stop_deb`»); если счётчик **не** сбрасывается — записать это как
+опровергнутое допущение и убрать детект сброса (R34в) в отдельную заявку.
+
+- [ ] **Step 3b: Починить выдачу в `build_push.sh` (находка re-review Task 8)**
+
+`pkill -f /data/local/tmp/afrd` убивает и саму оболочку, выполняющую команду (`adb shell` запускает
+строку через `sh -c`, шаблон совпадает с её собственной командной строкой), поэтому следующий
+`rm -f` не выполняется и риск `ETXTBSY` при повторном `push` остаётся. Разнести на две команды с
+якорем, например:
+```sh
+adb -s "$D" shell 'pkill -f "^/data/local/tmp/afrd"' || true
+adb -s "$D" shell 'rm -f /data/local/tmp/afrd'
+```
 
 - [ ] **Step 3: Совместимость с приложением со своим AFR**
 
@@ -1768,6 +1972,12 @@ Expected: `1080p24hz`, переключил сам плеер (в логе де�
 - [ ] **Step 4: Документация и коммит**
 
 - `README.md`: раздел «Android 10–14 (ATV14)» — как включить профиль, как проверить, какие ограничения.
+  В разделе «Ограничения» перечислить **явно** (иначе пользователь считает это багом):
+  (а) цветовые пространства/HDR (`attr`/`dc_cap`) на ATV14-пути не применяются — цвета не
+  переключаются вместе с режимом (R35); (б) HDCP не управляется; (в) `reconf` (перечитка конфига) и
+  `color_space` через API в ATV14 не действуют — смена конфига требует рестарта демона; (г) без
+  backdoor SurfaceFlinger (другие прошивки/будущие Android) демон уходит в пассивный режим и AFR не
+  работает; (д) цвета/HDR и HDCP — темы отдельных этапов.
 - `ChangeLog-ru.txt`: запись `0.4.0` о порте.
 - Спека: пометить §6 как выполненный (дата, результаты).
 
@@ -1788,9 +1998,11 @@ git commit -m "test(atv14): матрица приёмки на стенде + д
 - §5 упаковка APK → **отдельный план** (объявлено в спеке §8.1 и в шапке этого плана).
 - §6 тесты → Task 9 (+ юнит-тесты в Task 1-4).
 - §7 риски → Task 3 (снятие флага), Task 7 (страховки), Task 6 (`-2` ветка при неудачном замере).
-- §8 решения → учтены: пауза (при `video == false` только по дебаунсу стопа; на паузе счётчик стоит,
-  `fps_estimate` вернёт 0 и переключения не будет), затемнения нет (нет вызова `display_mode_null`),
-  preferred mode — `preferred_mode_id()` (Task 6) и возврат в него в ветке `GUARD_SWITCH`.
+- §8 решения → учтены: пауза (R28: `pause.keep=1` — на паузе счётчик стоит, `fps_estimate` вернёт 0 и
+  переключения не будет; `pause.keep=0` — пауза обрабатывается как стоп, Task 6 Step 2a),
+  затемнения нет (нет вызова `display_mode_null`),
+  preferred mode — `preferred_mode_id()` (Task 6) и возврат в него в ветке `GUARD_SWITCH`; `fps.prefer.api`
+  и `switch.restore.on.stop` — Task 6 Step 2a.
 
 **2. Плейсхолдеры:** отсутствуют (проверено поиском по «TODO/TBD/позже/implement»).
 

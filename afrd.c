@@ -9,6 +9,13 @@
 #include "uevent_filter.h"
 #include "colorspace.h"
 #include "androp.h"
+#include "platform.h"
+#include "vdec.h"
+#include "sfmodes.h"
+#include "sink.h"
+#include "guard.h"
+#include "exec.h"
+#include "fps_class.h"
 
 #define __USE_GNU
 #include <unistd.h>
@@ -207,14 +214,37 @@ static bool uevent_open (int buf_sz)
 	return true;
 }
 
+/* ---- ATV14: состояние для статистики API (afrd -s, status) ----
+ * run_atv14() не ведёт legacy-структуры g_state/g_current_mode, поэтому
+ * актуальные значения складываются сюда, а update_stats() их подхватывает. */
+static struct
+{
+	bool valid;		/* ATV14-цикл уже заполнил поля */
+	bool switched;		/* режим уведён от исходного (backdoor поднят) */
+	int current_hz;		/* 24.8 fixed-point */
+	int original_hz;	/* 24.8 fixed-point */
+} g_atv14_state;
+
 static void update_stats ()
 {
 	g_afrd_stats.enabled = g_enable;
-	g_afrd_stats.switched = (g_state.orig_mode.name [0] != 0);
-	g_afrd_stats.blackened = g_blackened;
-	g_afrd_stats.current_hz = display_mode_hz (&g_current_mode);
-	g_afrd_stats.original_hz = display_mode_hz (g_afrd_stats.switched ?
-		&g_state.orig_mode : &g_current_mode);
+
+	if (g_atv14_state.valid)
+	{
+		g_afrd_stats.switched = g_atv14_state.switched;
+		g_afrd_stats.blackened = false;
+		g_afrd_stats.current_hz = g_atv14_state.current_hz;
+		g_afrd_stats.original_hz = g_atv14_state.original_hz;
+	}
+	else
+	{
+		g_afrd_stats.switched = (g_state.orig_mode.name [0] != 0);
+		g_afrd_stats.blackened = g_blackened;
+		g_afrd_stats.current_hz = display_mode_hz (&g_current_mode);
+		g_afrd_stats.original_hz = display_mode_hz (g_afrd_stats.switched ?
+			&g_state.orig_mode : &g_current_mode);
+	}
+
 	shmem_update ();
 }
 
@@ -1019,8 +1049,981 @@ static void safe_mstime_update (int to)
 
 static time_t g_config_mtime;
 
+/* --------- * --------- * --------- * --------- * --------- * --------- */
+
+/* ---- ATV14: поллинг декодера + измерение fps + backdoor SurfaceFlinger ---- */
+
+/* Таблица режимов, полученная от SurfaceFlinger (заполняется sf_modes_refresh). */
+static sf_mode_t g_sf_modes [SF_MODE_MAX];
+static int g_sf_modes_n = 0;
+
+/* Сон с оглядкой на завершение: просыпаемся не реже, чем раз в 200 мс. */
+static void msleep (int ms)
+{
+	while (ms > 0 && !g_shutdown)
+	{
+		int chunk = ms > 200 ? 200 : ms;
+		usleep (chunk * 1000);
+		ms -= chunk;
+	}
+}
+
+static void sf_modes_refresh (const platform_t *plat)
+{
+	char dump [64 * 1024];
+	if (exec_capture (plat->sf_dump_cmd, dump, sizeof (dump)) != 0)
+	{
+		trace (1, "не удалось получить список режимов SurfaceFlinger\n");
+		g_sf_modes_n = 0;
+		return;
+	}
+
+	g_sf_modes_n = sfmodes_parse (dump, g_sf_modes, SF_MODE_MAX);
+	if (g_sf_modes_n <= 0)
+		/* Уровень 0 — иначе ровно этот случай (дамп усечён >64 КБ или
+		 * команда ничего не вернула) оставался только в stdout и AFR
+		 * молча не переключал (живая приёмка ATV14). */
+		trace (0, "таблица режимов SurfaceFlinger не разобрана (пусто/усечён дамп: %d байт?)\n",
+		       (int) strlen (dump));
+	trace (1, "режимов SurfaceFlinger: %d\n", g_sf_modes_n);
+}
+
+/* Таблица режимов из последнего разобранного дампа. Нужна, чтобы заметить смену
+ * нумерации id сразу (рестарт SurfaceFlinger), не дожидаясь проверки PID:
+ * иначе устаревший want_sf_id уходил бы в транзакцию 1035. */
+static sf_mode_t g_sf_live [SF_MODE_MAX];
+static bool g_sf_table_changed = false;
+
+/* Сравнение таблиц без учёта порядка строк (порядок вывода dumpsys не гарантирован). */
+static bool sf_modes_equal (const sf_mode_t *a, int na, const sf_mode_t *b, int nb)
+{
+	if (na != nb)
+		return false;
+
+	for (int i = 0; i < na; i++)
+	{
+		int j;
+		for (j = 0; j < nb; j++)
+			if ((a [i].id == b [j].id) &&
+			    (a [i].width == b [j].width) &&
+			    (a [i].height == b [j].height) &&
+			    (a [i].hz == b [j].hz))
+				break;
+		if (j == nb)
+			return false;
+	}
+
+	return true;
+}
+
+/* Следит за таблицей режимов по свежему дампу SurfaceFlinger. Возврат: 1, если
+ * таблица сменилась (кэш обновлён). Усечённый/неразобранный дамп игнорируется,
+ * а систематическое усечение безвредно: кэш разбирается тем же буфером, что и
+ * свежий дамп, поэтому обе таблицы окажутся одинаковыми. Пустой разбор здесь
+ * не логируется намеренно (функция вызывается каждую итерацию цикла) — о нём
+ * сообщает sf_modes_refresh уровнем 0. */
+static int sf_modes_sync (const char *dump)
+{
+	int n = sfmodes_parse (dump, g_sf_live, SF_MODE_MAX);
+	if (n <= 0)
+		return 0;
+
+	if (sf_modes_equal (g_sf_live, n, g_sf_modes, g_sf_modes_n))
+		return 0;
+
+	memcpy (g_sf_modes, g_sf_live, (size_t) n * sizeof (g_sf_modes [0]));
+	g_sf_modes_n = n;
+	g_sf_table_changed = true;
+
+	trace (1, "таблица режимов SurfaceFlinger сменилась: %d режимов\n", n);
+	return 1;
+}
+
+/* Активное разрешение из DisplayManager ("real 1920 x 1080").
+ * Нужно независимо от частоты: в списке SurfaceFlinger одна и та же частота
+ * встречается на разных разрешениях (напр. 59.94 Гц -> 1080p id 0 и 720p id 8). */
+static int active_display_size (const platform_t *plat, int *w, int *h)
+{
+	static char dump [64 * 1024];
+
+	if (exec_capture (plat->display_dump_cmd, dump, sizeof (dump)) != 0)
+		return -1;
+
+	const char *p = strstr (dump, "real ");
+	if (!p)
+		return -1;
+
+	if (sscanf (p, "real %d x %d", w, h) != 2)
+		return -1;
+
+	return 0;
+}
+
+/* Активный режим: частота из SurfaceFlinger ("activeMode=23.98 Hz"),
+ * разрешение — из DisplayManager. Совпадение по (частота, разрешение)
+ * однозначно; если разрешение узнать не удалось, откатываемся на поиск по частоте. */
+static int sf_active_mode (const platform_t *plat, sf_mode_t *out)
+{
+	static char dump [64 * 1024];
+
+	if (exec_capture (plat->sf_dump_cmd, dump, sizeof (dump)) != 0)
+		return -1;
+
+	/* дамп всё равно прочитан: заодно следим за сменой таблицы режимов */
+	sf_modes_sync (dump);
+
+	const char *p = strstr (dump, "activeMode=");
+	if (!p)
+		return -1;
+
+	int hz = (int)(atof (p + strlen ("activeMode=")) * 256.0 + 0.5);
+	if (g_sf_modes_n <= 0)
+		sf_modes_refresh (plat);
+
+	int w = 0, h = 0, id;
+	if (active_display_size (plat, &w, &h) == 0)
+		id = sfmodes_find (g_sf_modes, g_sf_modes_n, hz, w, h);
+	else
+	{
+		trace (1, "не удалось определить активное разрешение, ищу по частоте\n");
+		id = sfmodes_find_hz (g_sf_modes, g_sf_modes_n, hz);
+	}
+
+	if (id < 0)
+		return -1;
+
+	for (int i = 0; i < g_sf_modes_n; i++)
+		if (g_sf_modes [i].id == id)
+		{
+			*out = g_sf_modes [i];
+			return 0;
+		}
+
+	return -1;
+}
+
+/* Предпочтительный режим пользователя (настройка Android TV).
+ * Возврат: mode id или -1, если пользователь его не задавал. */
+static int preferred_mode_id (const platform_t *plat)
+{
+	static char dump [64 * 1024];
+
+	if (exec_capture (plat->display_dump_cmd, dump, sizeof (dump)) != 0)
+		return -1;
+
+	const char *p = strstr (dump, "mUserPreferredModeId=");
+	if (!p)
+		return -1;
+
+	int id = atoi (p + strlen ("mUserPreferredModeId="));
+	return (id >= 0) ? id : -1;
+}
+
+/* Ожидание событий API (UDP 127.0.0.1:50505) вместо msleep: демон должен
+ * принимать подсказки плеера (frame_rate_hint) и afrd -s.
+ * Возврат: 0 = ок (в т.ч. EINTR), -1 = poll сорвался. */
+static int atv14_wait (int ms)
+{
+	struct pollfd pfd [4];
+	memset (pfd, 0, sizeof (pfd));
+
+	int n = apisock_prep_poll (pfd, ARRAY_SIZE (pfd));
+	int rc = poll (pfd, n, ms);
+	if (rc < 0)
+		return (errno == EINTR) ? 0 : -1;
+
+	if (rc > 0)
+		apisock_handle (pfd, n);
+
+	return 0;
+}
+
+/* Единственная точка, где id режима уходит в транзакцию 1035 (R44): id обязан
+ * присутствовать в ТЕКУЩЕЙ таблице режимов, иначе SurfaceFlinger получил бы
+ * чужой или уже не существующий id (сменилась нумерация, дамп не прочитался,
+ * таблица ещё не получена). Заодно здесь же логируется провал применения.
+ * Возврат: 0 — режим переключён; -1 — id нет в текущей таблице;
+ *          -2 — транзакция не удалась. */
+static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skipped)
+{
+	if (sf_id < 0)
+		return -1;
+
+	if ((g_sf_modes_n <= 0) ||
+	    (sfmodes_current_hz (g_sf_modes, g_sf_modes_n, sf_id) == 0))
+	{
+		trace (1, "id %d отсутствует в текущей таблице режимов — %s\n",
+		       sf_id, skipped);
+		return -1;
+	}
+
+	if (sink_apply (plat->sink, g_mode_path, sf_id, NULL) != 0)
+	{
+		trace (1, "backdoor не применил режим id %d\n", sf_id);
+		return -2;
+	}
+
+	return 0;
+}
+
+/* Отказ от удержания режима: частоту определить не удалось — вернуть исходный
+ * режим, снять флаг backdoor и забыть состояние удержания. */
+static void atv14_give_up (const platform_t *plat,
+                           int *orig_sf_id, int *cur_sf_id, bool *held)
+{
+	if (!*held)
+		return;
+
+	/* устаревший id в 1035 не уходит: atv14_apply_mode проверит его по
+	 * текущей таблице, а удержание снимется в любом случае */
+	if (atv14_apply_mode (plat, *orig_sf_id,
+	                      "возврат пропущен, флаг backdoor снят") == 0)
+		*cur_sf_id = *orig_sf_id;
+
+	sink_release_backdoor (plat->sink);
+	guard_note_restored (held);
+	*orig_sf_id = -1;
+}
+
+/* Время последнего успешного чтения, в котором декодер был активен.
+ * Обновляется на КАЖДОЙ успешной выборке, в том числе внутри окна замера:
+ * цикл на это время блокируется, и таймер «видео потерялось» не должен
+ * принимать блокировку за потерю данных. */
+static unsigned long long g_vdec_last_ok_us;
+
+static int vdec_poll (const char *path, vdec_status_t *st)
+{
+	int rc = vdec_read (path, st);
+	if ((rc == 0) && st->active)
+		g_vdec_last_ok_us = now_us ();
+	return rc;
+}
+
+/* PID процесса по имени (toybox pidof); -1, если PID определить не удалось. */
+static pid_t pidof (const char *name)
+{
+	char cmd [64], out [64];
+	snprintf (cmd, sizeof (cmd), "pidof %s", name);
+	if (exec_capture (cmd, out, sizeof (out)) != 0)
+		return -1;
+	return (pid_t) atoi (out);
+}
+
+/* Статистика для GUI/API (afrd -s, status): legacy-структуры в ATV14 не
+ * ведутся, поэтому отдаём id текущего режима и id режима возврата. */
+static void atv14_stats_sync (int cur_sf_id, int orig_sf_id, bool held)
+{
+	g_atv14_state.valid = true;
+	g_atv14_state.switched = held;
+	g_atv14_state.current_hz =
+		sfmodes_current_hz (g_sf_modes, g_sf_modes_n, cur_sf_id);
+	g_atv14_state.original_hz = sfmodes_current_hz (g_sf_modes, g_sf_modes_n,
+		held ? orig_sf_id : cur_sf_id);
+}
+
+/* Пассивный режим (нет backdoor или enable=0): переключать нечем/нельзя, но
+ * статистику API заполняем один раз при входе — иначе `status`/`afrd -s`
+ * отдают current hz: 0 (мелочь из леджера). Периодически её обновлять не стоим:
+ * каждый опрос — это dumpsys SurfaceFlinger (~150 КБ), а режим в пассивном
+ * режиме меняет не демон. */
+static void atv14_stats_sync_passive (const platform_t *plat)
+{
+	if (g_sf_modes_n <= 0)
+		sf_modes_refresh (plat);
+
+	sf_mode_t active;
+	if (sf_active_mode (plat, &active) == 0)
+	{
+		atv14_stats_sync (active.id, -1, false);
+
+		/* g_afrd_stats (то, что читает API `status`) копирует update_stats(),
+		 * а он живёт в главном цикле — в пассивном режиме до него не дойдёт,
+		 * поэтому копируем здесь же */
+		update_stats ();
+	}
+}
+
+/* Сброс кэша решений: нумерация id режимов изменилась (рестарт SurfaceFlinger).
+ * Новый инстанс SF флаг mode-set-by-backdoor не держит, поэтому удержание
+ * снимаем без sink_apply по устаревшему id — цикл замерит частоту и
+ * перерезолвит режим заново по свежей таблице. */
+static void atv14_invalidate (const platform_t *plat, int *want_sf_id,
+                              int *orig_sf_id, int *cur_sf_id, bool *held,
+                              bool *measure_failed, int *retries)
+{
+	*want_sf_id = -1;
+	*measure_failed = false;
+	*retries = 0;
+
+	if (*held)
+	{
+		sink_release_backdoor (plat->sink);
+		guard_note_restored (held);
+		*orig_sf_id = -1;
+		*cur_sf_id = -1;
+	}
+}
+
+static int run_atv14 (const platform_t *plat)
+{
+	guard_action_t act;
+	int orig_sf_id = -1, cur_sf_id = -1, want_sf_id = -1;
+	bool held = false;
+	bool video = false;
+	vdec_status_t v0, v1;
+	int retries = 0;
+	/* частоту в этом видео определить не удалось — больше не мерить
+	 * до его конца (сбрасывается, когда видео закончилось) */
+	bool measure_failed = false;
+	/* метка уже применённой подсказки плеера (R53): чтобы одну подсказку не
+	 * применять на каждой итерации цикла, пока она жива (1 с) */
+	mstime_t hint_seen = 0;
+	/* R56: одноразовая перепроверка замера после смены режима */
+	mstime_t recheck_timer = 0;
+	bool recheck_armed = false;
+	int preferred_id;
+
+	/* Поведенческие ключи профиля (R28). */
+	int prefer_api = cfg_get_int ("fps.prefer.api", 1);
+	int pause_keep = cfg_get_int ("pause.keep", 1);
+	int restore_on_stop = cfg_get_int ("switch.restore.on.stop", 1);
+
+	/* Отслеживание «паузы»: декодер активен, а счётчик кадров не растёт. */
+	unsigned long long prev_frames = 0;
+	bool have_prev_frames = false;
+	bool paused = false;
+	int still = 0;
+
+	int cur_hz = cfg_get_int ("trigger.poll.ms", 300);
+	if (cur_hz < 100) cur_hz = 100;
+
+	/* Страховки ATV14-цикла (R34). */
+	int timeout_ms = cfg_get_int ("switch.timeout", DEFAULT_SWITCH_TIMEOUT);
+	/* столько опросов подряд должен молчать декодер, чтобы отказ чтения
+	 * считался серией (тот же порог, что у страховочного таймаута) */
+	int max_vdec_fails = timeout_ms / cur_hz;
+	if (max_vdec_fails < 1)
+		max_vdec_fails = 1;
+	/* время последнего успешного чтения с активным декодером —
+	 * обновляется внутри vdec_poll() */
+	g_vdec_last_ok_us = now_us ();
+	int vdec_fails = 0;
+	/* инвалидация таблицы режимов по PID SurfaceFlinger */
+	int ticks = 0;
+
+	/* Backdoor недоступен — переключать режимы нечем. Пассивный режим
+	 * (спека §3.2.6): ни одного sink_apply, только обслуживание API, чтобы
+	 * работали frame_rate_hint и afrd -s. */
+	if (!plat->sf_backdoor)
+	{
+		trace (0, "backdoor SurfaceFlinger недоступен — пассивный режим\n");
+		atv14_stats_sync_passive (plat);
+		while (!g_shutdown)
+			if (atv14_wait (cur_hz) != 0)
+				msleep (cur_hz);
+		return 0;
+	}
+
+	preferred_id = preferred_mode_id (plat);
+
+	sf_modes_refresh (plat);
+
+	trace (1, "предпочтительный режим ТВ: %d\n", preferred_id);
+
+	/* страховка: снять «залипший» флаг прошлого запуска */
+	sink_release_backdoor (plat->sink);
+
+	/* enable=0 в конфиге — ключ задокументирован как рабочий, но новая ветка
+	 * его раньше игнорировала: демон продолжал измерять и слать 1035, а API
+	 * при этом отдавал `enabled: no`. Поведение как в пассивном режиме
+	 * (залипший флаг уже снят строкой выше). */
+	if (!g_enable)
+	{
+		trace (0, "enable=0 — переключение частоты выключено, только API\n");
+		atv14_stats_sync_passive (plat);
+		while (!g_shutdown)
+			if (atv14_wait (cur_hz) != 0)
+				msleep (cur_hz);
+		return 0;
+	}
+
+	/* PID SurfaceFlinger на старте: с ним сравнивает проверка рестарта ниже.
+	 * Если pidof не ответил, останется -1 и первая проверка просто запомнит
+	 * значение (без ложного «перезапуска»). */
+	pid_t last_sf_pid = pidof ("surfaceflinger");
+	if (last_sf_pid <= 0)
+		last_sf_pid = -1;
+
+	int window_ms = cfg_get_int ("fps.measure.window.ms", 1500);
+	if (window_ms < 150)
+		window_ms = 150;   /* окно короче 150 мс не различает и 50/60 Гц */
+	/* Предел расширения окна замера: пока fps_classify_window не даст
+	 * однозначный ответ, окно растёт шагом window_ms/3 (см. цикл замера) */
+	int window_max_ms = cfg_get_int ("fps.measure.window.max.ms", 6000);
+	if (window_max_ms < window_ms)
+		window_max_ms = window_ms;   /* опечатка в конфиге не должна гасить замер */
+	int max_retries = cfg_get_int ("fps.measure.retries", 3);
+	/* Уточнение замера заявленной длительностью кадра (vdec_status: frame dur),
+	 * %: на IPTV счётчик кадров завышен на 2–4% (см. fps_refine_declared) */
+	int declared_pct = cfg_get_int ("fps.declared.crosscheck.pct", 5);
+	/* mode.use.fract: на новом пути ключ уважается (раньше игнорировался).
+	 * По умолчанию для ATV14-профиля — дробные режимы: контент почти всегда
+	 * идёт с 23.976/29.97/59.94, а 0 даёт точные 24.000/30.000/60.000. */
+	int use_fract = cfg_get_int ("mode.use.fract", 1);
+	/* R56: через сколько мс после переключения перемерить частоту и поправить
+	 * режим, если класс однозначно другой (первое окно у некоторых плееров
+	 * смещено набором буфера — 60-фпс канал давал 50.3 fps и режим 50 Гц).
+	 * 0 — перепроверка выключена. Знание о плеерах не нужно. */
+	int recheck_ms = cfg_get_int ("fps.recheck.delay.ms", 8000);
+	int start_deb = cfg_get_int ("trigger.start.debounce.ms", 500);
+	int stop_deb = cfg_get_int ("trigger.stop.debounce.ms", 1500);
+
+	while (!g_shutdown)
+	{
+		/* g_mstime обслуживает mstime_* ; в этом цикле его больше никто
+		 * не обновляет, а от него зависит срок жизни fps-подсказки API */
+		mstime_update ();
+
+		/* вместо msleep: заодно обслуживаем UDP-сокет API */
+		if (atv14_wait (cur_hz) != 0)
+			msleep (cur_hz);
+
+		if (g_shutdown)
+			break;
+
+		ticks++;
+
+		/* R34б: статистика для GUI и API (afrd -s, status) — в ATV14 её
+		 * больше никто не обновляет */
+		if (ticks % 3 == 0)
+		{
+			atv14_stats_sync (cur_sf_id, orig_sf_id, held);
+			update_stats ();
+		}
+
+		/* Step 2: рестарт SurfaceFlinger. Признак — смена PID (проверяем редко,
+		 * pidof — это fork/exec) либо смена самой таблицы режимов (видна сразу
+		 * в дампе, который всё равно читается каждый цикл). */
+		if (ticks % 16 == 0)
+		{
+			pid_t sf_pid = pidof ("surfaceflinger");
+
+			if (sf_pid <= 0)
+			{
+				/* PID не определился — проверка недостоверна */
+			}
+			else if ((last_sf_pid > 0) && (sf_pid != last_sf_pid))
+			{
+				last_sf_pid = sf_pid;
+				trace (1, "SurfaceFlinger: новый pid %d, перечитываю режимы\n",
+				       (int) sf_pid);
+				sf_modes_refresh (plat);
+				g_sf_table_changed = false;
+				preferred_id = preferred_mode_id (plat);
+				trace (1, "предпочтительный режим ТВ: %d\n", preferred_id);
+				atv14_invalidate (plat, &want_sf_id, &orig_sf_id, &cur_sf_id,
+				                  &held, &measure_failed, &retries);
+				trace (1, "SF перезапустился: удержание снято, режимы перерезолвятся\n");
+			}
+			else
+				last_sf_pid = sf_pid;	/* первая достоверная проверка */
+		}
+
+		if (vdec_poll (plat->vdec_status, &v0) != 0)
+		{
+			/* R34г: серия отказов чтения — сообщаем один раз, без шторма */
+			if (++vdec_fails == max_vdec_fails)
+				trace (0, "vdec_status не читается: %d отказов подряд (%d мс)\n",
+				       vdec_fails, vdec_fails * cur_hz);
+
+			/* R34а: страховка «видео потерялось». Проверяется только на отказе
+			 * чтения: возраст таймера отсчитывается от последней УСПЕШНОЙ
+			 * выборки, поэтому медленная не-vdec работа хвоста итерации
+			 * (dumpsys SurfaceFlinger, service call) за потерю данных не
+			 * принимается. Декодер молчит дольше страховочного таймаута,
+			 * а режим всё ещё удержан — снимаем удержание, иначе флаг
+			 * backdoor залипнет до перезагрузки. */
+			if (held && (now_us () - g_vdec_last_ok_us) > (unsigned long long) timeout_ms * 1000)
+			{
+				trace (0, "видео потеряно: %d мс без данных декодера — возвращаю режим\n",
+				       (int) ((now_us () - g_vdec_last_ok_us) / 1000));
+				atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
+				video = false;
+				want_sf_id = -1;
+			}
+			continue;
+		}
+		vdec_fails = 0;
+
+		bool new_video = v0.active;
+
+		if (new_video != video)
+		{
+			msleep (new_video ? start_deb : stop_deb);
+
+			vdec_status_t again;
+			if (vdec_poll (plat->vdec_status, &again) == 0 && again.active == new_video)
+				video = new_video;
+			else
+				continue;	/* дребезг старта/стопа — игнорируем */
+		}
+
+		/* «пауза»: счётчик кадров не растёт на двух соседних опросах подряд */
+		if (v0.active)
+		{
+			/* R34в: новое видео началось раньше, чем истёк stop_deb —
+			 * декодер поднял новый инстанс, счётчик сбросился. Старое
+			 * решение к новому видео не относится: режим уже наш,
+			 * а частоту мерим заново. */
+			if (have_prev_frames && (v0.frames < prev_frames))
+			{
+				trace (1, "счётчик кадров сброшен — новое видео, мерю заново\n");
+				want_sf_id = -1;
+				measure_failed = false;
+				retries = 0;
+				recheck_armed = false;	/* R56: перепроверка — на текущее видео */
+				mstime_disable (&recheck_timer);
+			}
+
+			if (have_prev_frames && (v0.frames == prev_frames))
+				still++;
+			else
+				still = 0;
+
+			paused = (still >= 2);
+			prev_frames = v0.frames;
+			have_prev_frames = true;
+		}
+		else
+		{
+			still = 0;
+			paused = false;
+			have_prev_frames = false;
+		}
+
+		/* pause.keep==0: пауза обрабатывается как стоп (guard вернёт режим) */
+		bool video_eff = video;
+		if (!pause_keep && paused)
+			video_eff = false;
+
+		/* R50: сброс состояния замера висит на video_eff, а не на video.
+		 * Пауза при pause.keep==0 для замера равносильна концу видео: пока
+		 * счётчик кадров стоит, окно замера бессмысленно (и, исчерпав
+		 * fps.measure.retries, оно выставляло measure_failed, который затем
+		 * сбрасывался только по концу видео — после возобновления AFR больше
+		 * не включался). При pause.keep==1 video_eff == video, поведение
+		 * прежнее. */
+		if (!video_eff)
+		{
+			want_sf_id = -1;
+			/* видео закончилось — следующее мерим заново: и счётчик попыток,
+			 * и признак «частота не определилась» относятся к текущему видео */
+			measure_failed = false;
+			retries = 0;
+			/* R56: перепроверка — тоже на текущее видео */
+			recheck_armed = false;
+			mstime_disable (&recheck_timer);
+		}
+		else if (recheck_armed && mstime_expired (&recheck_timer))
+		{
+			/* R56: прошло fps.recheck.delay.ms после переключения — меряем
+			 * ещё раз (та же логика окна и уточнения). Если класс тот же,
+			 * guard_decide не тронет режим и мигания не будет; если другой
+			 * (например, стартовое окно занизило 60 fps до 50) — поправим. */
+			trace (1, "перепроверка замера после переключения\n");
+			want_sf_id = -1;
+			measure_failed = false;
+			retries = 0;
+		}
+		else if (!measure_failed && (want_sf_id < 0))
+		{
+			int hz = 0;
+
+			/* fps.prefer.api: подсказку плеера (24.8 fixed-point, живёт 1 с)
+			 * предпочитаем собственному замеру — она точнее и мгновенна */
+			int api_hz = 0;
+			if (prefer_api && mstime_running (&g_frame_rate_hint.stamp))
+				api_hz = g_frame_rate_hint.fps;
+
+			if (api_hz)
+			{
+				hint_seen = g_frame_rate_hint.stamp;
+				hz = fps_rate_hz (fps_rate_index_for_hz (api_hz));
+				trace (1, "видео: " HZ_FMT " Гц по подсказке плеера, ищу режим\n",
+				       HZ_ARGS (hz));
+			}
+			else
+			{
+				/* Замер: окно window_ms, разбитое на под-срезы slice_ms,
+				 * с расширением до window_max_ms, пока частота не будет
+				 * определена однозначно.
+				 * Счётчик кадров дискретен (±1 кадр) и метки времени имеют
+				 * неопределённость, поэтому короткое окно не различает соседние
+				 * частоты: граница 24 -> 25 проходит на 24.49 fps, а один кадр
+				 * за 1.5 с — это 0.67 fps. Живой случай: «24.642 fps -> 25 Гц»
+				 * (R47), из-за чего 24-фпс поток уводился в 1080p25hz.
+				 * Выборка годится, только если декодер активен всё окно и
+				 * счётчик строго растёт в каждом под-срезе: если середина
+				 * окна попала на паузу/буферизацию, дельта окажется меньше
+				 * реальной, и частота «уедет» в чужой стандарт (напр. 50 Гц
+				 * при полуокне простоя дадут ровно 25 Гц). v0 читаем здесь
+				 * же: к этому моменту мог пройти дебаунс старта, и прочитанное
+				 * в начале цикла значение было бы на дебаунс старше.
+				 * Метка времени выборки — середина чтения: само чтение не
+				 * мгновенно (под нагрузкой — десятки мс), а интервал считают
+				 * крайние выборки, и перекос между ними уводит частоту. */
+				unsigned long long read_a = now_us ();
+				if (vdec_poll (plat->vdec_status, &v0) != 0)
+					continue;
+				unsigned long long read_b = now_us ();
+				unsigned long long t0 = read_a + (read_b - read_a) / 2;
+				unsigned long long read0_us = read_b - read_a;
+
+				int slice_ms = window_ms / 3;
+				if (slice_ms < 1)
+					slice_ms = 1;
+				unsigned long long window_us = (unsigned long long)window_ms * 1000;
+				unsigned long long window_max_us = (unsigned long long)window_max_ms * 1000;
+
+				bool grown = v0.active;
+				bool stalled = false;   /* окно прервано простоем счётчика/чтением */
+				v1 = v0;
+				int decided_ms = 0;
+				unsigned long long t1 = t0, dt_us = 0, dt_unc_us = 0;
+				unsigned long long frames_delta = 0;
+				double fps = 0.0;
+
+				while (grown)
+				{
+					/* Окно длинное (до window_max_ms), и всё это время надо
+					 * обслуживать UDP-сокет API: иначе `status`/`afrd -s` и
+					 * подсказка плеера ждут конца окна (находка ревью R51).
+					 * Границы окна считаются по реальным меткам времени —
+					 * atv14_wait возвращается и раньше срока, если пришёл
+					 * запрос API. */
+					if (g_shutdown)
+						break;
+					if (atv14_wait (slice_ms) != 0)
+						msleep (slice_ms);
+
+					vdec_status_t cur;
+					unsigned long long ca = now_us ();
+					if (vdec_poll (plat->vdec_status, &cur) != 0)
+					{
+						grown = false;
+						stalled = true;   /* данных нет — это не «не смог измерить» */
+						break;
+					}
+					unsigned long long cb = now_us ();
+
+					if (!cur.active || (cur.frames <= v1.frames))
+					{
+						/* пауза/буферизация/конец файла: счётчик стоит —
+						 * попытку замера тратить нельзя (иначе пауза в первые
+						 * секунды видео выключала AFR до конца файла) */
+						grown = false;
+						stalled = true;
+						break;
+					}
+
+					v1 = cur;
+					t1 = ca + (cb - ca) / 2;
+					dt_us = (t1 > t0) ? (t1 - t0) : 0;
+
+					if (dt_us < window_us)
+						continue;
+
+					frames_delta = v1.frames - v0.frames;
+					/* полусумма длительностей крайних чтений: оценка
+					 * сверху для разброса середин чтений */
+					dt_unc_us = (read0_us + (cb - ca)) / 2;
+					fps = dt_us
+					    ? (double)frames_delta * 1000000.0 / (double)dt_us
+					    : 0.0;
+
+					if (fps_classify_window (frames_delta, dt_us, dt_unc_us, &hz))
+					{
+						decided_ms = (int)(dt_us / 1000);
+
+						/* IPTV: счётчик кадров завышен — плеер повторно
+						 * декодирует кадры на границах HLS-сегментов (живой
+						 * замер 30.09: поток 23.976 -> счётчик 24.56, +2.4%,
+						 * и 24-фпс канал уходил в 25 Гц). Заявленная длина
+						 * кадра (`frame dur`) на живых потоках совпадает с
+						 * номиналом, поэтому уточняем ею решение — но только
+						 * если она рядом (иначе это мусор в поле). */
+						if (v1.decl_dur)
+						{
+							int refined = 0;
+							if (fps_refine_declared (hz, 96000.0 / (double)v1.decl_dur,
+							                         (double)declared_pct, &refined))
+							{
+								/* в лог — только когда группа частоты
+								 * действительно изменилась: на нормальных
+								 * номиналах уточнение no-op */
+								if (refined != hz)
+									trace (1, "частота уточнена по frame dur (%u): "
+									       HZ_FMT " Гц вместо " HZ_FMT " Гц\n",
+									       v1.decl_dur, HZ_ARGS (refined), HZ_ARGS (hz));
+
+								hz = refined;
+							}
+						}
+
+						break;
+					}
+
+					if (dt_us >= window_max_us)
+						break;
+				}
+
+				/* Подсказка плеера приоритетнее замера: сюда мы попадаем,
+				 * только если на входе в ветку её не было, значит любая
+				 * живая подсказка пришла во время окна (atv14_wait её принял) */
+				if (!hz && prefer_api && mstime_running (&g_frame_rate_hint.stamp))
+				{
+					hz = fps_rate_hz (fps_rate_index_for_hz (g_frame_rate_hint.fps));
+					decided_ms = (int)(dt_us / 1000);
+					trace (1, "видео: " HZ_FMT " Гц по подсказке плеера (пришла во время замера)\n",
+					       HZ_ARGS (hz));
+				}
+
+				if (!hz)
+				{
+					/* Окно прервано простоем счётчика или нечитаемостью узла —
+					 * данных для решения не было, это не отказ измерения:
+					 * попытку не тратим (иначе пауза в первые секунды видео
+					 * исчерпывала retries и выключала AFR до конца файла). */
+					if (stalled)
+						continue;
+
+					if (++retries >= max_retries)
+					{
+						trace (1, "частоту определить не удалось (%d попыток), пропускаю\n", retries);
+						measure_failed = true;
+						want_sf_id = -1;
+						/* как и выше: при сменившейся таблице режимов
+						 * orig_sf_id может быть из старой нумерации */
+						if (!g_sf_table_changed)
+							atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
+					}
+					continue;
+				}
+
+				retries = 0;
+				trace (1, "видео: %.3f fps (%s), окно %d мс (ΔF=%llu, ±%.0f мс), ищу режим\n",
+				       fps, fps_rate_name (fps_rate_index_for_hz (hz)), decided_ms,
+				       frames_delta, (double)dt_unc_us / 1000.0);
+			}
+
+			retries = 0;
+
+			/* mode.use.fract: 1 — предпочитать дробные (по умолчанию в профиле),
+			 * 2 — целые (24.000/30.000/60.000), 0 — «как уместно»: для нашего
+			 * класса это дробный представитель, потому что счётчик пару 0.1 %
+			 * не различает. Если точного режима в таблице SurfaceFlinger нет
+			 * (ТВ не поддерживает), resolver подберёт ближайший. */
+			if (use_fract == 2)
+			{
+				int exact = fps_rate_exact_member (hz);
+				if (exact)
+				{
+					trace (1, "mode.use.fract=0: режим " HZ_FMT " Гц вместо " HZ_FMT " Гц\n",
+					       HZ_ARGS (exact), HZ_ARGS (hz));
+					hz = exact;
+				}
+			}
+
+			/* текущий режим / исходный id */
+			if (g_sf_modes_n <= 0)
+				sf_modes_refresh (plat);
+
+			sf_mode_t active;
+			int w = 1920, h = 1080;
+			if (sf_active_mode (plat, &active) == 0)
+			{
+				w = active.width;
+				h = active.height;
+			}
+
+			cur_sf_id = sfmodes_find (g_sf_modes, g_sf_modes_n, hz, w, h);
+			if (cur_sf_id < 0)
+			{
+				trace (1, "режим для %d.%02d Гц не найден в списке\n",
+				       HZ_ARGS (hz));
+				measure_failed = true;
+				want_sf_id = -1;
+
+				/* Если таблица режимов сменилась прямо во время замера, id в
+				 * orig_sf_id — из старой нумерации, и в транзакцию 1035 его
+				 * отправлять нельзя (R41/R43). Удержание снимет блок обработки
+				 * g_sf_table_changed на следующей итерации. */
+				if (!g_sf_table_changed)
+					atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
+				continue;
+			}
+			want_sf_id = cur_sf_id;
+		}
+		/* Подсказка плеера — прямой запрос точной частоты (24.8 fixed-point,
+		 * живёт 1 с). Эта ветка ловит случай, когда режим уже выбран
+		 * (`want_sf_id >= 0`) или замер не удался: раньше подсказка читалась
+		 * только до первого решения, и смена эпизода/канала в том же плеере
+		 * оставляла прежний режим (R53). Подсказка применяется один раз. */
+		else if (prefer_api && video_eff &&
+		         mstime_running (&g_frame_rate_hint.stamp) &&
+		         (g_frame_rate_hint.stamp != hint_seen))
+		{
+			int hint_hz = fps_rate_hz (fps_rate_index_for_hz (g_frame_rate_hint.fps));
+
+			if (g_sf_modes_n <= 0)
+				sf_modes_refresh (plat);
+
+			sf_mode_t active;
+			int w = 1920, h = 1080;
+			if (sf_active_mode (plat, &active) == 0)
+			{
+				w = active.width;
+				h = active.height;
+			}
+
+			int hint_id = sfmodes_find (g_sf_modes, g_sf_modes_n, hint_hz, w, h);
+			if (hint_id < 0)
+			{
+				/* режима нет в текущей таблице (напр. частота есть только для
+				 * другого разрешения): сказать об этом в лог — иначе это
+				 * неотличимо от «подсказка потеряна» (симптом R53), и не
+				 * повторять резолв на каждой итерации, пока подсказка жива */
+				hint_seen = g_frame_rate_hint.stamp;
+				trace (1, "режим для " HZ_FMT " Гц (подсказка плеера) не найден в списке\n",
+				       HZ_ARGS (hint_hz));
+			}
+			else
+			{
+				hint_seen = g_frame_rate_hint.stamp;
+				measure_failed = false;
+				want_sf_id = hint_id;
+				trace (1, "видео: " HZ_FMT " Гц по подсказке плеера, режим id %d\n",
+				       HZ_ARGS (hint_hz), hint_id);
+			}
+		}
+
+		/* актуальный режим перечитываем у SurfaceFlinger: так мы видим и то,
+		 * что переключило приложение со своим AFR, и не расходимся с реальностью */
+		sf_mode_t active;
+		if (sf_active_mode (plat, &active) == 0)
+			cur_sf_id = active.id;
+
+		/* Таблица режимов сменилась (рестарт SurfaceFlinger) — нумерация id
+		 * уже другая, и кэшированный want_sf_id в транзакцию 1035 пускать
+		 * нельзя. Проверка по PID (выше) срабатывает реже, а этот признак
+		 * виден сразу: он и закрывает окно до неё. */
+		if (g_sf_table_changed)
+		{
+			g_sf_table_changed = false;
+
+			/* рестарт уже учтён по таблице — чтобы проверка PID не сработала
+			 * по тому же событию второй раз */
+			pid_t sf_pid = pidof ("surfaceflinger");
+			if (sf_pid > 0)
+				last_sf_pid = sf_pid;
+
+			preferred_id = preferred_mode_id (plat);
+			trace (1, "таблица режимов SurfaceFlinger сменилась: снимаю удержание, перерезолвлю режим\n");
+			atv14_invalidate (plat, &want_sf_id, &orig_sf_id, &cur_sf_id,
+			                  &held, &measure_failed, &retries);
+			continue;
+		}
+
+		act = guard_decide (video_eff, want_sf_id, cur_sf_id, &orig_sf_id, &held);
+
+		if (act == GUARD_SWITCH && (preferred_id >= 0))
+			orig_sf_id = preferred_id;	/* возврат — в предпочтительный режим ТВ */
+
+		if (act == GUARD_SWITCH)
+		{
+			if (atv14_apply_mode (plat, want_sf_id, "переключение пропущено") == 0)
+			{
+				cur_sf_id = want_sf_id;
+
+				/* R56: через recheck_ms перемерить и поправить режим, если
+				 * стартовое окно было смещено (один раз на видео) */
+				if ((recheck_ms > 0) && !recheck_armed)
+				{
+					/* g_mstime обновляется в начале итерации, а с тех пор
+					 * прошло окно замера (до 6 с) и dumpsys — берём свежее
+					 * время, иначе перепроверка отсчитывается от старта
+					 * итерации и срабатывает сразу после переключения */
+					mstime_update ();
+					mstime_arm (&recheck_timer, (uint32_t)recheck_ms);
+					recheck_armed = true;
+					trace (1, "перепроверка замера через %d мс\n", recheck_ms);
+				}
+			}
+		}
+		else if (act == GUARD_RESTORE)
+		{
+			/* Возврат по настоящему стопу (декодер исчез) отключается ключом
+			 * switch.restore.on.stop; возврат по паузе (pause.keep==0)
+			 * выполняется всегда. Флаг backdoor снимаем в любом случае. */
+			if (restore_on_stop || v0.active)
+			{
+				int rc = atv14_apply_mode (plat, orig_sf_id,
+				                           "возврат пропущен, флаг backdoor снят");
+				if (rc == 0)
+				{
+					guard_note_restored (&held);
+					cur_sf_id = orig_sf_id;
+					orig_sf_id = -1;
+				}
+				else if (rc == -1)
+				{
+					/* id исчез из таблицы (сменилась нумерация) — возвращать
+					 * нечего: удержание снимаем, иначе каждый оборот цикла
+					 * повторяли бы эту ветку и лог */
+					guard_note_restored (&held);
+					orig_sf_id = -1;
+				}
+			}
+			else
+			{
+				guard_note_restored (&held);
+				orig_sf_id = -1;
+			}
+			sink_release_backdoor (plat->sink);
+			want_sf_id = -1;
+			continue;
+		}
+		else if (act == GUARD_NONE && !video && held)
+		{
+			sink_release_backdoor (plat->sink);
+			guard_note_restored (&held);
+		}
+	}
+
+	/* выход: гарантированно вернуть систему в исходное состояние.
+	 * Id из кэша проверяет atv14_apply_mode: если его в текущей таблице уже
+	 * нет (или таблица неизвестна), в 1035 он не уходит — снимаем только флаг. */
+	if (held)
+	{
+		atv14_apply_mode (plat, orig_sf_id, "возврат пропущен, флаг backdoor снят");
+		sink_release_backdoor (plat->sink);
+		guard_note_restored (&held);
+	}
+
+	return 0;
+}
+
+/* --------- * --------- * --------- * --------- * --------- * --------- */
+
+static platform_t g_plat;
+
 int afrd_run ()
 {
+	g_plat = platform_detect ();
+
+	if (g_plat.kind == PLAT_ATV14)
+		return run_atv14 (&g_plat);
+
 	if (g_uevent_sock == -1)
 		return -1;
 
@@ -1139,6 +2142,15 @@ void afrd_frame_rate_hint (int hz)
 
 void afrd_refresh_rate (int hz)
 {
+	/* в ATV14-режиме принудительный refresh_rate не поддержан: переключением
+	 * управляет только run_atv14 (иначе API молча дёргал бы legacy-состояние
+	 * g_state/framerate_switch без всякого эффекта) */
+	if (g_plat.kind == PLAT_ATV14)
+	{
+		trace (1, "refresh_rate в ATV14 не поддержан\n");
+		return;
+	}
+
 	bool ok = (hz && (hz >= HZ_MIN) && (hz < HZ_MAX));
 	if (!ok)
 		hz = 0;

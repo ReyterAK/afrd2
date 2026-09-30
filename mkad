@@ -3,7 +3,7 @@
 DEBUG="NDK_DEBUG=1"
 #V=1
 
-export NDK=/usr/local/app/Android/SDK/ndk-bundle
+test -z "$NDK" && export NDK=$HOME/Android/Sdk/android-ndk-r26d
 $NDK/ndk-build $DEBUG $* || exit $?
 
 adb push obj/local/armeabi-v7a/afrd /data/local/zap/afrd

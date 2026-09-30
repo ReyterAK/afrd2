@@ -1,7 +1,11 @@
 #!/bin/sh
 
-test -z "$NDK" && export NDK=/usr/local/app/Android/SDK/ndk-bundle
-$NDK/ndk-build $* || exit $?
+test -z "$NDK" && export NDK=$HOME/Android/Sdk/android-ndk-r26d
+# ABI для сборки: по умолчанию оба — armeabi-v7a (бинарь для стенда) и
+# arm64-v8a (legacy-артефакт для APK и install/mk-update). Переопределяется
+# переменной AFRD_ABIS, напр. AFRD_ABIS=armeabi-v7a ./mka
+test -z "$AFRD_ABIS" && AFRD_ABIS="armeabi-v7a arm64-v8a"
+$NDK/ndk-build APP_ABI="$AFRD_ABIS" $* || exit $?
 
 test -n "$*" && exit 0
 
@@ -27,6 +31,7 @@ fi
 cp config/afrd-android7-.ini android/app/src/main/res/raw/afrd_7.ini
 cp config/afrd-android8+.ini android/app/src/main/res/raw/afrd_8.ini
 cp config/afrd-minix7-.ini android/app/src/main/res/raw/afrd_minix7.ini
+cp config/afrd2.ini android/app/src/main/res/raw/afrd_atv14.ini
 cp ChangeLog-en.txt android/app/src/main/res/raw/changelog.txt
 cp ChangeLog-ru.txt android/app/src/main/res/raw-ru/changelog.txt
 cp FAQ-en.txt android/app/src/main/res/raw/faq.txt

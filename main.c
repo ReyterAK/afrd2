@@ -137,9 +137,13 @@ void trace (int level, const char *format, ...)
 		write (STDOUT_FILENO, buff, n);
 }
 
-static void signal_handler (int sig)
+/* Завершение (SIGTERM/SIGINT): основной цикл вернёт исходный режим и снимет
+ * флаг backdoor. Второй такой сигнал — немедленный выход: значит, цикл не
+ * ответил и завершение затянулось. */
+static void on_term (int sig)
 {
 	g_shutdown = 1;
+	signal (sig, SIG_DFL);
 }
 
 static void signal_emerg (int sig)
@@ -239,14 +243,14 @@ static void switch_namespace (int pid)
 	snprintf (tmp, sizeof (tmp), "/proc/%d/ns/cgroup", pid);
 	h = open (tmp, O_RDONLY);
 	if (h >= 0) {
-		int rc = setns (h, CLONE_NEWCGROUP);
+		(void) setns (h, CLONE_NEWCGROUP);
 		close (h);
 	}
 
 	snprintf (tmp, sizeof (tmp), "/proc/%d/ns/mnt", pid);
 	h = open (tmp, O_RDONLY);
 	if (h >= 0) {
-		int rc = setns (h, CLONE_NEWNS);
+		(void) setns (h, CLONE_NEWNS);
 		close (h);
 	}
 #else
@@ -394,9 +398,9 @@ int main (int argc, char *const *argv)
 			break;
 
 	signal (SIGHUP, SIG_IGN);
-	signal (SIGINT, signal_handler);
-	signal (SIGQUIT, signal_handler);
-	signal (SIGTERM, signal_handler);
+	signal (SIGQUIT, on_term);	/* как SIGTERM/SIGINT: завершение с возвратом режима */
+	signal (SIGINT, on_term);
+	signal (SIGTERM, on_term);
 
 	signal (SIGFPE, signal_emerg);
 	signal (SIGILL, signal_emerg);
