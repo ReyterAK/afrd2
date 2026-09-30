@@ -38,27 +38,31 @@ public class RootShell
     }
 
     /**
-     * Выполнить команду от root и дождаться завершения.
+     * Выполнить команды от root и дождаться завершения.
      *
-     * @param command команда с аргументами (экранирование не требуется: строка
-     *                собирается и передаётся su -c целиком)
-     * @param output  если не null — построчно складывать stdout+stderr
-     * @return код возврата процесса или -1, если запустить не удалось
+     * Как в libsuperuser: запускается один `su`, каждая строка массива пишется
+     * ему в stdin отдельной командой (это важно — Control.extractDaemon
+     * передаёт двумя элементами «<path> -k» и «rm -f <path>»; склеивание их
+     * пробелом ломало вторую команду).
+     *
+     * @param commands команды (каждый элемент — отдельная строка для su)
+     * @param output   если не null — построчно складывать stdout+stderr
+     * @return код возврата su или -1, если запустить не удалось
      */
-    public static int run (String[] command, List<String> output)
+    public static int run (String[] commands, List<String> output)
     {
-        StringBuilder sb = new StringBuilder ();
-        for (String s : command)
-        {
-            if (sb.length () > 0)
-                sb.append (' ');
-            sb.append (s);
-        }
-
         try
         {
-            Process p = new ProcessBuilder ("su", "-c", sb.toString ())
-                    .redirectErrorStream (true).start ();
+            Process p = new ProcessBuilder ("su").redirectErrorStream (true).start ();
+
+            java.io.OutputStream os = p.getOutputStream ();
+            for (String c : commands)
+            {
+                os.write (c.getBytes ());
+                os.write ('\n');
+            }
+            os.flush ();
+            os.close ();
 
             BufferedReader r = new BufferedReader (new InputStreamReader (p.getInputStream ()));
             String line;
