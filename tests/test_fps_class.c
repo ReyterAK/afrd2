@@ -31,6 +31,64 @@ static void t_classify(void)
 	assert(fps_classify(23.5) == fps_rate_hz(0));
 }
 
+/* Решение по окну замера: счётчик кадров дискретен (±1 кадр), метки времени
+ * имеют неопределённость. Окно годится, только если весь доверительный
+ * интервал укладывается в одну группу режимов. */
+static void t_classify_window(void)
+{
+	int hz = -1;
+
+	/* Живой случай (лог 22:50:15, R47): 37 кадров за 1.5 с. 24.64 fps «ближе»
+	 * к 25, но ±1 кадр накрывает и 24, и 25 -> решать нельзя, нужно окно шире. */
+	assert(fps_classify_window(37, 1501500, 0, &hz) == 0);
+	assert(hz == 0);
+
+	/* 24 fps за 1.5 с (36 кадров) — тоже неоднозначно: ±1 кадр доходит до 25 */
+	assert(fps_classify_window(36, 1500000, 0, &hz) == 0);
+	/* 23.976 за 1.5 с (35 кадров) — однозначно */
+	assert(fps_classify_window(35, 1500000, 0, &hz) == 1 && hz == fps_rate_hz(0));
+	/* 25 fps за 1.5 с (38 кадров) — однозначно, быстрый путь сохраняется */
+	assert(fps_classify_window(38, 1500000, 0, &hz) == 1 && hz == fps_rate_hz(2));
+
+	/* далеко отстоящие частоты решаются в том же окне */
+	assert(fps_classify_window(75, 1500000, 0, &hz) == 1 && hz == fps_rate_hz(5));  /* 50 */
+	assert(fps_classify_window(90, 1500000, 0, &hz) == 1 && hz == fps_rate_hz(7));  /* 60 */
+	assert(fps_classify_window(45, 1500000, 0, &hz) == 1 && hz == fps_rate_hz(4));  /* 30 */
+
+	/* расширение окна до 2.0 с ещё не помогает, до 2.5 с — решает */
+	assert(fps_classify_window(48, 2000000, 0, &hz) == 0);
+	assert(fps_classify_window(60, 2500000, 0, &hz) == 1 && hz == fps_rate_hz(1));
+
+	/* 3 с: 25 fps решается, а «24 + лишний кадр» — ещё нет */
+	assert(fps_classify_window(75, 3000000, 0, &hz) == 1 && hz == fps_rate_hz(2));
+	assert(fps_classify_window(73, 3001500, 0, &hz) == 0);
+
+	/* 4.5 с: тот самый «24.642 fps» решается в пользу группы 24, а не 25 */
+	assert(fps_classify_window(109, 4500000, 0, &hz) == 1 && hz == fps_rate_hz(1));
+
+	/* неопределённость меток времени расширяет доверительный интервал:
+	 * при ±30 мс окно 3 с не решает, а 6 с — решает */
+	assert(fps_classify_window(73, 3001500, 30000, &hz) == 0);
+	assert(fps_classify_window(144, 6000000, 30000, &hz) == 1 && hz == fps_rate_hz(1));
+
+	/* вырожденные случаи */
+	assert(fps_classify_window(0, 1500000, 0, &hz) == 0);
+	assert(fps_classify_window(36, 0, 0, &hz) == 0);
+	assert(fps_classify_window(36, 1000, 1000, &hz) == 0);   /* интервал не определён */
+	assert(fps_classify_window(1, 1500000, 0, &hz) == 0);    /* слишком мало кадров */
+	assert(fps_classify_window(255, 1500000, 0, &hz) == 0);  /* 170 fps — вне ряда */
+}
+
+static void t_group(void)
+{
+	assert(fps_rate_group(fps_rate_hz(0)) == fps_rate_group(fps_rate_hz(1)));
+	assert(fps_rate_group(fps_rate_hz(3)) == fps_rate_group(fps_rate_hz(4)));
+	assert(fps_rate_group(fps_rate_hz(6)) == fps_rate_group(fps_rate_hz(7)));
+	assert(fps_rate_group(fps_rate_hz(2)) != fps_rate_group(fps_rate_hz(1)));
+	assert(fps_rate_group(fps_rate_hz(5)) != fps_rate_group(fps_rate_hz(2)));
+	assert(fps_rate_group(12345) == 0);   /* нестандартная частота */
+}
+
 static void t_table(void)
 {
 	assert(strcmp(fps_rate_name(0), "23.976") == 0);
@@ -43,6 +101,8 @@ int main(void)
 {
 	t_estimate();
 	t_classify();
+	t_classify_window();
+	t_group();
 	t_table();
 	printf("fps_class: OK\n");
 	return 0;

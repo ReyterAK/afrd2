@@ -93,7 +93,7 @@ adb -s $D shell 'echo status | timeout 2 nc -u -w1 127.0.0.1 50505'   # стат
 | `log.file`, `log.enable` | файл лога (по умолчанию `/data/local/afrd.log`) |
 | `trigger.poll.ms` | период опроса `vdec_status` |
 | `trigger.start.debounce.ms`, `trigger.stop.debounce.ms` | дебаунс старта/стопа видео |
-| `fps.measure.window.ms`, `fps.measure.retries` | окно и число попыток измерения частоты |
+| `fps.measure.window.ms`, `fps.measure.window.max.ms`, `fps.measure.retries` | начальное окно, предел расширения окна и число попыток измерения частоты |
 | `fps.prefer.api` | предпочитать подсказку плеера (`frame_rate_hint`) собственному замеру |
 | `switch.timeout` | страховочный таймаут, мс (по умолчанию 3000): если `vdec_status` не читается дольше него, а режим ещё удержан — удержание снимается, чтобы флаг backdoor не залип |
 | `switch.restore.on.stop` | возвращать исходный режим при остановке видео |

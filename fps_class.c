@@ -88,3 +88,48 @@ int fps_rate_index_for_hz (int hz)
 
 	return best;
 }
+
+/* Группа режимов (индекс строки k_rates -> частота группы, Гц):
+ * 23.976 и 24, 29.97 и 30, 59.94 и 60 — на выходе HDMI это один режим. */
+static const int k_group [FPS_RATE_COUNT] = { 24, 24, 25, 30, 30, 50, 60, 60 };
+
+int fps_rate_group (int hz)
+{
+	for (int i = 0; i < FPS_RATE_COUNT; i++)
+		if (fps_rate_hz (i) == hz)
+			return k_group [i];
+
+	return 0;
+}
+
+int fps_classify_window (unsigned long long frames_delta, unsigned long long dt_us,
+                         unsigned long long dt_unc_us, int *hz_out)
+{
+	if (hz_out)
+		*hz_out = 0;
+
+	if (!frames_delta || !dt_us || (dt_us <= dt_unc_us))
+		return 0;
+
+	double dt_lo = (double)(dt_us - dt_unc_us) / 1000000.0;
+	double dt_hi = (double)(dt_us + dt_unc_us) / 1000000.0;
+
+	int center = fps_classify ((double)frames_delta * 1000000.0 / (double)dt_us);
+	int group = fps_rate_group (center);
+	if (!group)
+		return 0;
+
+	/* границы доверительного интервала: кадров меньше при самом длинном
+	 * интервале и кадров больше при самом коротком */
+	double lo = (frames_delta > 1) ? (double)(frames_delta - 1) / dt_hi : 0.0;
+	double hi = (double)(frames_delta + 1) / dt_lo;
+
+	if ((group != fps_rate_group (fps_classify (lo)))
+	 || (group != fps_rate_group (fps_classify (hi))))
+		return 0;
+
+	if (hz_out)
+		*hz_out = center;
+
+	return 1;
+}

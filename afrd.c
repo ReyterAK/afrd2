@@ -1412,6 +1412,9 @@ static int run_atv14 (const platform_t *plat)
 		last_sf_pid = -1;
 
 	int window_ms = cfg_get_int ("fps.measure.window.ms", 1500);
+	/* Предел расширения окна замера: пока fps_classify_window не даст
+	 * однозначный ответ, окно растёт шагом window_ms/3 (см. цикл замера) */
+	int window_max_ms = cfg_get_int ("fps.measure.window.max.ms", 6000);
 	int max_retries = cfg_get_int ("fps.measure.retries", 3);
 	int start_deb = cfg_get_int ("trigger.start.debounce.ms", 500);
 	int stop_deb = cfg_get_int ("trigger.stop.debounce.ms", 1500);
@@ -1575,7 +1578,14 @@ static int run_atv14 (const platform_t *plat)
 			}
 			else
 			{
-				/* Замер: окно window_ms, разбитое на три под-среза.
+				/* Замер: окно window_ms, разбитое на под-срезы slice_ms,
+				 * с расширением до window_max_ms, пока частота не будет
+				 * определена однозначно.
+				 * Счётчик кадров дискретен (±1 кадр) и метки времени имеют
+				 * неопределённость, поэтому короткое окно не различает соседние
+				 * частоты: граница 24 -> 25 проходит на 24.49 fps, а один кадр
+				 * за 1.5 с — это 0.67 fps. Живой случай: «24.642 fps -> 25 Гц»
+				 * (R47), из-за чего 24-фпс поток уводился в 1080p25hz.
 				 * Выборка годится, только если декодер активен всё окно и
 				 * счётчик строго растёт в каждом под-срезе: если середина
 				 * окна попала на паузу/буферизацию, дельта окажется меньше
@@ -1583,35 +1593,68 @@ static int run_atv14 (const platform_t *plat)
 				 * при полуокне простоя дадут ровно 25 Гц). v0 читаем здесь
 				 * же: к этому моменту мог пройти дебаунс старта, и прочитанное
 				 * в начале цикла значение было бы на дебаунс старше.
-				 * Дельта кадров и dt считаются по одному интервалу —
-				 * от первого до последнего чтения выборки. */
+				 * Метка времени выборки — середина чтения: само чтение не
+				 * мгновенно (под нагрузкой — десятки мс), а интервал считают
+				 * крайние выборки, и перекос между ними уводит частоту. */
+				unsigned long long read_a = now_us ();
 				if (vdec_poll (plat->vdec_status, &v0) != 0)
 					continue;
+				unsigned long long read_b = now_us ();
+				unsigned long long t0 = read_a + (read_b - read_a) / 2;
+				unsigned long long read0_us = read_b - read_a;
 
-				unsigned long long t0 = now_us ();
 				int slice_ms = window_ms / 3;
 				if (slice_ms < 1)
 					slice_ms = 1;
 
 				bool grown = v0.active;
 				v1 = v0;
-				for (int s = 0; (s < 3) && grown; s++)
+				int sliced_ms = 0, decided_ms = 0;
+				unsigned long long t1 = t0, dt_us = 0, dt_unc_us = 0;
+				unsigned long long frames_delta = 0;
+				double fps = 0.0;
+
+				while (grown && (sliced_ms < window_max_ms))
 				{
 					msleep (slice_ms);
+					sliced_ms += slice_ms;
 
 					vdec_status_t cur;
+					unsigned long long ca = now_us ();
 					if (vdec_poll (plat->vdec_status, &cur) != 0)
+					{
 						grown = false;
-					else if (!cur.active || (cur.frames <= v1.frames))
-						grown = false;
-					else
-						v1 = cur;
-				}
+						break;
+					}
+					unsigned long long cb = now_us ();
 
-				double fps = grown
-				           ? fps_estimate (v0.frames, t0, v1.frames, now_us ())
-				           : 0.0;
-				hz = fps_classify (fps);
+					if (!cur.active || (cur.frames <= v1.frames))
+					{
+						grown = false;
+						break;
+					}
+
+					v1 = cur;
+					t1 = ca + (cb - ca) / 2;
+
+					if (sliced_ms < window_ms)
+						continue;
+
+					frames_delta = v1.frames - v0.frames;
+					dt_us = (t1 > t0) ? (t1 - t0) : 0;
+					/* полусумма длительностей крайних чтений: оценка
+					 * сверху для разброса середин чтений */
+					dt_unc_us = (read0_us + (cb - ca)) / 2;
+					fps = dt_us
+					    ? (double)frames_delta * 1000000.0 / (double)dt_us
+					    : 0.0;
+
+					if (fps_classify_window (frames_delta, dt_us, dt_unc_us, &hz))
+					{
+						decided_ms = sliced_ms;
+						break;
+					}
+				}
 
 				if (!hz)
 				{
@@ -1629,8 +1672,9 @@ static int run_atv14 (const platform_t *plat)
 				}
 
 				retries = 0;
-				trace (1, "видео: %.3f fps (%s), ищу режим\n", fps,
-				       fps_rate_name (fps_rate_index_for_hz (hz)));
+				trace (1, "видео: %.3f fps (%s), окно %d мс (ΔF=%llu, ±%.0f мс), ищу режим\n",
+				       fps, fps_rate_name (fps_rate_index_for_hz (hz)), decided_ms,
+				       frames_delta, (double)dt_unc_us / 1000.0);
 			}
 
 			retries = 0;
