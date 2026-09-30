@@ -1706,9 +1706,14 @@ static int run_atv14 (const platform_t *plat)
 							if (fps_refine_declared (hz, 96000.0 / (double)v1.decl_dur,
 							                         (double)declared_pct, &refined))
 							{
-								trace (1, "частота уточнена по frame dur (%u): "
-								       HZ_FMT " Гц вместо " HZ_FMT " Гц\n",
-								       v1.decl_dur, HZ_ARGS (refined), HZ_ARGS (hz));
+								/* в лог — только когда группа частоты
+								 * действительно изменилась: на нормальных
+								 * номиналах уточнение no-op */
+								if (refined != hz)
+									trace (1, "частота уточнена по frame dur (%u): "
+									       HZ_FMT " Гц вместо " HZ_FMT " Гц\n",
+									       v1.decl_dur, HZ_ARGS (refined), HZ_ARGS (hz));
+
 								hz = refined;
 							}
 						}
