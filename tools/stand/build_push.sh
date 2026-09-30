@@ -7,6 +7,9 @@ D=${D:-192.168.88.50:5555}
 # ABI бинарника, который доставляется на стенд: armeabi-v7a (32-битный userspace,
 # как на ATV14-стенде) или arm64-v8a (для 64-битных прошивок). Оба ABI собирает ./mka.
 ABI=${AFRD_ABI:-armeabi-v7a}
+# Профиль, который доставляется вместе с бинарником: ATV14 — config/afrd2.ini,
+# старые прошивки (Android 6-9) — config/afrd-android8+.ini / config/afrd-android7-.ini
+INI=${AFRD_INI:-config/afrd2.ini}
 
 # Идемпотентность: снять ранее запущенный демон и его файл ДО push.
 # Иначе adb push в работающий бинарь падает с ETXTBSY (при set -e — аварийный
@@ -20,7 +23,7 @@ adb -s "$D" shell 'pkill -f "^/data/local/tmp/afrd"' || true
 adb -s "$D" shell 'rm -f /data/local/tmp/afrd'
 
 adb -s "$D" push "$ROOT/libs/$ABI/afrd" /data/local/tmp/afrd
-adb -s "$D" push "$ROOT/config/afrd2.ini" /data/local/tmp/afrd.ini
+adb -s "$D" push "$ROOT/$INI" /data/local/tmp/afrd.ini
 adb -s "$D" shell 'chmod 755 /data/local/tmp/afrd'
 adb -s "$D" shell '/data/local/tmp/afrd -v -D /data/local/tmp/afrd.ini' &
 sleep 3
