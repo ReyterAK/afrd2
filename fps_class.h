@@ -41,6 +41,13 @@ int fps_classify_window (unsigned long long frames_delta, unsigned long long dt_
  * заявленной частоты), 0 — заявленная частота не годится. */
 int fps_refine_declared (int measured_hz, double declared_fps, double max_pct, int *hz_out);
 
+/* Точный (целочисленный) представитель группы — для `mode.use.fract=0`:
+ * 23.976 -> 24.000, 29.97 -> 30.000, 59.94 -> 60.000 (25 и 50 без изменений).
+ * Нужен, когда ТВ/прошивка предпочитает точные режимы; если такого режима в
+ * таблице нет, resolver всё равно подберёт ближайший (см. sfmodes_find).
+ * Возврат: fixed-point 24.8 Гц или 0, если частота не из таблицы. */
+int fps_rate_exact_member (int hz);
+
 int fps_rate_hz (int index);
 const char *fps_rate_name (int index);
 int fps_rate_index_for_hz (int hz);

@@ -1356,6 +1356,9 @@ static int run_atv14 (const platform_t *plat)
 	/* метка уже применённой подсказки плеера (R53): чтобы одну подсказку не
 	 * применять на каждой итерации цикла, пока она жива (1 с) */
 	mstime_t hint_seen = 0;
+	/* R56: одноразовая перепроверка замера после смены режима */
+	mstime_t recheck_timer = 0;
+	bool recheck_armed = false;
 	int preferred_id;
 
 	/* Поведенческие ключи профиля (R28). */
@@ -1439,6 +1442,15 @@ static int run_atv14 (const platform_t *plat)
 	/* Уточнение замера заявленной длительностью кадра (vdec_status: frame dur),
 	 * %: на IPTV счётчик кадров завышен на 2–4% (см. fps_refine_declared) */
 	int declared_pct = cfg_get_int ("fps.declared.crosscheck.pct", 5);
+	/* mode.use.fract: на новом пути ключ уважается (раньше игнорировался).
+	 * По умолчанию для ATV14-профиля — дробные режимы: контент почти всегда
+	 * идёт с 23.976/29.97/59.94, а 0 даёт точные 24.000/30.000/60.000. */
+	int use_fract = cfg_get_int ("mode.use.fract", 1);
+	/* R56: через сколько мс после переключения перемерить частоту и поправить
+	 * режим, если класс однозначно другой (первое окно у некоторых плееров
+	 * смещено набором буфера — 60-фпс канал давал 50.3 fps и режим 50 Гц).
+	 * 0 — перепроверка выключена. Знание о плеерах не нужно. */
+	int recheck_ms = cfg_get_int ("fps.recheck.delay.ms", 8000);
 	int start_deb = cfg_get_int ("trigger.start.debounce.ms", 500);
 	int stop_deb = cfg_get_int ("trigger.stop.debounce.ms", 1500);
 
@@ -1545,6 +1557,8 @@ static int run_atv14 (const platform_t *plat)
 				want_sf_id = -1;
 				measure_failed = false;
 				retries = 0;
+				recheck_armed = false;	/* R56: перепроверка — на текущее видео */
+				mstime_disable (&recheck_timer);
 			}
 
 			if (have_prev_frames && (v0.frames == prev_frames))
@@ -1580,6 +1594,20 @@ static int run_atv14 (const platform_t *plat)
 			want_sf_id = -1;
 			/* видео закончилось — следующее мерим заново: и счётчик попыток,
 			 * и признак «частота не определилась» относятся к текущему видео */
+			measure_failed = false;
+			retries = 0;
+			/* R56: перепроверка — тоже на текущее видео */
+			recheck_armed = false;
+			mstime_disable (&recheck_timer);
+		}
+		else if (recheck_armed && mstime_expired (&recheck_timer))
+		{
+			/* R56: прошло fps.recheck.delay.ms после переключения — меряем
+			 * ещё раз (та же логика окна и уточнения). Если класс тот же,
+			 * guard_decide не тронет режим и мигания не будет; если другой
+			 * (например, стартовое окно занизило 60 fps до 50) — поправим. */
+			trace (1, "перепроверка замера после переключения\n");
+			want_sf_id = -1;
 			measure_failed = false;
 			retries = 0;
 		}
@@ -1766,6 +1794,20 @@ static int run_atv14 (const platform_t *plat)
 
 			retries = 0;
 
+			/* mode.use.fract=0: берём точный (целочисленный) режим группы
+			 * (24.000/30.000/60.000). Если такого режима в таблице SurfaceFlinger
+			 * нет (ТВ не поддерживает), resolver подберёт ближайший. */
+			if (use_fract == 0)
+			{
+				int exact = fps_rate_exact_member (hz);
+				if (exact)
+				{
+					trace (1, "mode.use.fract=0: режим " HZ_FMT " Гц вместо " HZ_FMT " Гц\n",
+					       HZ_ARGS (exact), HZ_ARGS (hz));
+					hz = exact;
+				}
+			}
+
 			/* текущий режим / исходный id */
 			if (g_sf_modes_n <= 0)
 				sf_modes_refresh (plat);
@@ -1874,7 +1916,18 @@ static int run_atv14 (const platform_t *plat)
 		if (act == GUARD_SWITCH)
 		{
 			if (atv14_apply_mode (plat, want_sf_id, "переключение пропущено") == 0)
+			{
 				cur_sf_id = want_sf_id;
+
+				/* R56: через recheck_ms перемерить и поправить режим, если
+				 * стартовое окно было смещено (один раз на видео) */
+				if ((recheck_ms > 0) && !recheck_armed)
+				{
+					mstime_arm (&recheck_timer, (uint32_t)recheck_ms);
+					recheck_armed = true;
+					trace (1, "перепроверка замера через %d мс\n", recheck_ms);
+				}
+			}
 		}
 		else if (act == GUARD_RESTORE)
 		{

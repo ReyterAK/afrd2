@@ -125,6 +125,20 @@ static void t_live_scenario(void)
 	assert(fps_refine_declared(hz, 96000.0 / 3200.0, 5.0, &refined) == 0);
 }
 
+/* Точный представитель группы — для mode.use.fract=0 (режимы 24.000/30.000/60.000) */
+static void t_exact_member(void)
+{
+	assert(fps_rate_exact_member(fps_rate_hz(0)) == fps_rate_hz(1));  /* 23.976 -> 24.000 */
+	assert(fps_rate_exact_member(fps_rate_hz(1)) == fps_rate_hz(1));
+	assert(fps_rate_exact_member(fps_rate_hz(2)) == fps_rate_hz(2));  /* 25 без изменений */
+	assert(fps_rate_exact_member(fps_rate_hz(3)) == fps_rate_hz(4));  /* 29.97 -> 30.000 */
+	assert(fps_rate_exact_member(fps_rate_hz(4)) == fps_rate_hz(4));
+	assert(fps_rate_exact_member(fps_rate_hz(5)) == fps_rate_hz(5));  /* 50 без изменений */
+	assert(fps_rate_exact_member(fps_rate_hz(6)) == fps_rate_hz(7));  /* 59.94 -> 60.000 */
+	assert(fps_rate_exact_member(fps_rate_hz(7)) == fps_rate_hz(7));
+	assert(fps_rate_exact_member(12345) == 0);                        /* не из таблицы */
+}
+
 static void t_table(void)
 {
 	assert(strcmp(fps_rate_name(0), "23.976") == 0);
@@ -138,6 +152,7 @@ int main(void)
 	t_classify();
 	t_classify_window();
 	t_refine_declared();
+	t_exact_member();
 	t_live_scenario();
 	t_group();
 	t_table();
