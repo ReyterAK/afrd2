@@ -19,7 +19,7 @@ n=$(( DUR * 1000 / STEP_MS ))
 i=0
 while [ "$i" -le "$n" ]; do
 	u=$(cut -d' ' -f1 /proc/uptime)
-	fc=$(sed -n 's/^frame count[[:space:]]*:[[:space:]]*//p' /sys/class/vdec/vdec_status)
+	fc=$(sed -n 's/^[[:space:]]*frame count[[:space:]]*:[[:space:]]*//p' /sys/class/vdec/vdec_status)
 	m=$(cat /sys/class/display/mode)
 	echo "$u $fc $m" >> "$OUT"
 	sleep $(( STEP_MS / 1000 )) || break

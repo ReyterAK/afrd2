@@ -1412,6 +1412,8 @@ static int run_atv14 (const platform_t *plat)
 		last_sf_pid = -1;
 
 	int window_ms = cfg_get_int ("fps.measure.window.ms", 1500);
+	if (window_ms < 150)
+		window_ms = 150;   /* окно короче 150 мс не различает и 50/60 Гц */
 	/* Предел расширения окна замера: пока fps_classify_window не даст
 	 * однозначный ответ, окно растёт шагом window_ms/3 (см. цикл замера) */
 	int window_max_ms = cfg_get_int ("fps.measure.window.max.ms", 6000);
@@ -1608,18 +1610,28 @@ static int run_atv14 (const platform_t *plat)
 				int slice_ms = window_ms / 3;
 				if (slice_ms < 1)
 					slice_ms = 1;
+				unsigned long long window_us = (unsigned long long)window_ms * 1000;
+				unsigned long long window_max_us = (unsigned long long)window_max_ms * 1000;
 
 				bool grown = v0.active;
 				v1 = v0;
-				int sliced_ms = 0, decided_ms = 0;
+				int decided_ms = 0;
 				unsigned long long t1 = t0, dt_us = 0, dt_unc_us = 0;
 				unsigned long long frames_delta = 0;
 				double fps = 0.0;
 
-				while (grown && (sliced_ms < window_max_ms))
+				while (grown)
 				{
-					msleep (slice_ms);
-					sliced_ms += slice_ms;
+					/* Окно длинное (до window_max_ms), и всё это время надо
+					 * обслуживать UDP-сокет API: иначе `status`/`afrd -s` и
+					 * подсказка плеера ждут конца окна (находка ревью R51).
+					 * Границы окна считаются по реальным меткам времени —
+					 * atv14_wait возвращается и раньше срока, если пришёл
+					 * запрос API. */
+					if (g_shutdown)
+						break;
+					if (atv14_wait (slice_ms) != 0)
+						msleep (slice_ms);
 
 					vdec_status_t cur;
 					unsigned long long ca = now_us ();
@@ -1638,12 +1650,12 @@ static int run_atv14 (const platform_t *plat)
 
 					v1 = cur;
 					t1 = ca + (cb - ca) / 2;
+					dt_us = (t1 > t0) ? (t1 - t0) : 0;
 
-					if (sliced_ms < window_ms)
+					if (dt_us < window_us)
 						continue;
 
 					frames_delta = v1.frames - v0.frames;
-					dt_us = (t1 > t0) ? (t1 - t0) : 0;
 					/* полусумма длительностей крайних чтений: оценка
 					 * сверху для разброса середин чтений */
 					dt_unc_us = (read0_us + (cb - ca)) / 2;
@@ -1653,9 +1665,23 @@ static int run_atv14 (const platform_t *plat)
 
 					if (fps_classify_window (frames_delta, dt_us, dt_unc_us, &hz))
 					{
-						decided_ms = sliced_ms;
+						decided_ms = (int)(dt_us / 1000);
 						break;
 					}
+
+					if (dt_us >= window_max_us)
+						break;
+				}
+
+				/* Подсказка плеера приоритетнее замера: сюда мы попадаем,
+				 * только если на входе в ветку её не было, значит любая
+				 * живая подсказка пришла во время окна (atv14_wait её принял) */
+				if (!hz && prefer_api && mstime_running (&g_frame_rate_hint.stamp))
+				{
+					hz = fps_rate_hz (fps_rate_index_for_hz (g_frame_rate_hint.fps));
+					decided_ms = (int)(dt_us / 1000);
+					trace (1, "видео: " HZ_FMT " Гц по подсказке плеера (пришла во время замера)\n",
+					       HZ_ARGS (hz));
 				}
 
 				if (!hz)
