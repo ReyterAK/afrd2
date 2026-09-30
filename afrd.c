@@ -1321,6 +1321,21 @@ static void atv14_stats_sync (int cur_sf_id, int orig_sf_id, bool held)
 		held ? orig_sf_id : cur_sf_id);
 }
 
+/* Пассивный режим (нет backdoor или enable=0): переключать нечем/нельзя, но
+ * статистику API заполняем один раз при входе — иначе `status`/`afrd -s`
+ * отдают current hz: 0 (мелочь из леджера). Периодически её обновлять не стоим:
+ * каждый опрос — это dumpsys SurfaceFlinger (~150 КБ), а режим в пассивном
+ * режиме меняет не демон. */
+static void atv14_stats_sync_passive (const platform_t *plat)
+{
+	if (g_sf_modes_n <= 0)
+		sf_modes_refresh (plat);
+
+	sf_mode_t active;
+	if (sf_active_mode (plat, &active) == 0)
+		atv14_stats_sync (active.id, -1, false);
+}
+
 /* Сброс кэша решений: нумерация id режимов изменилась (рестарт SurfaceFlinger).
  * Новый инстанс SF флаг mode-set-by-backdoor не держит, поэтому удержание
  * снимаем без sink_apply по устаревшему id — цикл замерит частоту и
@@ -1395,6 +1410,7 @@ static int run_atv14 (const platform_t *plat)
 	if (!plat->sf_backdoor)
 	{
 		trace (0, "backdoor SurfaceFlinger недоступен — пассивный режим\n");
+		atv14_stats_sync_passive (plat);
 		while (!g_shutdown)
 			if (atv14_wait (cur_hz) != 0)
 				msleep (cur_hz);
@@ -1417,6 +1433,7 @@ static int run_atv14 (const platform_t *plat)
 	if (!g_enable)
 	{
 		trace (0, "enable=0 — переключение частоты выключено, только API\n");
+		atv14_stats_sync_passive (plat);
 		while (!g_shutdown)
 			if (atv14_wait (cur_hz) != 0)
 				msleep (cur_hz);
