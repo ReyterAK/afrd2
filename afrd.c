@@ -1415,6 +1415,8 @@ static int run_atv14 (const platform_t *plat)
 	/* Предел расширения окна замера: пока fps_classify_window не даст
 	 * однозначный ответ, окно растёт шагом window_ms/3 (см. цикл замера) */
 	int window_max_ms = cfg_get_int ("fps.measure.window.max.ms", 6000);
+	if (window_max_ms < window_ms)
+		window_max_ms = window_ms;   /* опечатка в конфиге не должна гасить замер */
 	int max_retries = cfg_get_int ("fps.measure.retries", 3);
 	int start_deb = cfg_get_int ("trigger.start.debounce.ms", 500);
 	int stop_deb = cfg_get_int ("trigger.stop.debounce.ms", 1500);
