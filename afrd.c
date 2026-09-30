@@ -1333,7 +1333,14 @@ static void atv14_stats_sync_passive (const platform_t *plat)
 
 	sf_mode_t active;
 	if (sf_active_mode (plat, &active) == 0)
+	{
 		atv14_stats_sync (active.id, -1, false);
+
+		/* g_afrd_stats (то, что читает API `status`) копирует update_stats(),
+		 * а он живёт в главном цикле — в пассивном режиме до него не дойдёт,
+		 * поэтому копируем здесь же */
+		update_stats ();
+	}
 }
 
 /* Сброс кэша решений: нумерация id режимов изменилась (рестарт SurfaceFlinger).
