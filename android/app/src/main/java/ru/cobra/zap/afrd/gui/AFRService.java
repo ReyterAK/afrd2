@@ -195,7 +195,10 @@ public class AFRService extends Service
     {
         if (mStatus.ok ())
         {
-            if (mStatus.mVersion.equals (BuildConfig.VERSION_NAME))
+            /* mStatus.mVersion может быть null: shmem уже отображён (ok()),
+             * а версия ещё не разобрана (первый запуск после загрузки) — при
+             * сравнении через .equals это был NPE и падение AFRService */
+            if (BuildConfig.VERSION_NAME.equals (mStatus.mVersion))
                 return;
 
             Log.i ("afrd", String.format (Locale.getDefault (),
