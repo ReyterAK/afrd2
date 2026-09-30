@@ -1353,6 +1353,9 @@ static int run_atv14 (const platform_t *plat)
 	/* частоту в этом видео определить не удалось — больше не мерить
 	 * до его конца (сбрасывается, когда видео закончилось) */
 	bool measure_failed = false;
+	/* метка уже применённой подсказки плеера (R53): чтобы одну подсказку не
+	 * применять на каждой итерации цикла, пока она жива (1 с) */
+	mstime_t hint_seen = 0;
 	int preferred_id;
 
 	/* Поведенческие ключи профиля (R28). */
@@ -1589,6 +1592,7 @@ static int run_atv14 (const platform_t *plat)
 
 			if (api_hz)
 			{
+				hint_seen = g_frame_rate_hint.stamp;
 				hz = fps_rate_hz (fps_rate_index_for_hz (api_hz));
 				trace (1, "видео: " HZ_FMT " Гц по подсказке плеера, ищу режим\n",
 				       HZ_ARGS (hz));
@@ -1762,6 +1766,38 @@ static int run_atv14 (const platform_t *plat)
 				continue;
 			}
 			want_sf_id = cur_sf_id;
+		}
+		/* Подсказка плеера — прямой запрос точной частоты (24.8 fixed-point,
+		 * живёт 1 с). Эта ветка ловит случай, когда режим уже выбран
+		 * (`want_sf_id >= 0`) или замер не удался: раньше подсказка читалась
+		 * только до первого решения, и смена эпизода/канала в том же плеере
+		 * оставляла прежний режим (R53). Подсказка применяется один раз. */
+		else if (prefer_api && video_eff &&
+		         mstime_running (&g_frame_rate_hint.stamp) &&
+		         (g_frame_rate_hint.stamp != hint_seen))
+		{
+			int hint_hz = fps_rate_hz (fps_rate_index_for_hz (g_frame_rate_hint.fps));
+
+			if (g_sf_modes_n <= 0)
+				sf_modes_refresh (plat);
+
+			sf_mode_t active;
+			int w = 1920, h = 1080;
+			if (sf_active_mode (plat, &active) == 0)
+			{
+				w = active.width;
+				h = active.height;
+			}
+
+			int hint_id = sfmodes_find (g_sf_modes, g_sf_modes_n, hint_hz, w, h);
+			if (hint_id >= 0)
+			{
+				hint_seen = g_frame_rate_hint.stamp;
+				measure_failed = false;
+				want_sf_id = hint_id;
+				trace (1, "подсказка плеера: " HZ_FMT " Гц, режим id %d\n",
+				       HZ_ARGS (hint_hz), hint_id);
+			}
 		}
 
 		/* актуальный режим перечитываем у SurfaceFlinger: так мы видим и то,
