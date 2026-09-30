@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <string.h>
 #include "../vdec.h"
-#include "../fps_class.h"
 
 static char *slurp (const char *p)
 {
@@ -15,15 +14,9 @@ static char *slurp (const char *p)
 	return b;
 }
 
-/* Пауза/буферизация: счётчик кадров стоит -> fps_estimate = 0,
- * демон не должен "намерить" 0 fps и уйти в переключение. */
-static void t_paused (void)
-{
-	assert (fps_estimate (100, 1000000ULL, 100, 3000000ULL) == 0.0);
-
-	double fps = fps_estimate (100, 1000000ULL, 200, 3000000ULL);
-	assert (fps > 49.5 && fps < 50.5);
-}
+/* Пауза/буферизация теперь отсекается в самом замере: под-срез, в котором
+ * счётчик кадров не вырос, делает выборку невалидной (`afrd.c`, `grown`),
+ * а `fps_classify_window (0, …)` решения не даёт — см. test_fps_class. */
 
 int main (void)
 {
@@ -40,8 +33,6 @@ int main (void)
 	/* мусор не должен "включать" видео */
 	assert (vdec_parse ("vdec channel 0 statistics:\n  frame count : 5\n", &st) == 0);
 	assert (!st.active);
-
-	t_paused ();
 
 	printf ("vdec: OK\n");
 	return 0;

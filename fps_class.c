@@ -18,8 +18,6 @@ static const struct { const char *name; double fps; } k_rates [FPS_RATE_COUNT] =
 /* поэтому выбирается ближайшая по относительной ошибке (fps_classify).   */
 /* 35 fps не классифицируется: отн. ошибка >6% и к 30 (16.7%), и к 25.    */
 #define FPS_TOLERANCE	0.06
-#define FPS_MIN		15.0
-#define FPS_MAX		130.0
 
 int fps_rate_hz (int index)
 {
@@ -29,23 +27,6 @@ int fps_rate_hz (int index)
 const char *fps_rate_name (int index)
 {
 	return k_rates [index].name;
-}
-
-double fps_estimate (unsigned long long frames_a, unsigned long long ts_a_us,
-                     unsigned long long frames_b, unsigned long long ts_b_us)
-{
-	if (frames_b <= frames_a || ts_b_us <= ts_a_us)
-		return 0.0;
-
-	double dt = (double)(ts_b_us - ts_a_us) / 1000000.0;
-	if (dt < 0.5)
-		return 0.0;
-
-	double fps = (double)(frames_b - frames_a) / dt;
-	if (fps < FPS_MIN || fps > FPS_MAX)
-		return 0.0;
-
-	return fps;
 }
 
 int fps_classify (double measured)
