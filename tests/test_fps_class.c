@@ -39,24 +39,24 @@ static void t_classify_window(void)
 
 	/* далеко отстоящие частоты решаются в том же окне */
 	assert(fps_classify_window(75, 1500000, 0, &hz) == 1 && hz == fps_rate_hz(5));  /* 50 */
-	assert(fps_classify_window(90, 1500000, 0, &hz) == 1 && hz == fps_rate_hz(7));  /* 60 */
-	assert(fps_classify_window(45, 1500000, 0, &hz) == 1 && hz == fps_rate_hz(4));  /* 30 */
+	assert(fps_classify_window(90, 1500000, 0, &hz) == 1 && hz == fps_rate_hz(6));  /* 59.94 */
+	assert(fps_classify_window(45, 1500000, 0, &hz) == 1 && hz == fps_rate_hz(3));  /* 29.97 */
 
 	/* расширение окна до 2.0 с ещё не помогает, до 2.5 с — решает */
 	assert(fps_classify_window(48, 2000000, 0, &hz) == 0);
-	assert(fps_classify_window(60, 2500000, 0, &hz) == 1 && hz == fps_rate_hz(1));
+	assert(fps_classify_window(60, 2500000, 0, &hz) == 1 && hz == fps_rate_hz(0));
 
 	/* 3 с: 25 fps решается, а «24 + лишний кадр» — ещё нет */
 	assert(fps_classify_window(75, 3000000, 0, &hz) == 1 && hz == fps_rate_hz(2));
 	assert(fps_classify_window(73, 3001500, 0, &hz) == 0);
 
 	/* 4.5 с: тот самый «24.642 fps» решается в пользу группы 24, а не 25 */
-	assert(fps_classify_window(109, 4500000, 0, &hz) == 1 && hz == fps_rate_hz(1));
+	assert(fps_classify_window(109, 4500000, 0, &hz) == 1 && hz == fps_rate_hz(0));
 
 	/* неопределённость меток времени расширяет доверительный интервал:
 	 * при ±30 мс окно 3 с не решает, а 6 с — решает */
 	assert(fps_classify_window(73, 3001500, 30000, &hz) == 0);
-	assert(fps_classify_window(144, 6000000, 30000, &hz) == 1 && hz == fps_rate_hz(1));
+	assert(fps_classify_window(144, 6000000, 30000, &hz) == 1 && hz == fps_rate_hz(0));
 
 	/* вырожденные случаи */
 	assert(fps_classify_window(0, 1500000, 0, &hz) == 0);

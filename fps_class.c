@@ -74,6 +74,11 @@ int fps_rate_index_for_hz (int hz)
  * 23.976 и 24, 29.97 и 30, 59.94 и 60 — на выходе HDMI это один режим. */
 static const int k_group [FPS_RATE_COUNT] = { 24, 24, 25, 30, 30, 50, 60, 60 };
 
+/* Представитель группы, которого отдаёт fps_classify_window: дробный
+ * (23.976, 29.97, 59.94) — контент почти всегда идёт с дробной частотой,
+ * а счётчик кадров эту пару не различает (0.1%). */
+static const int k_group_lead [FPS_RATE_COUNT] = { 0, 0, 2, 3, 3, 5, 6, 6 };
+
 int fps_rate_group (int hz)
 {
 	for (int i = 0; i < FPS_RATE_COUNT; i++)
@@ -109,8 +114,13 @@ int fps_classify_window (unsigned long long frames_delta, unsigned long long dt_
 	 || (group != fps_rate_group (fps_classify (hi))))
 		return 0;
 
+	/* Внутри группы отдаём ДРОБНОГО представителя: счётчик не различает
+	 * 23.976 и 24 (0.1% = 0.04 кадра за окно), а контент почти всегда идёт
+	 * с дробной частотой (плёнка 23.976, NTSC 29.97/59.94) — так же поступает
+	 * legacy-путь через frac_rate_policy. Иначе выбор между 23.98 и 24.00
+	 * зависел бы от субмиллисекундной добавки к номинальному окну. */
 	if (hz_out)
-		*hz_out = center;
+		*hz_out = fps_rate_hz (k_group_lead [fps_rate_index_for_hz (center)]);
 
 	return 1;
 }

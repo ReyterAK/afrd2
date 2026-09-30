@@ -1404,6 +1404,19 @@ static int run_atv14 (const platform_t *plat)
 	/* страховка: снять «залипший» флаг прошлого запуска */
 	sink_release_backdoor (plat->sink);
 
+	/* enable=0 в конфиге — ключ задокументирован как рабочий, но новая ветка
+	 * его раньше игнорировала: демон продолжал измерять и слать 1035, а API
+	 * при этом отдавал `enabled: no`. Поведение как в пассивном режиме
+	 * (залипший флаг уже снят строкой выше). */
+	if (!g_enable)
+	{
+		trace (0, "enable=0 — переключение частоты выключено, только API\n");
+		while (!g_shutdown)
+			if (atv14_wait (cur_hz) != 0)
+				msleep (cur_hz);
+		return 0;
+	}
+
 	/* PID SurfaceFlinger на старте: с ним сравнивает проверка рестарта ниже.
 	 * Если pidof не ответил, останется -1 и первая проверка просто запомнит
 	 * значение (без ложного «перезапуска»). */
@@ -1614,6 +1627,7 @@ static int run_atv14 (const platform_t *plat)
 				unsigned long long window_max_us = (unsigned long long)window_max_ms * 1000;
 
 				bool grown = v0.active;
+				bool stalled = false;   /* окно прервано простоем счётчика/чтением */
 				v1 = v0;
 				int decided_ms = 0;
 				unsigned long long t1 = t0, dt_us = 0, dt_unc_us = 0;
@@ -1638,13 +1652,18 @@ static int run_atv14 (const platform_t *plat)
 					if (vdec_poll (plat->vdec_status, &cur) != 0)
 					{
 						grown = false;
+						stalled = true;   /* данных нет — это не «не смог измерить» */
 						break;
 					}
 					unsigned long long cb = now_us ();
 
 					if (!cur.active || (cur.frames <= v1.frames))
 					{
+						/* пауза/буферизация/конец файла: счётчик стоит —
+						 * попытку замера тратить нельзя (иначе пауза в первые
+						 * секунды видео выключала AFR до конца файла) */
 						grown = false;
+						stalled = true;
 						break;
 					}
 
@@ -1686,6 +1705,13 @@ static int run_atv14 (const platform_t *plat)
 
 				if (!hz)
 				{
+					/* Окно прервано простоем счётчика или нечитаемостью узла —
+					 * данных для решения не было, это не отказ измерения:
+					 * попытку не тратим (иначе пауза в первые секунды видео
+					 * исчерпывала retries и выключала AFR до конца файла). */
+					if (stalled)
+						continue;
+
 					if (++retries >= max_retries)
 					{
 						trace (1, "частоту определить не удалось (%d попыток), пропускаю\n", retries);
