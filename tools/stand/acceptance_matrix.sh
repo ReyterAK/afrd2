@@ -108,6 +108,32 @@ skip ()
 	echo "SKIP: $*"
 }
 
+# Ждём, пока декодер освободится после остановки тестового плеера. Если играет
+# чужое приложение (например, IPTV-канал владельца), демон справедливо удерживает
+# режим, и вердикты «режим не вернулся к $ORIG_MODE» и «флаг backdoor не снят»
+# были бы ложными FAIL'ами (живой случай 2026-09-30). Возврат: 0 — свободен,
+# 1 — занят чужим видео.
+decoder_idle ()
+{
+	i=0
+	while [ "$i" -lt "${IDLE_TRIES:-20}" ]; do
+		if adb -s "$D" shell 'cat /sys/class/vdec/vdec_status' 2>/dev/null |
+		   grep -qi 'No vdec'; then
+			return 0
+		fi
+		sleep 1
+		i=$((i + 1))
+	done
+	return 1
+}
+
+# Занятость декодера на старте: предупреждение (не FAIL — возможно, остаток
+# предыдущего шага, но вердикты на первом клипе уже недостоверны).
+if ! decoder_idle; then
+	echo "ВНИМАНИЕ: декодер занят до начала прогона — играет другое приложение" \
+	     "(чужое видео). Вердикты по возврату режима могут быть ложными."
+fi
+
 # Снимок состояния: одна строка «mode | hdmi | activeMode=… | backdoor=…».
 snap ()
 {
@@ -198,6 +224,10 @@ for clip in $CLIPS; do
 	fi
 
 	sh "$SDIR/play_clip.sh" stop
+	if ! decoder_idle; then
+		skip "$clip: после стопа декодер занят (играет другое приложение) — вердикт по возврату режима не выносится"
+		continue
+	fi
 	sleep "$STOP_WAIT"
 	after=$(snap)
 	echo "после стопа: ${after:-<пустой снимок>}"
@@ -302,7 +332,9 @@ if [ "$OWN_AFR_TEST" = 1 ]; then
 	file="$CLIP_DIR/$OWN_AFR_CLIP.mp4"
 	adb -s "$D" shell "am force-stop ${PLAYER%%/*}" >/dev/null
 	sleep 2
-	if ! adb -s "$D" shell "test -f '$file'" >/dev/null 2>&1; then
+	if ! decoder_idle; then
+		skip "свой AFR: декодер занят другим приложением — проверка не выполнена"
+	elif ! adb -s "$D" shell "test -f '$file'" >/dev/null 2>&1; then
 		skip "свой AFR: клип $file не найден — проверка не выполнена"
 	else
 		adb -s "$D" shell "am start -n $OWN_AFR_ACT -a android.intent.action.VIEW -d file://$file -t video/mp4" >/dev/null
