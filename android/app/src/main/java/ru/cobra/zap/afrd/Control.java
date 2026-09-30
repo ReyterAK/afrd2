@@ -17,7 +17,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
 
-import eu.chainfire.libsuperuser.Shell;
 import ru.cobra.zap.afrd.gui.R;
 
 /**
@@ -49,7 +48,7 @@ public class Control
         mAfrd.setExecutable (true);
         String[] cmd = new String[] { mAfrd.getPath () + " -k -D " + mIni.getPath () };
         Log.d ("afrd", "Run: " + Arrays.toString (cmd));
-        Shell.run ("su", cmd, null, false);
+        RootShell.run (cmd, null);
         // give status another chance
         Status.mFail.success ();
     }
@@ -154,7 +153,7 @@ public class Control
                     case 0:
                         String[] cmd = new String[] { mAfrd.getPath () + " -k", "rm -f " + mAfrd.getPath () };
                         Log.d ("afrd", "Run: " + Arrays.toString (cmd));
-                        Shell.run ("su", cmd, null, false);
+                        RootShell.run (cmd, null);
                         break;
 
                     case 1:
