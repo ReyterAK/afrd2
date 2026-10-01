@@ -49,12 +49,12 @@ static void t_fixtures (void)
 	assert (load_fixture ("tests/fixtures/fps_env_24av1_high.txt", &env) > 20);
 	assert (fps_env_decide (&env, ENV_HORIZON, ENV_SKIP, ENV_SUB, 1.0, 0.0, &hz) == 1);
 	assert (hz == fps_rate_hz (2));
-	/* тот же ряд с поправкой AV1 0.5 кадра/с даёт 24.41 fps, а доверительный
-	 * интервал (±1 кадр = ±0.2 fps) пересекает границу 24.49: решения нет.
-	 * Поправка не «спасает» худший случай, а уводит его из чужого класса
-	 * в «не определилось» — так и должно быть. */
-	assert (fps_env_decide (&env, ENV_HORIZON, ENV_SKIP, ENV_SUB, 1.0, 0.5, &hz) == 0);
-	assert (hz == 0);
+	/* тот же ряд с поправкой AV1 0.5 кадра/с даёт ~24.41 fps: самое медленное
+	 * окно становится пограничным и не решается, но следующее по медленности
+	 * решаемое окно уводит ряд в безопасный класс 25 (50 Гц) вместо
+	 * бездействия. */
+	assert (fps_env_decide (&env, ENV_HORIZON, ENV_SKIP, ENV_SUB, 1.0, 0.5, &hz) == 1);
+	assert (hz == fps_rate_hz (2));
 
 	assert (load_fixture ("tests/fixtures/fps_env_25av1.txt", &env) > 20);
 	assert (fps_env_decide (&env, ENV_HORIZON, ENV_SKIP, ENV_SUB, 1.0, 0.0, &hz) == 1);
@@ -141,6 +141,44 @@ static void t_counter_reset (void)
 	assert (hz == fps_rate_hz (2));		/* 25, а не смесь 60 и 25 */
 }
 
+/* Живая находка (80bkVen5CJI, AV1, 24 fps): самое медленное окно
+ * ~24.75 fps пограничное (доверительный интервал ±1 кадр и ±unc_us
+ * пересекает границу класса 24.49) и решения не даёт; следующее по
+ * медленности окно ~24.95 fps решается и уводит ролик в класс 25.
+ * Старое правило («только самое медленное окно») возвращало 0, и AFR не
+ * переключался вообще. */
+static void t_slowest_decidable (void)
+{
+	fps_env_t env;
+	fps_env_reset (&env);
+
+	unsigned long long t = 0, f = 0;
+	const unsigned long long step = 1272500;	/* каденция ~1.27 с, окно ~5.09 с */
+	const unsigned long long unc = 45000;		/* длительность чтения */
+
+	/* приросты счётчика: ранние окна дают ΔF=126 (~24.75 fps, не решаются),
+	 * затем ΔF=127 (~24.95 fps, решается) */
+	static const unsigned inc [24] =
+	{
+		32, 32, 31, 31,
+		32, 32, 32, 32, 32, 32, 32, 32,
+		32, 32, 32, 32, 32, 32, 32, 32,
+		32, 32, 32, 32,
+	};
+
+	fps_env_push (&env, 0, 0, unc);
+	for (unsigned k = 0; k < sizeof (inc) / sizeof (inc [0]); k++)
+	{
+		t += step;
+		f += inc [k];
+		fps_env_push (&env, t, f, unc);
+	}
+
+	int hz = -1;
+	assert (fps_env_decide (&env, ENV_HORIZON, 0, ENV_SUB, 1.0, 0.0, &hz) == 1);
+	assert (hz == fps_rate_hz (2));		/* 25 — безопасный класс для 24 fps */
+}
+
 /* Пока горизонт не набран — решения нет. */
 static void t_ready (void)
 {
@@ -213,6 +251,7 @@ int main (void)
 	t_startup_dip ();
 	t_pause ();
 	t_counter_reset ();
+	t_slowest_decidable ();
 	t_ready ();
 	t_ring_overflow ();
 	t_horizon_min ();

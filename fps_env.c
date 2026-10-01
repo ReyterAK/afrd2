@@ -54,6 +54,16 @@ static bool window_clean (const fps_env_t *e, int i, int j)
 	return true;
 }
 
+/* Кандидат-подокно: нужен, чтобы среди окон выбрать самое медленное из
+ * решаемых, а не блокироваться на пограничном. */
+typedef struct
+{
+	unsigned long long rate_us;	/* мкс на кадр; больше — окно медленнее */
+	unsigned long long delta;	/* кадров в окне */
+	unsigned long long dt;		/* длительность окна, мкс */
+	unsigned long long unc;		/* неопределённость меток окна, мкс */
+} fps_cand_t;
+
 int fps_env_decide (const fps_env_t *e, unsigned long long horizon_us, unsigned long long skip_us,
                     unsigned long long sub_us, double factor, double offset, int *hz_out)
 {
@@ -67,9 +77,8 @@ int fps_env_decide (const fps_env_t *e, unsigned long long horizon_us, unsigned 
 		skip_us = 0;	/* опечатка в конфиге не должна гасить замер */
 
 	unsigned long long t0 = e->s [0].t_us;
-	unsigned long long best_us = 0;		/* выбранное окно: мкс на кадр */
-	unsigned long long best_delta = 0, best_dt = 0, best_unc = 0;
-	bool have = false;
+	fps_cand_t cand [FPS_ENV_MAX];	/* окон не больше, чем выборок минус одно */
+	int n_cand = 0;
 
 	for (int i = 0; (i + 1) < e->n; i++)
 	{
@@ -97,20 +106,37 @@ int fps_env_decide (const fps_env_t *e, unsigned long long horizon_us, unsigned 
 
 		unsigned long long delta = e->s [j].frames - e->s [i].frames;
 		unsigned long long dt = e->s [j].t_us - e->s [i].t_us;
-		unsigned long long rate_us = dt / delta;	/* меньше — быстрее */
 
-		if (!have || (rate_us > best_us))
-		{
-			have = true;
-			best_us = rate_us;
-			best_delta = delta;
-			best_dt = dt;
-			best_unc = (e->s [i].unc_us + e->s [j].unc_us) / 2;
-		}
+		cand [n_cand].rate_us = dt / delta;
+		cand [n_cand].delta = delta;
+		cand [n_cand].dt = dt;
+		cand [n_cand].unc = (e->s [i].unc_us + e->s [j].unc_us) / 2;
+		n_cand++;
 	}
 
-	if (!have)
-		return 0;
+	/* Сортировка вставками: самые медленные окна — первыми. Устойчивая,
+	 * поэтому при равных rate_us порядок обхода (ранние окна раньше)
+	 * сохраняется. */
+	for (int i = 1; i < n_cand; i++)
+	{
+		fps_cand_t c = cand [i];
+		int k = i;
+		while ((k > 0) && (cand [k - 1].rate_us < c.rate_us))
+		{
+			cand [k] = cand [k - 1];
+			k--;
+		}
+		cand [k] = c;
+	}
 
-	return fps_classify_window_corrected (best_delta, best_dt, best_unc, factor, offset, hz_out);
+	/* Первое (самое медленное) окно, чей доверительный интервал однозначен.
+	 * Пограничное окно у границы класса (±1 кадр и ±unc_us) не должно
+	 * блокировать решение целиком: следующее по медленности окно обычно
+	 * решается и уводит контент в безопасный класс. */
+	for (int i = 0; i < n_cand; i++)
+		if (fps_classify_window_corrected (cand [i].delta, cand [i].dt, cand [i].unc,
+		                                   factor, offset, hz_out))
+			return 1;
+
+	return 0;
 }
