@@ -551,8 +551,12 @@ static void t_fixtures (void)
 	assert (load_fixture ("tests/fixtures/fps_env_24av1_high.txt", &env) > 20);
 	assert (fps_env_decide (&env, ENV_HORIZON, ENV_SKIP, ENV_SUB, 1.0, 0.0, &hz) == 1);
 	assert (hz == fps_rate_hz (2));
-	assert (fps_env_decide (&env, ENV_HORIZON, ENV_SKIP, ENV_SUB, 1.0, 0.5, &hz) == 1);
-	assert (hz == fps_rate_hz (0));
+	/* тот же ряд с поправкой AV1 0.5 кадра/с даёт 24.41 fps, а доверительный
+	 * интервал (±1 кадр = ±0.2 fps) пересекает границу 24.49: решения нет.
+	 * Поправка не «спасает» худший случай, а уводит его из чужого класса
+	 * в «не определилось» — так и должно быть. */
+	assert (fps_env_decide (&env, ENV_HORIZON, ENV_SKIP, ENV_SUB, 1.0, 0.5, &hz) == 0);
+	assert (hz == 0);
 
 	assert (load_fixture ("tests/fixtures/fps_env_25av1.txt", &env) > 20);
 	assert (fps_env_decide (&env, ENV_HORIZON, ENV_SKIP, ENV_SUB, 1.0, 0.0, &hz) == 1);
@@ -609,7 +613,7 @@ static void t_pause (void)
 		f += 25;
 		fps_env_push (&env, t, f, 2000);
 	}
-	assert (fps_env_ready (&env, ENV_HORIZON - 8000000));
+	assert (fps_env_ready (&env, ENV_HORIZON - 9000000));	/* 11 с из 13 выборок */
 
 	int hz = -1;
 	assert (fps_env_decide (&env, ENV_HORIZON, ENV_SKIP, ENV_SUB, 1.0, 0.0, &hz) == 1);
@@ -668,7 +672,7 @@ static void t_ring_overflow (void)
 	for (int i = 1; i <= FPS_ENV_MAX * 2 + 5; i++)
 	{
 		t += 300000;						/* 300 мс — штатный опрос */
-		fps_env_push (&env, t, (unsigned long long)(i * 8), 2000);	/* ~26.7 fps */
+		fps_env_push (&env, t, (unsigned long long)(i * 7), 2000);	/* 23.3 fps */
 	}
 	assert (env.n <= FPS_ENV_MAX);
 
@@ -1242,7 +1246,7 @@ Expected: обе ABI собраны, предупреждений нет.
 - [ ] **Step 9: Коммит**
 
 ```bash
-git add afrd.c cfgkeys.c cfgkeys.h tests/test_cfgkeys.c config/afrd2.ini jni/Android.mk
+git add afrd.c cfgkeys.c cfgkeys.h tests/test_cfgkeys.c config/afrd2.ini
 git commit -m "feat(atv14): решение по нижней огибающей (fps.measure.envelope.*) вместо окна замера; ключи fps.correct.av1.*"
 ```
 
