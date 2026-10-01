@@ -53,14 +53,22 @@
         <SwitchPreference android:defaultValue="1" android:key="fps_prefer_api"
                           android:summary="@string/prefsum_fps_prefer_api"
                           android:title="@string/prefs_fps_prefer_api"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="1500" android:key="fps_measure_window_ms"
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="20000" android:key="fps_measure_envelope_ms"
                           android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
-                          android:singleLine="true" android:summary="@string/prefsum_fps_measure_window"
-                          android:title="@string/prefs_fps_measure_window"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="6000" android:key="fps_measure_window_max_ms"
+                          android:singleLine="true" android:summary="@string/prefsum_fps_measure_envelope"
+                          android:title="@string/prefs_fps_measure_envelope"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="30000" android:key="fps_measure_envelope_max_ms"
                           android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
-                          android:singleLine="true" android:summary="@string/prefsum_fps_measure_window_max"
-                          android:title="@string/prefs_fps_measure_window_max"/>
+                          android:singleLine="true" android:summary="@string/prefsum_fps_measure_envelope_max"
+                          android:title="@string/prefs_fps_measure_envelope_max"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="5000" android:key="fps_measure_envelope_sub_ms"
+                          android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
+                          android:singleLine="true" android:summary="@string/prefsum_fps_measure_envelope_sub"
+                          android:title="@string/prefs_fps_measure_envelope_sub"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="2000" android:key="fps_measure_envelope_skip_ms"
+                          android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
+                          android:singleLine="true" android:summary="@string/prefsum_fps_measure_envelope_skip"
+                          android:title="@string/prefs_fps_measure_envelope_skip"/>
         <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="3" android:key="fps_measure_retries"
                           android:maxLength="3" android:numeric="integer" android:selectAllOnFocus="true"
                           android:singleLine="true" android:summary="@string/prefsum_fps_measure_retries"
@@ -101,6 +109,14 @@
                           android:selectAllOnFocus="false" android:singleLine="true"
                           android:summary="@string/prefsum_fps_correct_list"
                           android:title="@string/prefs_fps_correct_list"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:key="fps_correct_av1_offset"
+                          android:selectAllOnFocus="false" android:singleLine="true"
+                          android:summary="@string/prefsum_fps_correct_av1_offset"
+                          android:title="@string/prefs_fps_correct_av1_offset"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:key="fps_correct_av1_pkg"
+                          android:selectAllOnFocus="false" android:singleLine="true"
+                          android:summary="@string/prefsum_fps_correct_av1_pkg"
+                          android:title="@string/prefs_fps_correct_av1_pkg"/>
     </PreferenceScreen>
     <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"
                       android:key="advanced" android:title="@string/settings_advanced">

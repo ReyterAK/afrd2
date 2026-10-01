@@ -61,14 +61,18 @@ public class Config
         itemType.put ("trigger.poll.ms", TYPE_INT);
         itemType.put ("trigger.start.debounce.ms", TYPE_INT);
         itemType.put ("trigger.stop.debounce.ms", TYPE_INT);
-        itemType.put ("fps.measure.window.ms", TYPE_INT);
-        itemType.put ("fps.measure.window.max.ms", TYPE_INT);
+        itemType.put ("fps.measure.envelope.ms", TYPE_INT);
+        itemType.put ("fps.measure.envelope.max.ms", TYPE_INT);
+        itemType.put ("fps.measure.envelope.sub.ms", TYPE_INT);
+        itemType.put ("fps.measure.envelope.skip.ms", TYPE_INT);
         itemType.put ("fps.measure.retries", TYPE_INT);
         itemType.put ("fps.declared.crosscheck.pct", TYPE_INT);
         itemType.put ("fps.recheck.delay.ms", TYPE_INT);
         itemType.put ("fps.prefer.api", TYPE_BOOL);
         itemType.put ("fps.correct.enable", TYPE_BOOL);
         itemType.put ("fps.correct.list", TYPE_STR);
+        itemType.put ("fps.correct.av1.offset", TYPE_STR);
+        itemType.put ("fps.correct.av1.pkg", TYPE_STR);
         itemType.put ("pause.keep", TYPE_BOOL);
         itemType.put ("switch.restore.on.stop", TYPE_BOOL);
     }
