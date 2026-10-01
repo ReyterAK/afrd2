@@ -22,56 +22,67 @@ static const struct
 {
 	const char *key;
 	unsigned paths;
+	const char *note;	/* примечание вместо стандартной формулировки (NULL — обычная) */
 } k_keys [] =
 {
 	/* общие для обоих путей */
-	{ "enable",			CFGKEY_BOTH },
-	{ "log.enable",			CFGKEY_BOTH },
-	{ "log.file",			CFGKEY_BOTH },
-	{ "mode.prefer.exact",		CFGKEY_BOTH },
-	{ "mode.use.fract",		CFGKEY_BOTH },
-	{ "mode.blacklist.rates",	CFGKEY_BOTH },
-	{ "switch.timeout",		CFGKEY_BOTH },
+	{ "enable",			CFGKEY_BOTH, NULL },
+	{ "log.enable",			CFGKEY_BOTH, NULL },
+	{ "log.file",			CFGKEY_BOTH, NULL },
+	{ "mode.prefer.exact",		CFGKEY_BOTH, NULL },
+	{ "mode.use.fract",		CFGKEY_BOTH, NULL },
+	{ "mode.blacklist.rates",	CFGKEY_BOTH, NULL },
+	{ "switch.timeout",		CFGKEY_BOTH, NULL },
 
 	/* только новый путь (Android 10-14) */
-	{ "trigger.poll.ms",		CFGKEY_ATV14 },
-	{ "trigger.start.debounce.ms",	CFGKEY_ATV14 },
-	{ "trigger.stop.debounce.ms",	CFGKEY_ATV14 },
-	{ "fps.measure.window.ms",	CFGKEY_ATV14 },
-	{ "fps.measure.window.max.ms",	CFGKEY_ATV14 },
-	{ "fps.measure.retries",	CFGKEY_ATV14 },
-	{ "fps.declared.crosscheck.pct", CFGKEY_ATV14 },
-	{ "fps.recheck.delay.ms",	CFGKEY_ATV14 },
-	{ "fps.prefer.api",		CFGKEY_ATV14 },
-	{ "pause.keep",			CFGKEY_ATV14 },
-	{ "switch.restore.on.stop",	CFGKEY_ATV14 },
-	{ "fps.correct.enable",		CFGKEY_ATV14 },
-	{ "fps.correct.list",		CFGKEY_ATV14 },
+	{ "trigger.poll.ms",		CFGKEY_ATV14, NULL },
+	{ "trigger.start.debounce.ms",	CFGKEY_ATV14, NULL },
+	{ "trigger.stop.debounce.ms",	CFGKEY_ATV14, NULL },
+	{ "fps.measure.envelope.ms",	CFGKEY_ATV14, NULL },
+	{ "fps.measure.envelope.max.ms", CFGKEY_ATV14, NULL },
+	{ "fps.measure.envelope.sub.ms", CFGKEY_ATV14, NULL },
+	{ "fps.measure.envelope.skip.ms", CFGKEY_ATV14, NULL },
+	{ "fps.measure.retries",	CFGKEY_ATV14, NULL },
+	{ "fps.declared.crosscheck.pct", CFGKEY_ATV14, NULL },
+	{ "fps.recheck.delay.ms",	CFGKEY_ATV14, NULL },
+	{ "fps.prefer.api",		CFGKEY_ATV14, NULL },
+	{ "pause.keep",			CFGKEY_ATV14, NULL },
+	{ "switch.restore.on.stop",	CFGKEY_ATV14, NULL },
+	{ "fps.correct.enable",		CFGKEY_ATV14, NULL },
+	{ "fps.correct.list",		CFGKEY_ATV14, NULL },
+	{ "fps.correct.av1.offset",	CFGKEY_ATV14, NULL },
+	{ "fps.correct.av1.pkg",	CFGKEY_ATV14, NULL },
+
+	/* заменены огибающей (наблюдение 20 с): ключ известен, но на новом пути
+	 * не действует — старый конфиг получает внятное сообщение, а не
+	 * «неизвестный ключ (опечатка?)» */
+	{ "fps.measure.window.ms",	0, "устарел: заменён fps.measure.envelope.ms (Android 10-14)" },
+	{ "fps.measure.window.max.ms",	0, "устарел: заменён fps.measure.envelope.ms (Android 10-14)" },
 
 	/* только старый путь (Android 6-9) */
-	{ "mode.extra",			CFGKEY_LEGACY },
-	{ "mode.path",			CFGKEY_LEGACY },
-	{ "vdec.sysfs",			CFGKEY_LEGACY },
-	{ "vdec.blacklist",		CFGKEY_LEGACY },
-	{ "frhint.vdec.blacklist",	CFGKEY_LEGACY },
-	{ "hdmi.sysfs",			CFGKEY_LEGACY },
-	{ "hdmi.state",			CFGKEY_LEGACY },
-	{ "switch.delay.on",		CFGKEY_LEGACY },
-	{ "switch.delay.off",		CFGKEY_LEGACY },
-	{ "switch.delay.retry",		CFGKEY_LEGACY },
-	{ "switch.blackout",		CFGKEY_LEGACY },
-	{ "switch.ignore",		CFGKEY_LEGACY },
-	{ "switch.hdmi",		CFGKEY_LEGACY },
-	{ "cs.select",			CFGKEY_LEGACY },
-	{ "cs.list.path",		CFGKEY_LEGACY },
-	{ "cs.path",			CFGKEY_LEGACY },
-	{ "uevent.filter.frhint",	CFGKEY_LEGACY },
-	{ "uevent.filter.vdec",		CFGKEY_LEGACY },
-	{ "uevent.filter.hdmi",		CFGKEY_LEGACY },
-	{ "uevent.filter.hdcp",		CFGKEY_LEGACY },
+	{ "mode.extra",			CFGKEY_LEGACY, NULL },
+	{ "mode.path",			CFGKEY_LEGACY, NULL },
+	{ "vdec.sysfs",			CFGKEY_LEGACY, NULL },
+	{ "vdec.blacklist",		CFGKEY_LEGACY, NULL },
+	{ "frhint.vdec.blacklist",	CFGKEY_LEGACY, NULL },
+	{ "hdmi.sysfs",			CFGKEY_LEGACY, NULL },
+	{ "hdmi.state",			CFGKEY_LEGACY, NULL },
+	{ "switch.delay.on",		CFGKEY_LEGACY, NULL },
+	{ "switch.delay.off",		CFGKEY_LEGACY, NULL },
+	{ "switch.delay.retry",		CFGKEY_LEGACY, NULL },
+	{ "switch.blackout",		CFGKEY_LEGACY, NULL },
+	{ "switch.ignore",		CFGKEY_LEGACY, NULL },
+	{ "switch.hdmi",		CFGKEY_LEGACY, NULL },
+	{ "cs.select",			CFGKEY_LEGACY, NULL },
+	{ "cs.list.path",		CFGKEY_LEGACY, NULL },
+	{ "cs.path",			CFGKEY_LEGACY, NULL },
+	{ "uevent.filter.frhint",	CFGKEY_LEGACY, NULL },
+	{ "uevent.filter.vdec",		CFGKEY_LEGACY, NULL },
+	{ "uevent.filter.hdmi",		CFGKEY_LEGACY, NULL },
+	{ "uevent.filter.hdcp",		CFGKEY_LEGACY, NULL },
 
 	/* настройка приложения: в ini попадает, но демон её не читает */
-	{ "toast.hz",			CFGKEY_APP },
+	{ "toast.hz",			CFGKEY_APP, NULL },
 };
 
 const char *cfgkeys_note (const char *key, unsigned path)
@@ -81,6 +92,9 @@ const char *cfgkeys_note (const char *key, unsigned path)
 		{
 			if (k_keys [i].paths & path)
 				return NULL;
+
+			if (k_keys [i].note)
+				return k_keys [i].note;
 
 			if (k_keys [i].paths & CFGKEY_APP)
 				return "ключ настройки приложения — демон его не читает";

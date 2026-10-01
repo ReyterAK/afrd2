@@ -28,6 +28,19 @@ static void test_notes (void)
 	assert (cfgkeys_note ("pause.keep", CFGKEY_ATV14) == NULL);
 	assert (cfgkeys_note ("pause.keep", CFGKEY_LEGACY) != NULL);
 
+	/* новые ключи огибающей действуют на новом пути */
+	assert (cfgkeys_note ("fps.measure.envelope.ms", CFGKEY_ATV14) == NULL);
+	assert (cfgkeys_note ("fps.measure.envelope.max.ms", CFGKEY_ATV14) == NULL);
+	assert (cfgkeys_note ("fps.measure.envelope.sub.ms", CFGKEY_ATV14) == NULL);
+	assert (cfgkeys_note ("fps.measure.envelope.skip.ms", CFGKEY_ATV14) == NULL);
+	assert (cfgkeys_note ("fps.correct.av1.offset", CFGKEY_ATV14) == NULL);
+	assert (cfgkeys_note ("fps.correct.av1.pkg", CFGKEY_ATV14) == NULL);
+
+	/* устаревшие ключи названы устаревшими, а не «не действуют» */
+	assert (cfgkeys_note ("fps.measure.window.ms", CFGKEY_ATV14) != NULL);
+	assert (strstr (cfgkeys_note ("fps.measure.window.ms", CFGKEY_ATV14), "устарел") != NULL);
+	assert (strstr (cfgkeys_note ("fps.measure.window.max.ms", CFGKEY_ATV14), "устарел") != NULL);
+
 	/* ключи старого пути */
 	assert (cfgkeys_note ("mode.extra", CFGKEY_LEGACY) == NULL);
 	assert (cfgkeys_note ("mode.extra", CFGKEY_ATV14) != NULL);
