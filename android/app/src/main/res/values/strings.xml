@@ -147,7 +147,8 @@
     <string name="prefs_fps_correct_enable">Apply player calibration</string>
     <string name="prefsum_fps_correct_enable">Some players feed frames to the decoder faster than
         nominal (e.g. YouTube on a 24 fps video measures ~25.2 fps, so AFR picks 25 Hz).
-        The correction is applied to the measurement before the mode is chosen. Off by default.</string>
+        The correction is applied to the measurement before the mode is chosen. On by default:
+        the AV1 correction below is active, the per-player list is empty.</string>
     <string name="prefs_fps_correct_list">Corrections (package=percent)</string>
     <string name="prefsum_fps_correct_list">Space separated list, e.g.
         com.google.android.youtube.tv=5.0. Percent is how much the player over-reports the rate.
@@ -158,7 +159,7 @@
     <string name="prefsum_fps_correct_av1_offset">Additive correction for the AV1 decoder path
         over-reporting the frame counter. Measured: AV1 gives +0.5 frames/s versus H.264 on the same
         file. Recommended value is 0.3, not 0.5: an error of "24 fps detected as 25 Hz" is preferable
-        to the reverse, while 0.5 pushes honest 25-fps content into 24 Hz. 0 — disabled (default):
+        to the reverse, while 0.5 pushes honest 25-fps content into 24 Hz. Default 0.3 (enabled):
         the envelope observation already removes most of the bias.
         Applied only when player calibration is enabled (see the switch above): with it off the value
         is neither used nor logged. Android 10-14.</string>
