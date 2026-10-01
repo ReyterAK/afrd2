@@ -98,6 +98,7 @@
     <string name="notif_stop_afrd">Disable AFR</string>
     <string name="notif_start_afrd">Enable AFR</string>
     <string name="settings_advanced">Advanced settings</string>
+    <string name="not_applicable_atv14">(has no effect on Android 10-14)</string>
     <string name="mode_use_fract_auto">Auto (use best)</string>
     <string name="mode_use_fract_use">Only fractional</string>
     <string name="mode_use_fract_int">Only integer</string>

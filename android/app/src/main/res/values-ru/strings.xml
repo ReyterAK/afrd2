@@ -89,6 +89,7 @@
     <string name="mode_use_fract_use">Предпочитать дробные частоты</string>
     <string name="mode_use_fract_int">Предпочитать целые частоты</string>
     <string name="settings_advanced">Настройки для опытных пользователей</string>
+    <string name="not_applicable_atv14">(не действует на Android 10-14)</string>
     <string name="notif_start_afrd">Включить АПЧ</string>
     <string name="notif_stop_afrd">Отключить АПЧ</string>
     <string name="notif_enabled">AFRd включён</string>

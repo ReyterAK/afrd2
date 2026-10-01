@@ -86,12 +86,16 @@ static void test_live (void)
 	assert (sfmodes_find (modes, n, 100 * 256, 1920, 1080) == -1);
 }
 
-/* Фильтр частот как в демоне (mode.blacklist.rates): отвергаем одну частоту. */
-static int g_blocked_hz;
-static bool block_one (int hz, void *ctx)
+/* Фильтр частот как в демоне (mode.blacklist.rates): список запрещённых частот. */
+static int g_blocked [4];
+static int g_blocked_n;
+static bool block_list (int hz, void *ctx)
 {
 	(void)ctx;
-	return hz != g_blocked_hz;
+	for (int i = 0; i < g_blocked_n; i++)
+		if (hz == g_blocked [i])
+			return false;
+	return true;
 }
 
 /* Выбор режима с учётом кратных частот (mode.prefer.exact) и чёрного списка.
@@ -130,18 +134,34 @@ static void test_select_synthetic (void)
 	assert (ch.id == 7 && ch.rate_n == 1);
 
 	/* чёрный список: 50 Гц запрещена -> для 25 fps остаётся точная 25 Гц */
-	g_blocked_hz = 50 * 256;
-	assert (sfmodes_select (modes, n, 25 * 256, 1920, 1080, 0, block_one, NULL, &ch) == 0);
+	g_blocked [0] = 50 * 256; g_blocked_n = 1;
+	assert (sfmodes_select (modes, n, 25 * 256, 1920, 1080, 0, block_list, NULL, &ch) == 0);
 	assert (ch.id == 5 && ch.rate_n == 1);
-	/* запрещена 25 Гц -> остаётся кратная 50 Гц */
-	g_blocked_hz = 25 * 256;
-	assert (sfmodes_select (modes, n, 25 * 256, 1920, 1080, 1, block_one, NULL, &ch) == 0);
+	/* запрещена 25 Гц при prefer_exact=1 -> остаётся кратная 50 Гц */
+	g_blocked [0] = 25 * 256;
+	assert (sfmodes_select (modes, n, 25 * 256, 1920, 1080, 1, block_list, NULL, &ch) == 0);
 	assert (ch.id == 2 && ch.rate_n == 2);
 
 	/* 100 fps: ни точного режима, ни кратного (200 Гц нет) */
 	assert (sfmodes_select (modes, n, 100 * 256, 1920, 1080, 0, NULL, NULL, &ch) == -1);
-	/* 50 Гц есть только в 720p — для 1080p её нет (проверка геометрии) */
+	/* 50 Гц ищем в 720p: в этой (синтетической) таблице 720p — только 59.94,
+	 * то есть ни точного режима, ни кратного для 50 Гц там нет */
 	assert (sfmodes_select (modes, n, 50 * 256, 1280, 720, 0, NULL, NULL, &ch) == -1);
+
+	/* пустая таблица и нулевая частота — отказ, а не мусор в out */
+	assert (sfmodes_select (modes, 0, 25 * 256, 1920, 1080, 0, NULL, NULL, &ch) == -1);
+	assert (sfmodes_select (modes, n, 0, 1920, 1080, 0, NULL, NULL, &ch) == -1);
+
+	/* запрещено всё подходящее (и точная 25, и кратная 50). При prefer_exact=0
+	 * остаётся только пара 23.98/24.00 — кандидаты с ошибкой частоты ровно на
+	 * границе допуска (delta == 11) и нулевым рейтингом; legacy такие не
+	 * берёт, поэтому подходящего режима нет. При prefer_exact=1 они получают
+	 * бонус за точность (12) и выбираются, а вторичный критерий берёт
+	 * ближайший к 25 Гц — 24.00 (в legacy выбор зависел от порядка строк). */
+	g_blocked [0] = 25 * 256; g_blocked [1] = 50 * 256; g_blocked_n = 2;
+	assert (sfmodes_select (modes, n, 25 * 256, 1920, 1080, 0, block_list, NULL, &ch) == -1);
+	assert (sfmodes_select (modes, n, 25 * 256, 1920, 1080, 1, block_list, NULL, &ch) == 0);
+	assert (ch.id == 7 && ch.rate_n == 1);		/* 1080p24.00: край допуска */
 }
 
 /* То же на живом дампе стенда: 25 -> 50 Гц по умолчанию и 25 Гц при
@@ -169,6 +189,19 @@ static void test_select_live (void)
 	assert (ch.id == 21 && ch.rate_n == 1);		/* 1080p23.98 */
 	assert (sfmodes_select (modes, n, 24 * 256, 1920, 1080, 1, NULL, NULL, &ch) == 0);
 	assert (ch.id == 22 && ch.rate_n == 1);		/* 1080p24 */
+
+	/* Чёрный список — по частоте, а не по конкретному режиму: 50 Гц есть и в
+	 * 1080p (id 17), и в 720p (id 25), и запрет 50 Гц закрывает обе записи —
+	 * обходного пути через другое разрешение нет. */
+	g_blocked [0] = 50 * 256; g_blocked_n = 1;
+	assert (sfmodes_select (modes, n, 25 * 256, 1920, 1080, 0, block_list, NULL, &ch) == 0);
+	assert (ch.id == 20 && ch.rate_n == 1);		/* остаётся точная 1080p25 */
+	assert (sfmodes_select (modes, n, 50 * 256, 1920, 1080, 0, block_list, NULL, &ch) == -1);
+	assert (sfmodes_select (modes, n, 50 * 256, 1280, 720, 0, block_list, NULL, &ch) == -1);
+	g_blocked_n = 0;
+	/* а без запрета та же 50 Гц в 720p доступна (геометрия учитывается) */
+	assert (sfmodes_select (modes, n, 50 * 256, 1280, 720, 0, NULL, NULL, &ch) == 0);
+	assert (ch.id == 25 && ch.rate_n == 1);
 }
 
 int main (void)

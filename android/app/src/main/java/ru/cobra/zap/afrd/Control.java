@@ -37,6 +37,19 @@ public class Control
     public File mIni;
     public File mAfrd;
 
+    /**
+     * Новый путь демона (Android 10-14, ядро 5.x): определяется по узлам, как
+     * platform_detect() в демоне — есть /sys/class/vdec/vdec_status и нет ни
+     * одного из старых узлов /sys/class/switch/hdmi/*. Критерий обязан
+     * совпадать с демоном: иначе профиль и путь демона разойдутся (R18).
+     */
+    public static boolean isAtv14 ()
+    {
+        return new File (SYSFS_NOT_MINIX_1).exists () &&
+               !new File (SYSFS_ANDROID67).exists () &&
+               !new File (SYSFS_ANDROID89).exists ();
+    }
+
     public Control (Context ctx)
     {
         mIni = new File (ctx.getCacheDir (), "afrd.ini");
@@ -104,7 +117,7 @@ public class Control
             !new File (SYSFS_NOT_MINIX_2).exists () &&
             !new File (SYSFS_NOT_MINIX_3).exists ())
             res_id = R.raw.afrd_minix7;
-        else if (kver.startsWith ("5.") && new File (SYSFS_NOT_MINIX_1).exists ())
+        else if (isAtv14 ())
             // Android 10-14, ядро 5.x (ATV14): другой путь демона — опрос
             // /sys/class/vdec/vdec_status и backdoor SurfaceFlinger; узлов
             // /sys/class/switch/hdmi/* на этих ядрах нет. Конфиг — afrd2.ini.

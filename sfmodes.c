@@ -98,7 +98,9 @@ int sfmodes_select (const sf_mode_t *modes, int n, int hz, int width, int height
 	if (hz <= 0)
 		return -1;
 
-	int best_id = -1, best_rating = -1, best_dist = 0;
+	/* Как в legacy: начальный рейтинг 0, поэтому кандидат с нулевым рейтингом
+	 * (ошибка частоты на самой границе допуска) не выбирается вовсе. */
+	int best_id = -1, best_rating = 0, best_dist = 0;
 	int best_rate_n = 1, best_hz = 0;
 
 	for (int i = 0; i < n; i++)
