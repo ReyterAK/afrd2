@@ -11,6 +11,7 @@ run() { # run <test.c> <extra-sources...>
 	./out/host-tests/$name || status=1
 }
 run test_fps_class fps_class.c
+run test_fps_env fps_env.c fps_class.c
 run test_sfmodes sfmodes.c
 run test_cfgkeys cfgkeys.c cfg_parse/cfg_parse.c
 run test_guard guard.c
