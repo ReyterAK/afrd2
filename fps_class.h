@@ -24,6 +24,33 @@ int fps_rate_group (int hz);
 int fps_classify_window (unsigned long long frames_delta, unsigned long long dt_us,
                          unsigned long long dt_unc_us, int *hz_out);
 
+/* То же, но с поправкой на систематическое завышение счётчика кадров плеером:
+ * frames_delta уменьшается в correct раз (correct = 1 + pct/100, см.
+ * fps_correct_factor) вместе с ±1 кадром неопределённости. correct <= 0 или 1.0
+ * — без поправки. */
+int fps_classify_window_scaled (unsigned long long frames_delta, unsigned long long dt_us,
+                                unsigned long long dt_unc_us, double correct, int *hz_out);
+
+/* ---- Поправка частоты для конкретного плеера (fps.correct.*) ----
+ *
+ * Разные плееры подают кадры в декодер по-разному: на живом стенде (2026-10-01)
+ * приложение YouTube на 24-фпс ролике давало по счётчику ~25.2 fps (+5%), а
+ * тот же файл в VLC — ровно 24.0. Граница класса 24 -> 25 лежит на 24.49, поэтому
+ * +5% уводит 24-фпс контент в 25 Гц. Поправка задаётся пользователем на плеер
+ * (пакет) и применяется к замеру до классификации; по умолчанию список пуст, то
+ * есть поведение прежнее.
+ *
+ * Строка списка: "<пакет>=<проценты>" через пробел, например
+ * "com.google.android.youtube.tv=4.5". Положительное значение — плеер завышает
+ * частоту. Некорректные записи игнорируются. */
+#define FPS_CORRECT_MAX 8
+
+void fps_correct_load (const char *list);
+void fps_correct_clear (void);
+
+/* Множитель для пакета (1.0 — поправки нет). package == NULL — тоже 1.0. */
+double fps_correct_factor (const char *package);
+
 /* Уточнение решения заявленной частотой кадра (vdec_status: `frame dur`).
  *
  * На живых IPTV-потоках замер по счётчику кадров систематически завышен: плеер

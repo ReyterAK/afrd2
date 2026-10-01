@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include "../fps_class.h"
@@ -64,6 +65,58 @@ static void t_classify_window(void)
 	assert(fps_classify_window(36, 1000, 1000, &hz) == 0);   /* интервал не определён */
 	assert(fps_classify_window(1, 1500000, 0, &hz) == 0);    /* слишком мало кадров */
 	assert(fps_classify_window(255, 1500000, 0, &hz) == 0);  /* 170 fps — вне ряда */
+}
+
+/* Живой случай 2026-10-01: приложение YouTube на 24-фпс ролике (AV1) давало
+ * по счётчику ~25.2 fps, из-за чего решение уходило в группу 25. Поправка
+ * плеера (fps.correct.list: com.google.android.youtube.tv=4.5) возвращает
+ * решение в группу 24 — на окне до fps.measure.window.max.ms (у 24 Гц и 25 Гц
+ * доверительные интервалы ±1 кадр перекрываются дольше, чем без поправки). */
+static void t_correct_window(void)
+{
+	int hz = 0;
+
+	/* 25.17 fps на окне 6 с (ΔF=151): без поправки — группа 25... */
+	assert(fps_classify_window(151, 6000000, 0, &hz) == 1 && hz == fps_rate_hz(2));
+	/* ...с поправкой 4.5% (25.17 -> 24.08) — группа 24 */
+	assert(fps_classify_window_scaled(151, 6000000, 0, 1.045, &hz) == 1 && hz == fps_rate_hz(0));
+
+	/* YouTube на настоящем 25-фпс ролике: замер 26.17, с поправкой 25.04 —
+	 * группа 25 остаётся правильной */
+	assert(fps_classify_window(157, 6000000, 0, &hz) == 1 && hz == fps_rate_hz(2));
+	assert(fps_classify_window_scaled(157, 6000000, 0, 1.045, &hz) == 1 && hz == fps_rate_hz(2));
+
+	/* Множитель 1.0 (или <= 0) — ровно прежнее поведение */
+	assert(fps_classify_window_scaled(151, 6000000, 0, 1.0, &hz) == 1 && hz == fps_rate_hz(2));
+	assert(fps_classify_window_scaled(151, 6000000, 0, 0.0, &hz) == 1 && hz == fps_rate_hz(2));
+}
+
+/* Разбор списка поправок: "<пакет>=<проценты>" через пробел. */
+static void t_correct_list(void)
+{
+	fps_correct_clear();
+	assert(fps_correct_factor("com.google.android.youtube.tv") == 1.0);
+
+	fps_correct_load("com.google.android.youtube.tv=4.5  studio.scillarium.ottnavigator=2.4");
+	assert(fabs(fps_correct_factor("com.google.android.youtube.tv") - 1.045) < 1e-9);
+	assert(fabs(fps_correct_factor("studio.scillarium.ottnavigator") - 1.024) < 1e-9);
+	/* чужой пакет и NULL — без поправки */
+	assert(fps_correct_factor("org.videolan.vlc") == 1.0);
+	assert(fps_correct_factor(NULL) == 1.0);
+
+	/* мусорные записи игнорируются, корректные рядом с ними — работают */
+	fps_correct_load("мусор =5 =3 youtube=0 com.google.android.youtube.tv=5.0");
+	assert(fps_correct_factor("мусор") == 1.0);
+	assert(fps_correct_factor("") == 1.0);
+	assert(fps_correct_factor("youtube") == 1.0);		/* 0% — не поправка */
+	assert(fabs(fps_correct_factor("com.google.android.youtube.tv") - 1.05) < 1e-9);
+
+	/* отрицательное значение (плеер занижает) тоже допустимо */
+	fps_correct_load("some.player=-3");
+	assert(fabs(fps_correct_factor("some.player") - 0.97) < 1e-9);
+
+	fps_correct_clear();
+	assert(fps_correct_factor("com.google.android.youtube.tv") == 1.0);
 }
 
 static void t_group(void)
@@ -156,6 +209,8 @@ int main(void)
 	t_live_scenario();
 	t_group();
 	t_table();
+	t_correct_window();
+	t_correct_list();
 	printf("fps_class: OK\n");
 	return 0;
 }

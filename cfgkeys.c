@@ -45,6 +45,8 @@ static const struct
 	{ "fps.prefer.api",		CFGKEY_ATV14 },
 	{ "pause.keep",			CFGKEY_ATV14 },
 	{ "switch.restore.on.stop",	CFGKEY_ATV14 },
+	{ "fps.correct.enable",		CFGKEY_ATV14 },
+	{ "fps.correct.list",		CFGKEY_ATV14 },
 
 	/* только старый путь (Android 6-9) */
 	{ "mode.extra",			CFGKEY_LEGACY },

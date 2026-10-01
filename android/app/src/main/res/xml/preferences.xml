@@ -49,6 +49,16 @@
                             android:title="@string/prefs_switch_hdmi"/>
     </PreferenceScreen>
     <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"
+                      android:key="correct" android:title="@string/prefs_group_correct">
+        <SwitchPreference android:defaultValue="0" android:key="fps_correct_enable"
+                          android:summary="@string/prefsum_fps_correct_enable"
+                          android:title="@string/prefs_fps_correct_enable"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:key="fps_correct_list"
+                          android:selectAllOnFocus="false" android:singleLine="true"
+                          android:summary="@string/prefsum_fps_correct_list"
+                          android:title="@string/prefs_fps_correct_list"/>
+    </PreferenceScreen>
+    <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"
                       android:key="advanced" android:title="@string/settings_advanced">
         <ru.cobra.zap.xprefs.XEditTextPreference android:key="mode_blacklist_rates" android:selectAllOnFocus="false"
                             android:singleLine="true"

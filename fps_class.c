@@ -1,5 +1,7 @@
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "fps_class.h"
 
 static const struct { const char *name; double fps; } k_rates [FPS_RATE_COUNT] =
@@ -100,27 +102,86 @@ int fps_rate_exact_member (int hz)
 	return 0;
 }
 
-int fps_classify_window (unsigned long long frames_delta, unsigned long long dt_us,
-                         unsigned long long dt_unc_us, int *hz_out)
+/* ---- Поправка частоты для конкретного плеера: см. fps_class.h ---- */
+
+static struct
+{
+	char pkg [64];
+	double factor;	/* 1 + pct/100 */
+} k_correct [FPS_CORRECT_MAX];
+
+static int k_correct_n;
+
+void fps_correct_clear (void)
+{
+	k_correct_n = 0;
+}
+
+void fps_correct_load (const char *list)
+{
+	fps_correct_clear ();
+	if (!list)
+		return;
+
+	const char *cur = list;
+	while (*cur)
+	{
+		while ((*cur == ' ') || (*cur == '\t'))
+			cur++;
+		if (!*cur)
+			break;
+
+		const char *end = cur + strcspn (cur, " \t");
+
+		const char *eq = memchr (cur, '=', (size_t)(end - cur));
+		if (eq && (eq > cur) && (k_correct_n < FPS_CORRECT_MAX))
+		{
+			double pct = atof (eq + 1);
+			size_t len = (size_t)(eq - cur);
+			if ((len < sizeof (k_correct [0].pkg)) && (pct > -50.0) && (pct < 50.0) && (pct != 0.0))
+			{
+				memcpy (k_correct [k_correct_n].pkg, cur, len);
+				k_correct [k_correct_n].pkg [len] = 0;
+				k_correct [k_correct_n].factor = 1.0 + pct / 100.0;
+				k_correct_n++;
+			}
+		}
+
+		cur = end;
+	}
+}
+
+double fps_correct_factor (const char *package)
+{
+	if (package)
+		for (int i = 0; i < k_correct_n; i++)
+			if (strcmp (k_correct [i].pkg, package) == 0)
+				return k_correct [i].factor;
+
+	return 1.0;
+}
+
+static int window_decide (double frames_delta, unsigned long long dt_us,
+                          unsigned long long dt_unc_us, int *hz_out)
 {
 	if (hz_out)
 		*hz_out = 0;
 
-	if (!frames_delta || !dt_us || (dt_us <= dt_unc_us))
+	if (frames_delta <= 0.0 || !dt_us || (dt_us <= dt_unc_us))
 		return 0;
 
 	double dt_lo = (double)(dt_us - dt_unc_us) / 1000000.0;
 	double dt_hi = (double)(dt_us + dt_unc_us) / 1000000.0;
 
-	int center = fps_classify ((double)frames_delta * 1000000.0 / (double)dt_us);
+	int center = fps_classify (frames_delta * 1000000.0 / (double)dt_us);
 	int group = fps_rate_group (center);
 	if (!group)
 		return 0;
 
 	/* границы доверительного интервала: кадров меньше при самом длинном
 	 * интервале и кадров больше при самом коротком */
-	double lo = (frames_delta > 1) ? (double)(frames_delta - 1) / dt_hi : 0.0;
-	double hi = (double)(frames_delta + 1) / dt_lo;
+	double lo = (frames_delta > 1.0) ? (frames_delta - 1.0) / dt_hi : 0.0;
+	double hi = (frames_delta + 1.0) / dt_lo;
 
 	if ((group != fps_rate_group (fps_classify (lo)))
 	 || (group != fps_rate_group (fps_classify (hi))))
@@ -135,6 +196,21 @@ int fps_classify_window (unsigned long long frames_delta, unsigned long long dt_
 		*hz_out = fps_rate_hz (k_group_lead [fps_rate_index_for_hz (center)]);
 
 	return 1;
+}
+
+int fps_classify_window (unsigned long long frames_delta, unsigned long long dt_us,
+                         unsigned long long dt_unc_us, int *hz_out)
+{
+	return window_decide ((double)frames_delta, dt_us, dt_unc_us, hz_out);
+}
+
+int fps_classify_window_scaled (unsigned long long frames_delta, unsigned long long dt_us,
+                                unsigned long long dt_unc_us, double correct, int *hz_out)
+{
+	if (correct <= 0.0)
+		correct = 1.0;
+
+	return window_decide ((double)frames_delta / correct, dt_us, dt_unc_us, hz_out);
 }
 
 int fps_refine_declared (int measured_hz, double declared_fps, double max_pct, int *hz_out)

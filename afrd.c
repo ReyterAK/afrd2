@@ -1082,6 +1082,70 @@ static int atv14_select_mode (int hz, int w, int h)
 	return ch.id;
 }
 
+/* Пакет приложения на переднем плане (плеера) — по нему выбирается поправка
+ * частоты fps.correct.list. Разбор строки вида
+ *   topResumedActivity=ActivityRecord{b4e422c u0 com.pkg/.Activity t611}
+ * Возврат: true, если пакет разобран. */
+static bool parse_top_package (const char *dump, char *out, size_t out_sz)
+{
+	const char *p = strstr (dump, "topResumedActivity=ActivityRecord{");
+	if (!p)
+		return false;
+
+	p += strlen ("topResumedActivity=ActivityRecord{");
+	while (*p)
+	{
+		const char *sp = strchr (p, ' ');
+		if (!sp)
+			break;
+
+		/* после поля "u<uid> " сразу идёт компонент "<пакет>/<активити>" */
+		if ((sp [1] == 'u') && (sp [2] >= '0') && (sp [2] <= '9'))
+		{
+			const char *c = sp + 2;
+			while ((*c >= '0') && (*c <= '9'))
+				c++;
+			if (*c == ' ')
+				c++;
+
+			const char *slash = strchr (c, '/');
+			const char *end = slash ? slash : strpbrk (c, " }");
+			if (end && (end > c) && ((size_t)(end - c) < out_sz))
+			{
+				memcpy (out, c, (size_t)(end - c));
+				out [end - c] = 0;
+				return true;
+			}
+
+			return false;
+		}
+
+		p = sp + 1;
+	}
+
+	return false;
+}
+
+/* Пакет плеера текущего видео. Пустая строка — не удалось определить. */
+static char g_cur_pkg [64];
+
+static void atv14_probe_package (const platform_t *plat)
+{
+	g_cur_pkg [0] = 0;
+	if (!plat->activity_dump_cmd)
+		return;
+
+	static char dump [4096];
+	if (exec_capture (plat->activity_dump_cmd, dump, sizeof (dump)) != 0)
+	{
+		trace (1, "не удалось определить приложение на переднем плане\n");
+		return;
+	}
+
+	if (!parse_top_package (dump, g_cur_pkg, sizeof (g_cur_pkg)))
+		trace (1, "приложение на переднем плане не разобрано\n");
+}
+
 /* Сон с оглядкой на завершение: просыпаемся не реже, чем раз в 200 мс. */
 static void msleep (int ms)
 {
@@ -1407,6 +1471,10 @@ static int run_atv14 (const platform_t *plat)
 	mstime_t recheck_timer = 0;
 	bool recheck_armed = false;
 	int preferred_id;
+	/* поправка частоты для плеера текущего видео (fps.correct.list):
+	 * пакет определяется один раз на видео, при первом замере */
+	bool pkg_probed = false;
+	double video_corr = 1.0;
 
 	/* Поведенческие ключи профиля (R28). */
 	int prefer_api = cfg_get_int ("fps.prefer.api", 1);
@@ -1502,6 +1570,18 @@ static int run_atv14 (const platform_t *plat)
 	int recheck_ms = cfg_get_int ("fps.recheck.delay.ms", 8000);
 	int start_deb = cfg_get_int ("trigger.start.debounce.ms", 500);
 	int stop_deb = cfg_get_int ("trigger.stop.debounce.ms", 1500);
+	/* Поправка на систематическое завышение счётчика конкретным плеером
+	 * (по умолчанию выключена — см. fps.correct.* в fps_class.h). */
+	int correct_enable = cfg_get_int ("fps.correct.enable", 0);
+	if (correct_enable)
+	{
+		const char *clist = cfg_get_str ("fps.correct.list", NULL);
+		fps_correct_load (clist);
+		trace (1, "поправка частоты по плеерам: %s\n",
+		       (clist && *clist) ? clist : "(список пуст)");
+	}
+	else
+		fps_correct_clear ();
 
 	while (!g_shutdown)
 	{
@@ -1608,6 +1688,10 @@ static int run_atv14 (const platform_t *plat)
 				retries = 0;
 				recheck_armed = false;	/* R56: перепроверка — на текущее видео */
 				mstime_disable (&recheck_timer);
+				/* плеер нового видео может быть другим — поправку
+				 * (fps.correct.list) берём заново */
+				pkg_probed = false;
+				video_corr = 1.0;
 			}
 
 			if (have_prev_frames && (v0.frames == prev_frames))
@@ -1648,6 +1732,9 @@ static int run_atv14 (const platform_t *plat)
 			/* R56: перепроверка — тоже на текущее видео */
 			recheck_armed = false;
 			mstime_disable (&recheck_timer);
+			/* поправка плеера относится к текущему видео */
+			pkg_probed = false;
+			video_corr = 1.0;
 		}
 		else if (recheck_armed && mstime_expired (&recheck_timer))
 		{
@@ -1663,6 +1750,21 @@ static int run_atv14 (const platform_t *plat)
 		else if (!measure_failed && (want_sf_id < 0))
 		{
 			int hz = 0;
+
+			/* Поправка частоты конкретного плеера: пакет на переднем плане
+			 * определяется один раз на видео (fps.correct.list). */
+			if (!pkg_probed)
+			{
+				pkg_probed = true;
+				if (correct_enable)
+				{
+					atv14_probe_package (plat);
+					video_corr = fps_correct_factor (g_cur_pkg);
+					if (video_corr != 1.0)
+						trace (1, "плеер %s: поправка замера %.2f (fps.correct.list)\n",
+						       g_cur_pkg, video_corr);
+				}
+			}
 
 			/* fps.prefer.api: подсказку плеера (24.8 fixed-point, живёт 1 с)
 			 * предпочитаем собственному замеру — она точнее и мгновенна */
@@ -1766,8 +1868,22 @@ static int run_atv14 (const platform_t *plat)
 					    ? (double)frames_delta * 1000000.0 / (double)dt_us
 					    : 0.0;
 
-					if (fps_classify_window (frames_delta, dt_us, dt_unc_us, &hz))
+					int raw_hz = 0;
+					if (fps_classify_window (frames_delta, dt_us, dt_unc_us, &raw_hz))
 					{
+						hz = raw_hz;
+
+						/* поправка плеера (fps.correct.list): замер по
+						 * счётчику делится на множитель плеера, и решение
+						 * принимается по исправленной частоте */
+						if ((video_corr != 1.0) &&
+						    fps_classify_window_scaled (frames_delta, dt_us, dt_unc_us,
+						                                video_corr, &hz) &&
+						    (hz != raw_hz))
+							trace (1, "плеер %s: частота уточнена поправкой: "
+							       HZ_FMT " Гц вместо " HZ_FMT " Гц\n",
+							       g_cur_pkg, HZ_ARGS (hz), HZ_ARGS (raw_hz));
+
 						decided_ms = (int)(dt_us / 1000);
 
 						/* IPTV: счётчик кадров завышен — плеер повторно

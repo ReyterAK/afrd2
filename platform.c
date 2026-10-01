@@ -43,6 +43,10 @@ platform_t platform_detect (void)
 	 * mBaseDisplayInfo содержит и то, и другое, но целиком длиннее буфера. */
 	p.display_dump_cmd = "dumpsys display | grep -o -E "
 	                     "'mUserPreferredModeId=-?[0-9]+|real [0-9]+ x [0-9]+'";
+	/* Пакет приложения на переднем плане — для поправки частоты конкретного
+	 * плеера (fps.correct.list). Дамп activity большой, поэтому режем на
+	 * стороне команды: нужна ровно одна строка topResumedActivity. */
+	p.activity_dump_cmd = "dumpsys activity activities | grep -m1 topResumedActivity";
 
 	bool have_vdec = (sysfs_exists (VDVC_STATUS) == 0);
 	/* Android 6/7: switch/hdmi/state; Android 8/9: switch/hdmi/cable.0/state.
