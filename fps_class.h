@@ -31,6 +31,33 @@ int fps_classify_window (unsigned long long frames_delta, unsigned long long dt_
 int fps_classify_window_scaled (unsigned long long frames_delta, unsigned long long dt_us,
                                 unsigned long long dt_unc_us, double correct, int *hz_out);
 
+/* Решение по окну с поправками: frames_adj = frames_delta / factor - offset * dt_с.
+ *   factor — относительная поправка плеера (fps.correct.list), 1.0 — нет;
+ *   offset — аддитивная поправка в кадрах/с (fps.correct.av1.offset), 0.0 — нет.
+ * Аддитивная нужна отдельно от множителя: завышение AV1-тракта на стенде
+ * постоянно в кадрах/с (24.52 вместо 24.00), а не в процентах.
+ * Возврат: 1 — решение есть (*hz_out), 0 — окно мало. */
+int fps_classify_window_corrected (unsigned long long frames_delta, unsigned long long dt_us,
+                                   unsigned long long dt_unc_us,
+                                   double factor, double offset, int *hz_out);
+
+/* ---- Поправка на завышение счётчика кодеком (fps.correct.av1.*) ----
+ *
+ * AV1-тракт декодера S905X5M отдаёт больше кадров, чем номинал: живой замер
+ * 2026-10-01 в стороннем плеере (Just Player, один и тот же файл Sintel
+ * 24.000 fps): H.264 — 24.002 fps, AV1 — 24.520 fps (+0.52 кадра/с, n=3/2).
+ * Штатный клиент YouTube добавляет к этому своё (границы DASH-сегментов).
+ *
+ * offset_fps <= 0 — поправка выключена. package == NULL или "" — поправка для
+ * любого плеера; иначе — только для указанного. */
+void fps_correct_set_av1 (double offset_fps, const char *package);
+
+/* Сбросить поправку (используется fps_correct_clear и при enable=0). */
+void fps_correct_clear_av1 (void);
+
+/* Поправка, применимая к этому декодеру и плееру (0.0 — не применять). */
+double fps_correct_av1_offset (const char *device, const char *package);
+
 /* ---- Поправка частоты для конкретного плеера (fps.correct.*) ----
  *
  * Разные плееры подают кадры в декодер по-разному: на живом стенде (2026-10-01)

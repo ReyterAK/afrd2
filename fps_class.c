@@ -1,4 +1,6 @@
+#include <ctype.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -115,6 +117,7 @@ static int k_correct_n;
 void fps_correct_clear (void)
 {
 	k_correct_n = 0;
+	fps_correct_clear_av1 ();
 }
 
 void fps_correct_load (const char *list)
@@ -161,6 +164,77 @@ double fps_correct_factor (const char *package)
 	return 1.0;
 }
 
+/* ---- Поправка на завышение счётчика AV1-трактом: см. fps_class.h ---- */
+
+static struct
+{
+	double	offset;
+	char	pkg [64];
+} k_av1;
+
+void fps_correct_clear_av1 (void)
+{
+	k_av1.offset = 0.0;
+	k_av1.pkg [0] = 0;
+}
+
+void fps_correct_set_av1 (double offset_fps, const char *package)
+{
+	fps_correct_clear_av1 ();
+	if (offset_fps <= 0.0)
+		return;
+
+	k_av1.offset = offset_fps;
+	if (package)
+	{
+		while ((*package == ' ') || (*package == '\t'))
+			package++;
+
+		size_t len = strcspn (package, " \t");
+		if (len && (len < sizeof (k_av1.pkg)))
+		{
+			memcpy (k_av1.pkg, package, len);
+			k_av1.pkg [len] = 0;
+		}
+	}
+}
+
+/* Регистронезависимый поиск подстроки: strcasestr есть не во всех libc
+ * (bionic до API 30 его не имеет). */
+static bool contains_ci (const char *hay, const char *needle)
+{
+	if (!hay || !needle || !*needle)
+		return false;
+
+	for (; *hay; hay++)
+	{
+		const char *h = hay, *n = needle;
+		while (*h && *n && (tolower ((unsigned char)*h) == tolower ((unsigned char)*n)))
+		{
+			h++;
+			n++;
+		}
+		if (!*n)
+			return true;
+	}
+
+	return false;
+}
+
+double fps_correct_av1_offset (const char *device, const char *package)
+{
+	if (k_av1.offset <= 0.0)
+		return 0.0;
+
+	if (k_av1.pkg [0] && (!package || (strcmp (k_av1.pkg, package) != 0)))
+		return 0.0;
+
+	if (!contains_ci (device, "av1"))
+		return 0.0;
+
+	return k_av1.offset;
+}
+
 static int window_decide (double frames_delta, unsigned long long dt_us,
                           unsigned long long dt_unc_us, int *hz_out)
 {
@@ -198,19 +272,29 @@ static int window_decide (double frames_delta, unsigned long long dt_us,
 	return 1;
 }
 
+int fps_classify_window_corrected (unsigned long long frames_delta, unsigned long long dt_us,
+                                   unsigned long long dt_unc_us,
+                                   double factor, double offset, int *hz_out)
+{
+	if (factor <= 0.0)
+		factor = 1.0;
+
+	double dt_s = (double)dt_us / 1000000.0;
+	double adj = (double)frames_delta / factor - offset * dt_s;
+
+	return window_decide (adj, dt_us, dt_unc_us, hz_out);
+}
+
 int fps_classify_window (unsigned long long frames_delta, unsigned long long dt_us,
                          unsigned long long dt_unc_us, int *hz_out)
 {
-	return window_decide ((double)frames_delta, dt_us, dt_unc_us, hz_out);
+	return fps_classify_window_corrected (frames_delta, dt_us, dt_unc_us, 1.0, 0.0, hz_out);
 }
 
 int fps_classify_window_scaled (unsigned long long frames_delta, unsigned long long dt_us,
                                 unsigned long long dt_unc_us, double correct, int *hz_out)
 {
-	if (correct <= 0.0)
-		correct = 1.0;
-
-	return window_decide ((double)frames_delta / correct, dt_us, dt_unc_us, hz_out);
+	return fps_classify_window_corrected (frames_delta, dt_us, dt_unc_us, correct, 0.0, hz_out);
 }
 
 int fps_refine_declared (int measured_hz, double declared_fps, double max_pct, int *hz_out)

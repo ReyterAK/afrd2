@@ -200,6 +200,65 @@ static void t_table(void)
 	assert(fps_rate_index_for_hz(25 * 256) == 2);
 }
 
+/* Аддитивная поправка (fps.correct.av1.offset) и множитель плеера применяются
+ * к числу кадров окна, а не к уже готовой частоте. */
+static void t_corrected(void)
+{
+	int hz = -1;
+
+	/* 24 fps за 5 с (120 кадров): без поправок — группа 24 */
+	assert(fps_classify_window_corrected(120, 5000000, 0, 1.0, 0.0, &hz) == 1);
+	assert(hz == fps_rate_hz(0));
+
+	/* завышение AV1 на 0.5 кадра/с: 122.5 кадра за 5 с — всё ещё группа 24 */
+	assert(fps_classify_window_corrected(122, 5000000, 0, 1.0, 0.5, &hz) == 1);
+	assert(hz == fps_rate_hz(0));
+
+	/* 128 кадров за 5 с (25.6 fps) без поправки — это уже 25 */
+	assert(fps_classify_window_corrected(128, 5000000, 0, 1.0, 0.0, &hz) == 1);
+	assert(hz == fps_rate_hz(2));
+
+	/* 125 кадров за 5 с = 25.0; поправка 0.5 даёт 24.5, а ±1 кадр накрывает
+	 * и 24, и 25 -> решения нет */
+	assert(fps_classify_window_corrected(125, 5000000, 0, 1.0, 0.5, &hz) == 0);
+
+	/* множитель (fps.correct.list) работает как раньше: 126/1.05 = 120 -> 24 */
+	assert(fps_classify_window_corrected(126, 5000000, 0, 1.05, 0.0, &hz) == 1);
+	assert(hz == fps_rate_hz(0));
+
+	/* factor <= 0 трактуется как «без поправки» */
+	assert(fps_classify_window_corrected(120, 5000000, 0, 0.0, 0.0, &hz) == 1);
+	assert(hz == fps_rate_hz(0));
+}
+
+static void t_correct_av1(void)
+{
+	fps_correct_clear ();
+
+	/* поправка не задана — ноль для любого устройства */
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "com.google.android.youtube.tv") == 0.0);
+
+	/* поправка без пакета действует для любого плеера, но только на AV1 */
+	fps_correct_set_av1 (0.5, NULL);
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "org.videolan.vlc") == 0.5);
+	assert(fps_correct_av1_offset ("ammvdec_h264_v4", "org.videolan.vlc") == 0.0);
+	assert(fps_correct_av1_offset ("", "org.videolan.vlc") == 0.0);
+
+	/* с пакетом — только для него (пакет в конфиге бывает с пробелами) */
+	fps_correct_set_av1 (1.05, " com.google.android.youtube.tv ");
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "com.google.android.youtube.tv") == 1.05);
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "org.videolan.vlc") == 0.0);
+
+	/* fps_correct_clear сбрасывает и её */
+	fps_correct_set_av1 (0.5, NULL);
+	fps_correct_clear ();
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", NULL) == 0.0);
+
+	/* выключенная поправка (0) — не действует */
+	fps_correct_set_av1 (0.0, NULL);
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", NULL) == 0.0);
+}
+
 int main(void)
 {
 	t_classify();
@@ -211,6 +270,8 @@ int main(void)
 	t_table();
 	t_correct_window();
 	t_correct_list();
+	t_corrected();
+	t_correct_av1();
 	printf("fps_class: OK\n");
 	return 0;
 }
