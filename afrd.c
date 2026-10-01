@@ -1057,6 +1057,30 @@ static time_t g_config_mtime;
 static sf_mode_t g_sf_modes [SF_MODE_MAX];
 static int g_sf_modes_n = 0;
 
+/* Фильтр частот для sfmodes_select: на ATV14-пути действует тот же
+ * mode.blacklist.rates, что и в legacy-ветке (раньше ключ молча игнорировался). */
+static bool atv14_rate_allowed (int hz, void *ctx)
+{
+	(void)ctx;
+	return !rate_is_blacklisted (hz);
+}
+
+/* Выбор режима под частоту контента: кратные частоты (mode.prefer.exact) и
+ * чёрный список частот (mode.blacklist.rates) — правила legacy-ветки. */
+static int atv14_select_mode (int hz, int w, int h)
+{
+	sf_choice_t ch;
+	if (sfmodes_select (g_sf_modes, g_sf_modes_n, hz, w, h,
+	                    g_mode_prefer_exact, atv14_rate_allowed, NULL, &ch) != 0)
+		return -1;
+
+	if (ch.rate_n > 1)
+		trace (1, "режим " HZ_FMT " Гц выбран как кратный (x%d) для " HZ_FMT " Гц\n",
+		       HZ_ARGS (ch.hz), ch.rate_n, HZ_ARGS (hz));
+
+	return ch.id;
+}
+
 /* Сон с оглядкой на завершение: просыпаемся не реже, чем раз в 200 мс. */
 static void msleep (int ms)
 {
@@ -1846,7 +1870,7 @@ static int run_atv14 (const platform_t *plat)
 				h = active.height;
 			}
 
-			cur_sf_id = sfmodes_find (g_sf_modes, g_sf_modes_n, hz, w, h);
+			cur_sf_id = atv14_select_mode (hz, w, h);
 			if (cur_sf_id < 0)
 			{
 				trace (1, "режим для %d.%02d Гц не найден в списке\n",
@@ -1886,7 +1910,7 @@ static int run_atv14 (const platform_t *plat)
 				h = active.height;
 			}
 
-			int hint_id = sfmodes_find (g_sf_modes, g_sf_modes_n, hint_hz, w, h);
+			int hint_id = atv14_select_mode (hint_hz, w, h);
 			if (hint_id < 0)
 			{
 				/* режима нет в текущей таблице (напр. частота есть только для

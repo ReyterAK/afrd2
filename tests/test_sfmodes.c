@@ -86,10 +86,97 @@ static void test_live (void)
 	assert (sfmodes_find (modes, n, 100 * 256, 1920, 1080) == -1);
 }
 
+/* Фильтр частот как в демоне (mode.blacklist.rates): отвергаем одну частоту. */
+static int g_blocked_hz;
+static bool block_one (int hz, void *ctx)
+{
+	(void)ctx;
+	return hz != g_blocked_hz;
+}
+
+/* Выбор режима с учётом кратных частот (mode.prefer.exact) и чёрного списка.
+ * Кратность: 0 — предпочитать кратные (25 -> 50, 30 -> 60), 1 — точное
+ * совпадение. Значения частот — 24.8 fixed point, как их считает fps_class. */
+static void test_select_synthetic (void)
+{
+	static char buf [65536];
+	read_file ("tests/fixtures/sf_modes.txt", buf, sizeof (buf));
+
+	sf_mode_t modes [SF_MODE_MAX];
+	int n = sfmodes_parse (buf, modes, SF_MODE_MAX);
+	sf_choice_t ch;
+
+	/* 25 fps: по умолчанию (prefer_exact=0) — кратные 50 Гц */
+	assert (sfmodes_select (modes, n, 25 * 256, 1920, 1080, 0, NULL, NULL, &ch) == 0);
+	assert (ch.id == 2 && ch.rate_n == 2 && ch.hz == 50 * 256);
+	/* prefer_exact=1 — точные 25 Гц */
+	assert (sfmodes_select (modes, n, 25 * 256, 1920, 1080, 1, NULL, NULL, &ch) == 0);
+	assert (ch.id == 5 && ch.rate_n == 1);
+
+	/* 29.97 fps (лидер группы 30): 59.94 Гц — точное удвоение, оно и выигрывает */
+	assert (sfmodes_select (modes, n, 7672, 1920, 1080, 0, NULL, NULL, &ch) == 0);
+	assert (ch.id == 0 && ch.rate_n == 2 && ch.hz == 15345);
+	assert (sfmodes_select (modes, n, 7672, 1920, 1080, 1, NULL, NULL, &ch) == 0);
+	assert (ch.id == 3 && ch.rate_n == 1);
+
+	/* 60 fps (лидер 59.94) — без удвоения: 59.94 остаётся точным совпадением */
+	assert (sfmodes_select (modes, n, 15345, 1920, 1080, 0, NULL, NULL, &ch) == 0);
+	assert (ch.id == 0 && ch.rate_n == 1);
+
+	/* пара 23.98/24.00: 23.976 -> дробный режим, 24.0 -> целый (вторичный критерий) */
+	assert (sfmodes_select (modes, n, 6138, 1920, 1080, 0, NULL, NULL, &ch) == 0);
+	assert (ch.id == 6 && ch.rate_n == 1);
+	assert (sfmodes_select (modes, n, 24 * 256, 1920, 1080, 0, NULL, NULL, &ch) == 0);
+	assert (ch.id == 7 && ch.rate_n == 1);
+
+	/* чёрный список: 50 Гц запрещена -> для 25 fps остаётся точная 25 Гц */
+	g_blocked_hz = 50 * 256;
+	assert (sfmodes_select (modes, n, 25 * 256, 1920, 1080, 0, block_one, NULL, &ch) == 0);
+	assert (ch.id == 5 && ch.rate_n == 1);
+	/* запрещена 25 Гц -> остаётся кратная 50 Гц */
+	g_blocked_hz = 25 * 256;
+	assert (sfmodes_select (modes, n, 25 * 256, 1920, 1080, 1, block_one, NULL, &ch) == 0);
+	assert (ch.id == 2 && ch.rate_n == 2);
+
+	/* 100 fps: ни точного режима, ни кратного (200 Гц нет) */
+	assert (sfmodes_select (modes, n, 100 * 256, 1920, 1080, 0, NULL, NULL, &ch) == -1);
+	/* 50 Гц есть только в 720p — для 1080p её нет (проверка геометрии) */
+	assert (sfmodes_select (modes, n, 50 * 256, 1280, 720, 0, NULL, NULL, &ch) == -1);
+}
+
+/* То же на живом дампе стенда: 25 -> 50 Гц по умолчанию и 25 Гц при
+ * prefer_exact=1; идентификаторы — из конкретного инстанса SurfaceFlinger. */
+static void test_select_live (void)
+{
+	static char buf [65536];
+	read_file ("tests/fixtures/sf_modes_live.txt", buf, sizeof (buf));
+
+	sf_mode_t modes [SF_MODE_MAX];
+	int n = sfmodes_parse (buf, modes, SF_MODE_MAX);
+	sf_choice_t ch;
+
+	assert (sfmodes_select (modes, n, 25 * 256, 1920, 1080, 0, NULL, NULL, &ch) == 0);
+	assert (ch.id == 17 && ch.rate_n == 2);		/* 1080p50 */
+	assert (sfmodes_select (modes, n, 25 * 256, 1920, 1080, 1, NULL, NULL, &ch) == 0);
+	assert (ch.id == 20 && ch.rate_n == 1);		/* 1080p25 */
+
+	assert (sfmodes_select (modes, n, 7672, 1920, 1080, 0, NULL, NULL, &ch) == 0);
+	assert (ch.id == 15 && ch.rate_n == 2);		/* 1080p59.94 */
+	assert (sfmodes_select (modes, n, 7672, 1920, 1080, 1, NULL, NULL, &ch) == 0);
+	assert (ch.id == 18 && ch.rate_n == 1);		/* 1080p29.97 */
+
+	assert (sfmodes_select (modes, n, 6138, 1920, 1080, 0, NULL, NULL, &ch) == 0);
+	assert (ch.id == 21 && ch.rate_n == 1);		/* 1080p23.98 */
+	assert (sfmodes_select (modes, n, 24 * 256, 1920, 1080, 1, NULL, NULL, &ch) == 0);
+	assert (ch.id == 22 && ch.rate_n == 1);		/* 1080p24 */
+}
+
 int main (void)
 {
 	test_synthetic ();
 	test_live ();
+	test_select_synthetic ();
+	test_select_live ();
 
 	printf ("sfmodes: OK\n");
 	return 0;
