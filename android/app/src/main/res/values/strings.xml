@@ -157,7 +157,9 @@
     <string name="prefs_fps_correct_av1_offset">AV1 correction (frames/s)</string>
     <string name="prefsum_fps_correct_av1_offset">Additive correction for the AV1 decoder path
         over-reporting the frame counter. Measured: AV1 gives +0.5 frames/s versus H.264 on the same
-        file. 0 — disabled (default): the envelope observation already removes most of the bias.
+        file. Recommended value is 0.3, not 0.5: an error of "24 fps detected as 25 Hz" is preferable
+        to the reverse, while 0.5 pushes honest 25-fps content into 24 Hz. 0 — disabled (default):
+        the envelope observation already removes most of the bias.
         Applied only when player calibration is enabled (see the switch above): with it off the value
         is neither used nor logged. Android 10-14.</string>
     <string name="prefs_fps_correct_av1_pkg">AV1 correction: package only</string>
