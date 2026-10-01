@@ -106,7 +106,7 @@
         The correction is applied to the measurement before the mode is chosen. Off by default.</string>
     <string name="prefs_fps_correct_list">Corrections (package=percent)</string>
     <string name="prefsum_fps_correct_list">Space separated list, e.g.
-        com.google.android.youtube.tv=4.5. Percent is how much the player over-reports the rate.
+        com.google.android.youtube.tv=5.0. Percent is how much the player over-reports the rate.
         Measure it from the daemon log line &quot;видео: X fps&quot; and the nominal rate of the video.</string>
     <string name="mode_use_fract_auto">Auto (use best)</string>
     <string name="mode_use_fract_use">Only fractional</string>

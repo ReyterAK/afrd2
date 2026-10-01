@@ -97,7 +97,7 @@
         Поправка применяется к замеру до выбора режима. По умолчанию выключено.</string>
     <string name="prefs_fps_correct_list">Поправки (пакет=проценты)</string>
     <string name="prefsum_fps_correct_list">Список через пробел, например:
-        com.google.android.youtube.tv=4.5. Проценты — на сколько плеер завышает частоту.
+        com.google.android.youtube.tv=5.0. Проценты — на сколько плеер завышает частоту.
         Измерить можно по строке «видео: X fps» в логе демона и номиналу ролика.</string>
     <string name="notif_start_afrd">Включить АПЧ</string>
     <string name="notif_stop_afrd">Отключить АПЧ</string>

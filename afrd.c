@@ -19,6 +19,7 @@
 #include "cfgkeys.h"
 
 #define __USE_GNU
+#include <math.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <linux/netlink.h>
@@ -1761,8 +1762,11 @@ static int run_atv14 (const platform_t *plat)
 					atv14_probe_package (plat);
 					video_corr = fps_correct_factor (g_cur_pkg);
 					if (video_corr != 1.0)
-						trace (1, "плеер %s: поправка замера %.2f (fps.correct.list)\n",
-						       g_cur_pkg, video_corr);
+					{
+						int p = (int)(fabs (video_corr - 1.0) * 10000.0 + 0.5);
+						trace (1, "плеер %s: поправка замера %s%d.%02d %% (fps.correct.list)\n",
+						       g_cur_pkg, (video_corr < 1.0) ? "-" : "+", p / 100, p % 100);
+					}
 				}
 			}
 
@@ -1869,21 +1873,33 @@ static int run_atv14 (const platform_t *plat)
 					    : 0.0;
 
 					int raw_hz = 0;
-					if (fps_classify_window (frames_delta, dt_us, dt_unc_us, &raw_hz))
+					bool decided = fps_classify_window (frames_delta, dt_us, dt_unc_us, &raw_hz);
+
+					if (decided && (video_corr != 1.0))
 					{
+						/* Поправка плеера (fps.correct.list) применяется к замеру
+						 * до классификации. Короткое окно с поправкой может не
+						 * уложиться в одну группу частот — тогда окно надо
+						 * растить дальше: принимать сырое решение нельзя, оно
+						 * заведомо смещено на завышение плеера. */
+						int corr_hz = 0;
+						if (fps_classify_window_scaled (frames_delta, dt_us, dt_unc_us,
+						                                video_corr, &corr_hz))
+						{
+							if (corr_hz != raw_hz)
+								trace (1, "плеер %s: частота уточнена поправкой: "
+								       HZ_FMT " Гц вместо " HZ_FMT " Гц\n",
+								       g_cur_pkg, HZ_ARGS (corr_hz), HZ_ARGS (raw_hz));
+							hz = corr_hz;
+						}
+						else
+							decided = false;
+					}
+					else if (decided)
 						hz = raw_hz;
 
-						/* поправка плеера (fps.correct.list): замер по
-						 * счётчику делится на множитель плеера, и решение
-						 * принимается по исправленной частоте */
-						if ((video_corr != 1.0) &&
-						    fps_classify_window_scaled (frames_delta, dt_us, dt_unc_us,
-						                                video_corr, &hz) &&
-						    (hz != raw_hz))
-							trace (1, "плеер %s: частота уточнена поправкой: "
-							       HZ_FMT " Гц вместо " HZ_FMT " Гц\n",
-							       g_cur_pkg, HZ_ARGS (hz), HZ_ARGS (raw_hz));
-
+					if (decided)
+					{
 						decided_ms = (int)(dt_us / 1000);
 
 						/* IPTV: счётчик кадров завышен — плеер повторно
@@ -1937,6 +1953,18 @@ static int run_atv14 (const platform_t *plat)
 					 * исчерпывала retries и выключала AFR до конца файла). */
 					if (stalled)
 						continue;
+
+					/* Диагностика для подбора fps.correct.list: что именно
+					 * увидел замер к концу окна. Без этой строки отказ
+					 * измерения («частоту определить не удалось») не отличить
+					 * от мусора в поле частоты или от слишком маленькой
+					 * поправки плеера. */
+					{
+						int p = (int)(fabs (video_corr - 1.0) * 10000.0 + 0.5);
+						trace (1, "замер не решился: %.3f fps, окно %d мс, поправка %s%d.%02d %%\n",
+						       fps, (int)(dt_us / 1000), (video_corr < 1.0) ? "-" : "+",
+						       p / 100, p % 100);
+					}
 
 					if (++retries >= max_retries)
 					{
