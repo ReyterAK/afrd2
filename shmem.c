@@ -75,7 +75,8 @@ bool shmem_init (bool read)
 
 	g_shmem = (afrd_shmem_t *)mmap (NULL, sizeof (afrd_shmem_t),
 		PROT_READ | (read ? 0 : PROT_WRITE), MAP_SHARED, g_shmem_h, 0);
-	if (!g_shmem) {
+	if (g_shmem == MAP_FAILED) {
+		g_shmem = NULL;
 		trace (0, "failed to mmap file %s\n", g_shmem_path);
 		shmem_fini ();
 		return false;
@@ -87,10 +88,14 @@ bool shmem_init (bool read)
 void shmem_fini ()
 {
 	if (g_shmem) {
-		// force clients to re-open the shm
-		g_shmem->size = 0;
-		g_shmem->crc32++;
-		msync (g_shmem, sizeof (afrd_shmem_t), MS_SYNC);
+		// force clients to re-open the shm — это делает только писатель:
+		// у читателя отображение PROT_READ, и запись в него — SIGSEGV
+		// (падал `afrd -s` при живом демоне, проверено на стенде)
+		if (!g_shmem_read) {
+			g_shmem->size = 0;
+			g_shmem->crc32++;
+			msync (g_shmem, sizeof (afrd_shmem_t), MS_SYNC);
+		}
 
 		munmap (g_shmem, sizeof (afrd_shmem_t));
 		g_shmem = NULL;
