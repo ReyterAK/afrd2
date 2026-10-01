@@ -7,7 +7,7 @@
 #define ENV_SUB		5000000ULL	/* профиль: fps.measure.envelope.sub.ms */
 #define ENV_SKIP	2000000ULL	/* профиль: fps.measure.envelope.skip.ms */
 
-/* Фикстура: строки "<мс>\t<прирост счётчика>". */
+/* Фикстура: строки "<мс>\t<накопленный счётчик кадров>". */
 static int load_fixture (const char *path, fps_env_t *env)
 {
 	FILE *f = fopen (path, "r");
@@ -44,8 +44,10 @@ static void t_fixtures (void)
 	assert (fps_env_decide (&env, ENV_HORIZON, ENV_SKIP, ENV_SUB, 1.0, 0.0, &hz) == 1);
 	assert (hz == fps_rate_hz (0));		/* 23.976 -> группа 24 */
 
-	/* AV1 соврал настолько, что огибающая без поправки даёт 25 — фиксируем
-	 * известное ограничение; с поправкой 0.5 кадра/с ряд даёт группу 24 */
+	/* AV1 соврал так, что огибающая уже без поправки даёт 25; фиксируем
+	 * известное ограничение — поправка 0.5 кадра/с уводит самое медленное
+	 * окно в пограничную зону (доверительный интервал пересекает границу
+	 * класса, см. ниже), берётся следующее решаемое — класс 25. */
 	assert (load_fixture ("tests/fixtures/fps_env_24av1_high.txt", &env) > 20);
 	assert (fps_env_decide (&env, ENV_HORIZON, ENV_SKIP, ENV_SUB, 1.0, 0.0, &hz) == 1);
 	assert (hz == fps_rate_hz (2));
@@ -245,6 +247,28 @@ static void t_horizon_min (void)
 	assert (hz == fps_rate_hz (0));
 }
 
+/* Кольцо полно: старые выборки вытесняются, горизонт больше накопленного
+ * интервала набрать уже нельзя — ready обязан вернуть true, иначе ветка
+ * измерения зациклится навсегда (горизонт > ёмкости кольца). */
+static void t_ready_full_ring (void)
+{
+	fps_env_t env;
+	fps_env_reset (&env);
+
+	unsigned long long t = 0;
+	for (int i = 0; i < FPS_ENV_MAX; i++)
+	{
+		t += 100000;						/* 100 мс — штатный опрос */
+		fps_env_push (&env, t, (unsigned long long)(i * 3), 2000);
+	}
+	assert (env.n == FPS_ENV_MAX);
+	assert ((env.s [env.n - 1].t_us - env.s [0].t_us) < ENV_HORIZON);
+
+	/* горизонт заведомо больше накопленного интервала — но данных больше
+	 * не будет, значит решение надо принимать на том, что есть */
+	assert (fps_env_ready (&env, ENV_HORIZON));
+}
+
 int main (void)
 {
 	t_fixtures ();
@@ -253,6 +277,7 @@ int main (void)
 	t_counter_reset ();
 	t_slowest_decidable ();
 	t_ready ();
+	t_ready_full_ring ();
 	t_ring_overflow ();
 	t_horizon_min ();
 	printf ("fps_env: OK\n");

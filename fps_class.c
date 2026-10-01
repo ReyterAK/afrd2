@@ -191,7 +191,16 @@ void fps_correct_set_av1 (double offset_fps, const char *package)
 			package++;
 
 		size_t len = strcspn (package, " \t");
-		if (len && (len < sizeof (k_av1.pkg)))
+		if (len >= sizeof (k_av1.pkg))
+		{
+			/* Имя пакета не влезает: скопировать его нельзя, а оставить
+			 * пакет пустым — ещё хуже: пустой пакет означает «любой
+			 * плеер», и поправка расширилась бы на всех. Отбрасываем
+			 * поправку целиком, как fps_correct_load (). */
+			fps_correct_clear_av1 ();
+			return;
+		}
+		if (len)
 		{
 			memcpy (k_av1.pkg, package, len);
 			k_av1.pkg [len] = 0;

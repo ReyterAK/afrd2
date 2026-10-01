@@ -1595,6 +1595,19 @@ static int run_atv14 (const platform_t *plat)
 	if (env_us < env_min_us) env_us = env_min_us;
 	if (env_max_us < env_us) env_max_us = env_us;
 
+	/* Горизонт ограничен ёмкостью кольца наблюдения (FPS_ENV_MAX выборок):
+	 * больше него данных не накопить — старые выборки вытесняются. Молчаливое
+	 * усечение запрещено: это тот же класс, что «молча выпавший ключ». */
+	unsigned long long env_ring_us = (unsigned long long)(FPS_ENV_MAX - 1) * (unsigned long long)cur_hz * 1000;
+	if (env_max_us > env_ring_us)
+	{
+		trace (0, "fps.measure.envelope.max.ms=%d больше ёмкости кольца наблюдения (%llu мс при trigger.poll.ms=%d) — ограничиваю\n",
+		       env_max_ms, env_ring_us / 1000, cur_hz);
+		env_max_us = env_ring_us;
+		if (env_us > env_max_us)
+			env_us = env_max_us;
+	}
+
 	int start_deb = cfg_get_int ("trigger.start.debounce.ms", 500);
 	int stop_deb = cfg_get_int ("trigger.stop.debounce.ms", 1500);
 	/* Поправка на систематическое завышение счётчика конкретным плеером
@@ -1623,7 +1636,15 @@ static int run_atv14 (const platform_t *plat)
 		}
 	}
 	else
+	{
 		fps_correct_clear ();
+
+		/* R5: выключенная калибровка не должна молча съедать настроенную
+		 * поправку AV1 — она действует только при fps.correct.enable=1. */
+		const char *av1_off_str = cfg_get_str ("fps.correct.av1.offset", NULL);
+		if (av1_off_str && (atof (av1_off_str) > 0.0))
+			trace (0, "fps.correct.av1.offset=%s, но fps.correct.enable=0 — поправка AV1 не применена\n", av1_off_str);
+	}
 
 	while (!g_shutdown)
 	{

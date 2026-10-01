@@ -241,6 +241,8 @@ static void t_correct_av1(void)
 	/* поправка без пакета действует для любого плеера, но только на AV1 */
 	fps_correct_set_av1 (0.5, NULL);
 	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "org.videolan.vlc") == 0.5);
+	assert(fps_correct_av1_offset ("AMVDEC_AV1_V4L", NULL) == 0.5);	/* без учёта регистра, без пакета */
+	assert(fps_correct_av1_offset (NULL, NULL) == 0.0);		/* нет устройства — нет поправки */
 	assert(fps_correct_av1_offset ("ammvdec_h264_v4", "org.videolan.vlc") == 0.0);
 	assert(fps_correct_av1_offset ("", "org.videolan.vlc") == 0.0);
 
@@ -248,6 +250,12 @@ static void t_correct_av1(void)
 	fps_correct_set_av1 (1.05, " com.google.android.youtube.tv ");
 	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "com.google.android.youtube.tv") == 1.05);
 	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "org.videolan.vlc") == 0.0);
+
+	/* имя пакета длиннее поля (64 байта): поправка отбрасывается целиком,
+	 * иначе пустой пакет расширил бы её на все плееры */
+	fps_correct_set_av1 (0.5, "com.google.android.youtube.tv.some.really.long.package.name.over.64.chars");
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "короткий") == 0.0);
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "com.google.android.youtube.tv.some.really.long.package.name.over.64.chars") == 0.0);
 
 	/* fps_correct_clear сбрасывает и её */
 	fps_correct_set_av1 (0.5, NULL);

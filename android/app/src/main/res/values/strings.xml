@@ -151,7 +151,9 @@
     <string name="prefs_fps_correct_list">Corrections (package=percent)</string>
     <string name="prefsum_fps_correct_list">Space separated list, e.g.
         com.google.android.youtube.tv=5.0. Percent is how much the player over-reports the rate.
-        Measure it from the daemon log line &quot;видео: X fps&quot; and the nominal rate of the video.</string>
+        Measure it from the daemon log line &quot;плеер &lt;пакет&gt;: поправка замера ±P %
+        (fps.correct.list)&quot;; the decision is shown by &quot;видео: &lt;HZ&gt; Гц по огибающей
+        (N с наблюдения, горизонт M мс), ищу режим&quot;. Compare with the nominal rate of the video.</string>
     <string name="prefs_fps_correct_av1_offset">AV1 correction (frames/s)</string>
     <string name="prefsum_fps_correct_av1_offset">Additive correction for the AV1 decoder path
         over-reporting the frame counter. Measured: AV1 gives +0.5 frames/s versus H.264 on the same
