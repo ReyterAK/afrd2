@@ -178,6 +178,35 @@ static void t_ring_overflow (void)
 	assert (fps_env_decide (&env, ENV_HORIZON, 0, ENV_SUB, 1.0, 0.0, &hz) == 1);
 }
 
+/* Минимальный горизонт: подокну нужно не меньше skip + sub данных, иначе
+ * огибающая не даёт ни одного окна. run_atv14() поэтому поднимает
+ * fps.measure.envelope.ms до skip + sub — без этого envelope.ms=0
+ * («решение по первому подокну») навсегда оставлял бы демон без решения. */
+static void t_horizon_min (void)
+{
+	fps_env_t env;
+	fps_env_reset (&env);
+
+	/* 12 с ровного 24 fps (120 кадров за 5 с), опрос 250 мс */
+	unsigned long long t = 0;
+	for (int i = 1; i <= 48; i++)
+	{
+		t += 250000;
+		fps_env_push (&env, t, (unsigned long long)(i * 6), 0);
+	}
+
+	unsigned long long min_us = ENV_SKIP + ENV_SUB;
+
+	int hz = -1;
+	/* горизонт короче skip + sub — ни одного подокна */
+	assert (fps_env_decide (&env, 0, ENV_SKIP, ENV_SUB, 1.0, 0.0, &hz) == 0);
+	assert (fps_env_decide (&env, min_us - 1, ENV_SKIP, ENV_SUB, 1.0, 0.0, &hz) == 0);
+
+	/* ровно skip + sub — подокно [skip, skip + sub] уже укладывается */
+	assert (fps_env_decide (&env, min_us, ENV_SKIP, ENV_SUB, 1.0, 0.0, &hz) == 1);
+	assert (hz == fps_rate_hz (0));
+}
+
 int main (void)
 {
 	t_fixtures ();
@@ -186,6 +215,7 @@ int main (void)
 	t_counter_reset ();
 	t_ready ();
 	t_ring_overflow ();
+	t_horizon_min ();
 	printf ("fps_env: OK\n");
 	return 0;
 }

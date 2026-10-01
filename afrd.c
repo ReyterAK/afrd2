@@ -1481,6 +1481,9 @@ static int run_atv14 (const platform_t *plat)
 	/* Наблюдение частоты: кольцо выборок счётчика (см. fps_env.h). Решение
 	 * принимается по нижней огибающей, а не по одному окну. */
 	fps_env_t env;
+	/* счётчик рос на прошлой выборке — о простое сообщаем только на переходе
+	 * «рос → стоит», а не на каждой итерации паузы */
+	bool env_growing = false;
 	fps_env_reset (&env);
 
 	/* Поведенческие ключи профиля (R28). */
@@ -1570,7 +1573,8 @@ static int run_atv14 (const platform_t *plat)
 
 	/* Огибающая: горизонт наблюдения, предел расширения, подокно, прогрев
 	 * (см. fps_env.h и config/afrd2.ini). envelope.ms=0 — решение по первому
-	 * подокну (быстрое переключение, как было до 01.10). */
+	 * подокну (быстрое переключение, как было до 01.10); фактически 0 всё
+	 * равно поднимается до skip + sub — раньше этого подокна просто нет. */
 	int env_ms = cfg_get_int ("fps.measure.envelope.ms", 20000);
 	if (env_ms < 0) env_ms = 0;
 	int env_max_ms = cfg_get_int ("fps.measure.envelope.max.ms", 30000);
@@ -1584,9 +1588,12 @@ static int run_atv14 (const platform_t *plat)
 	unsigned long long env_max_us = (unsigned long long)env_max_ms * 1000;
 	unsigned long long env_sub_us = (unsigned long long)env_sub_ms * 1000;
 	unsigned long long env_skip_us = (unsigned long long)env_skip_ms * 1000;
-	/* горизонт короче подокна не даёт ни одного окна — приравниваем к подокну */
-	if (env_us && (env_us < env_sub_us)) env_us = env_sub_us;
-	if (env_max_us < env_sub_us) env_max_us = env_sub_us;
+	/* Подокно должно начаться не раньше skip и уложиться в горизонт, поэтому
+	 * горизонт короче skip + sub не даёт ни одного окна: поднимаем до минимума
+	 * (иначе envelope.ms=0 или 5000 навсегда оставлял бы демон без решения). */
+	unsigned long long env_min_us = env_sub_us + env_skip_us;
+	if (env_us < env_min_us) env_us = env_min_us;
+	if (env_max_us < env_us) env_max_us = env_us;
 
 	int start_deb = cfg_get_int ("trigger.start.debounce.ms", 500);
 	int stop_deb = cfg_get_int ("trigger.stop.debounce.ms", 1500);
@@ -1738,6 +1745,7 @@ static int run_atv14 (const platform_t *plat)
 				video_corr = 1.0;
 				/* кадры двух видео не должны попасть в одну огибающую */
 				fps_env_reset (&env);
+				env_growing = false;
 			}
 
 			if (have_prev_frames && (v0.frames == prev_frames))
@@ -1783,6 +1791,7 @@ static int run_atv14 (const platform_t *plat)
 			video_corr = 1.0;
 			/* видео закончилось/пауза — наблюдение начинается заново */
 			fps_env_reset (&env);
+			env_growing = false;
 		}
 		else if (recheck_armed && mstime_expired (&recheck_timer))
 		{
@@ -1835,8 +1844,16 @@ static int run_atv14 (const platform_t *plat)
 				/* Наблюдение (fps_env): счётчик кадров на ATV14 завышен
 				 * односторонне, поэтому решение берётся по нижней огибающей
 				 * подокон. Пока горизонт не набран — режим не трогаем. */
-				if (!fps_env_push (&env, sample_t, v0.frames, sample_unc))
+				bool env_grew = fps_env_push (&env, sample_t, v0.frames, sample_unc);
+				if (env_grew)
+					env_growing = true;
+				else if (env_growing)
+				{
+					/* только переход «рос → стоит» (пауза/сброс счётчика):
+					 * иначе строка печаталась бы на каждой итерации паузы */
 					trace (1, "счётчик кадров не растёт — наблюдение начато заново\n");
+					env_growing = false;
+				}
 
 				if (!fps_env_ready (&env, env_us))
 					continue;
@@ -1845,10 +1862,23 @@ static int run_atv14 (const platform_t *plat)
 				                 ? fps_correct_av1_offset (v0.device, g_cur_pkg) : 0.0;
 
 				int env_hz = 0;
-				if (!fps_env_decide (&env, env_us, env_skip_us, env_sub_us,
-				                     video_corr, av1_off, &env_hz))
+				unsigned long long env_used_us = env_us;
+				bool env_decided = fps_env_decide (&env, env_us, env_skip_us, env_sub_us,
+				                                   video_corr, av1_off, &env_hz);
+
+				/* базовый горизонт неоднозначен — решаем на расширенном
+				 * (fps.measure.envelope.max.ms), но только когда он набран */
+				if (!env_decided && fps_env_ready (&env, env_max_us))
 				{
-					/* окна неоднозначны: наблюдаем дальше, но не дольше предела */
+					env_decided = fps_env_decide (&env, env_max_us, env_skip_us, env_sub_us,
+					                              video_corr, av1_off, &env_hz);
+					env_used_us = env_max_us;
+				}
+
+				if (!env_decided)
+				{
+					/* решения нет ни на одном горизонте: наблюдаем дальше
+					 * (попытку не тратим), но не дольше предела */
 					if (!fps_env_ready (&env, env_max_us))
 						continue;
 
@@ -1864,6 +1894,7 @@ static int run_atv14 (const platform_t *plat)
 					}
 
 					fps_env_reset (&env);
+					env_growing = false;
 					continue;
 				}
 
@@ -1889,12 +1920,15 @@ static int run_atv14 (const platform_t *plat)
 					}
 				}
 
-				trace (1, "видео: " HZ_FMT " Гц по огибающей (%d с наблюдения), ищу режим\n",
+				trace (1, "видео: " HZ_FMT " Гц по огибающей (%d с наблюдения, "
+				       "горизонт %d мс), ищу режим\n",
 				       HZ_ARGS (hz),
-				       (int)((env.s [env.n - 1].t_us - env.s [0].t_us) / 1000000));
+				       (int)((env.s [env.n - 1].t_us - env.s [0].t_us) / 1000000),
+				       (int)(env_used_us / 1000));
 
 				/* следующее измерение (перепроверка, новое видео) — заново */
 				fps_env_reset (&env);
+				env_growing = false;
 			}
 			else
 				continue;
