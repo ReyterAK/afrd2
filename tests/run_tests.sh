@@ -12,6 +12,7 @@ run() { # run <test.c> <extra-sources...>
 }
 run test_fps_class fps_class.c
 run test_sfmodes sfmodes.c
+run test_cfgkeys cfgkeys.c cfg_parse/cfg_parse.c
 run test_guard guard.c
 run test_exec exec.c
 run test_sink sink.c exec.c tests/stub.c

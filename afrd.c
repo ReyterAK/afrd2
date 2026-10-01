@@ -16,6 +16,7 @@
 #include "guard.h"
 #include "exec.h"
 #include "fps_class.h"
+#include "cfgkeys.h"
 
 #define __USE_GNU
 #include <unistd.h>
@@ -2041,9 +2042,23 @@ static int run_atv14 (const platform_t *plat)
 
 static platform_t g_plat;
 
+/* Вывод предупреждений аудита ключей конфига — в лог демона. */
+static void cfg_audit_warn (const char *msg, void *ctx)
+{
+	(void)ctx;
+	trace (0, "%s\n", msg);
+}
+
 int afrd_run ()
 {
 	g_plat = platform_detect ();
+
+	/* «Громкие ключи»: настройка, которая на выбранном пути не действует,
+	 * должна быть названа в логе, а не молча проигнорирована (именно так
+	 * потерялось удвоение частоты, mode.prefer.exact). */
+	cfgkeys_audit (g_config,
+	               (g_plat.kind == PLAT_ATV14) ? CFGKEY_ATV14 : CFGKEY_LEGACY,
+	               cfg_audit_warn, NULL);
 
 	if (g_plat.kind == PLAT_ATV14)
 		return run_atv14 (&g_plat);
