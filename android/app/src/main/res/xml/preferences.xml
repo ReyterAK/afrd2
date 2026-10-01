@@ -49,6 +49,50 @@
                             android:title="@string/prefs_switch_hdmi"/>
     </PreferenceScreen>
     <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"
+                      android:key="atv14" android:title="@string/prefs_group_atv14">
+        <SwitchPreference android:defaultValue="1" android:key="fps_prefer_api"
+                          android:summary="@string/prefsum_fps_prefer_api"
+                          android:title="@string/prefs_fps_prefer_api"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="1500" android:key="fps_measure_window_ms"
+                          android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
+                          android:singleLine="true" android:summary="@string/prefsum_fps_measure_window"
+                          android:title="@string/prefs_fps_measure_window"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="6000" android:key="fps_measure_window_max_ms"
+                          android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
+                          android:singleLine="true" android:summary="@string/prefsum_fps_measure_window_max"
+                          android:title="@string/prefs_fps_measure_window_max"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="3" android:key="fps_measure_retries"
+                          android:maxLength="3" android:numeric="integer" android:selectAllOnFocus="true"
+                          android:singleLine="true" android:summary="@string/prefsum_fps_measure_retries"
+                          android:title="@string/prefs_fps_measure_retries"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="5" android:key="fps_declared_crosscheck_pct"
+                          android:maxLength="3" android:numeric="integer" android:selectAllOnFocus="true"
+                          android:singleLine="true" android:summary="@string/prefsum_fps_declared_crosscheck"
+                          android:title="@string/prefs_fps_declared_crosscheck"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="4000" android:key="fps_recheck_delay_ms"
+                          android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
+                          android:singleLine="true" android:summary="@string/prefsum_fps_recheck_delay"
+                          android:title="@string/prefs_fps_recheck_delay"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="300" android:key="trigger_poll_ms"
+                          android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
+                          android:singleLine="true" android:summary="@string/prefsum_trigger_poll"
+                          android:title="@string/prefs_trigger_poll"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="500" android:key="trigger_start_debounce_ms"
+                          android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
+                          android:singleLine="true" android:summary="@string/prefsum_trigger_start_debounce"
+                          android:title="@string/prefs_trigger_start_debounce"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="1500" android:key="trigger_stop_debounce_ms"
+                          android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
+                          android:singleLine="true" android:summary="@string/prefsum_trigger_stop_debounce"
+                          android:title="@string/prefs_trigger_stop_debounce"/>
+        <SwitchPreference android:defaultValue="1" android:key="pause_keep"
+                          android:summary="@string/prefsum_pause_keep"
+                          android:title="@string/prefs_pause_keep"/>
+        <SwitchPreference android:defaultValue="1" android:key="switch_restore_on_stop"
+                          android:summary="@string/prefsum_switch_restore_on_stop"
+                          android:title="@string/prefs_switch_restore_on_stop"/>
+    </PreferenceScreen>
+    <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"
                       android:key="correct" android:title="@string/prefs_group_correct">
         <SwitchPreference android:defaultValue="0" android:key="fps_correct_enable"
                           android:summary="@string/prefsum_fps_correct_enable"

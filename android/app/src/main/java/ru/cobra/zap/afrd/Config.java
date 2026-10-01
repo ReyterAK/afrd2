@@ -54,6 +54,23 @@ public class Config
         itemType.put ("switch.hdmi", TYPE_INT);
         itemType.put ("vdec.blacklist", TYPE_STR);
         itemType.put ("frhint.vdec.blacklist", TYPE_STR);
+
+        // Новый путь (Android 10-14 / ATV14): если ключа нет в этой таблице,
+        // приложение не перенесёт его значение из настроек в ini (см. load()),
+        // и пункт GUI окажется инертным.
+        itemType.put ("trigger.poll.ms", TYPE_INT);
+        itemType.put ("trigger.start.debounce.ms", TYPE_INT);
+        itemType.put ("trigger.stop.debounce.ms", TYPE_INT);
+        itemType.put ("fps.measure.window.ms", TYPE_INT);
+        itemType.put ("fps.measure.window.max.ms", TYPE_INT);
+        itemType.put ("fps.measure.retries", TYPE_INT);
+        itemType.put ("fps.declared.crosscheck.pct", TYPE_INT);
+        itemType.put ("fps.recheck.delay.ms", TYPE_INT);
+        itemType.put ("fps.prefer.api", TYPE_BOOL);
+        itemType.put ("fps.correct.enable", TYPE_BOOL);
+        itemType.put ("fps.correct.list", TYPE_STR);
+        itemType.put ("pause.keep", TYPE_BOOL);
+        itemType.put ("switch.restore.on.stop", TYPE_BOOL);
     }
 
     public Object get (String key, Object defval)

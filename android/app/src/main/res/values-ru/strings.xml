@@ -91,6 +91,39 @@
     <string name="settings_advanced">Настройки для опытных пользователей</string>
     <string name="not_applicable_atv14">(не действует на Android 10-14)</string>
     <string name="prefs_group_correct">Калибровка частоты по плееру</string>
+    <string name="prefs_group_atv14">Настройки для Android 10 и выше</string>
+    <string name="prefs_fps_prefer_api">Доверять подсказке плеера</string>
+    <string name="prefsum_fps_prefer_api">Если плеер сам сообщает частоту через API AFRd
+        (frame_rate_hint), предпочитать её собственному замеру по счётчику кадров.</string>
+    <string name="prefs_fps_measure_window">Окно замера частоты, мс</string>
+    <string name="prefsum_fps_measure_window">Начальное окно замера. Один кадр за 1.5 с — это
+        0.67 fps, поэтому короткое окно не различает 23.976 и 25; окно расширяется автоматически.</string>
+    <string name="prefs_fps_measure_window_max">Предел расширения окна, мс</string>
+    <string name="prefsum_fps_measure_window_max">До какого размера расширять окно замера, пока частота
+        не определится однозначно (больше — точнее, но позже переключение).</string>
+    <string name="prefs_fps_measure_retries">Число попыток замера</string>
+    <string name="prefsum_fps_measure_retries">Сколько раз пробовать заново, прежде чем оставить
+        режим как есть до конца видео.</string>
+    <string name="prefs_fps_declared_crosscheck">Уточнение по длительности кадра, %</string>
+    <string name="prefsum_fps_declared_crosscheck">Если заявленная длительность кадра (frame dur)
+        отличается от замера не более чем на этот процент, решение берётся по ней. 0 — выключить.</string>
+    <string name="prefs_fps_recheck_delay">Перепроверка замера, мс</string>
+    <string name="prefsum_fps_recheck_delay">Через сколько мс после переключения перемерить частоту и
+        поправить режим, если класс другой (лечит смещённое первое окно). 0 — выключить.</string>
+    <string name="prefs_trigger_poll">Период опроса декодера, мс</string>
+    <string name="prefsum_trigger_poll">Как часто проверять /sys/class/vdec/vdec_status, чтобы заметить
+        старт и остановку видео.</string>
+    <string name="prefs_trigger_start_debounce">Задержка старта, мс</string>
+    <string name="prefsum_trigger_start_debounce">Пауза после появления видео, чтобы отсеять дребезг.</string>
+    <string name="prefs_trigger_stop_debounce">Задержка остановки, мс</string>
+    <string name="prefsum_trigger_stop_debounce">Пауза перед возвратом исходного режима после конца
+        видео.</string>
+    <string name="prefs_pause_keep">Удерживать режим на паузе</string>
+    <string name="prefsum_pause_keep">Включено — на паузе режим сохраняется; выключено — на паузе
+        возвращается исходный, а на возобновлении режим выставляется снова.</string>
+    <string name="prefs_switch_restore_on_stop">Возвращать режим при остановке</string>
+    <string name="prefsum_switch_restore_on_stop">Возвращать исходный режим HDMI, когда видео
+        закончилось.</string>
     <string name="prefs_fps_correct_enable">Учитывать поправку плеера</string>
     <string name="prefsum_fps_correct_enable">Некоторые плееры подают кадры в декодер чаще номинала
         (например, YouTube на 24-фпс ролике даёт по счётчику ~25.2 fps, и AFR уходит в 25 Гц).

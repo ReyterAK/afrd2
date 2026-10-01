@@ -100,6 +100,39 @@
     <string name="settings_advanced">Advanced settings</string>
     <string name="not_applicable_atv14">(has no effect on Android 10-14)</string>
     <string name="prefs_group_correct">Per-player frame rate calibration</string>
+    <string name="prefs_group_atv14">Settings for Android 10 and above</string>
+    <string name="prefs_fps_prefer_api">Trust the player hint</string>
+    <string name="prefsum_fps_prefer_api">If the player reports the frame rate itself via the AFRd API
+        (frame_rate_hint), prefer it over our own frame counter measurement.</string>
+    <string name="prefs_fps_measure_window">Measurement window, ms</string>
+    <string name="prefsum_fps_measure_window">Initial measurement window. One frame in 1.5 s is 0.67 fps,
+        so a short window cannot tell 23.976 from 25; the window extends automatically.</string>
+    <string name="prefs_fps_measure_window_max">Max window, ms</string>
+    <string name="prefsum_fps_measure_window_max">How far to extend the measurement window until the rate
+        is unambiguous (larger is more accurate but switches later).</string>
+    <string name="prefs_fps_measure_retries">Measurement attempts</string>
+    <string name="prefsum_fps_measure_retries">How many times to retry before leaving the mode as is
+        until the end of the video.</string>
+    <string name="prefs_fps_declared_crosscheck">Declared frame duration tolerance, %</string>
+    <string name="prefsum_fps_declared_crosscheck">If the declared frame duration (frame dur) differs
+        from the measurement by no more than this percent, the decision is taken from it.
+        0 — disabled.</string>
+    <string name="prefs_fps_recheck_delay">Re-measurement delay, ms</string>
+    <string name="prefsum_fps_recheck_delay">How many ms after switching to measure again and fix the
+        mode if the class differs (heals a biased first window). 0 — disabled.</string>
+    <string name="prefs_trigger_poll">Decoder poll period, ms</string>
+    <string name="prefsum_trigger_poll">How often to check /sys/class/vdec/vdec_status to notice video
+        start and stop.</string>
+    <string name="prefs_trigger_start_debounce">Start debounce, ms</string>
+    <string name="prefsum_trigger_start_debounce">Delay after video appears, to filter out bounce.</string>
+    <string name="prefs_trigger_stop_debounce">Stop debounce, ms</string>
+    <string name="prefsum_trigger_stop_debounce">Delay before restoring the original mode after video
+        ended.</string>
+    <string name="prefs_pause_keep">Keep mode while paused</string>
+    <string name="prefsum_pause_keep">On — the mode is kept on pause; off — the original mode is restored
+        on pause and set again on resume.</string>
+    <string name="prefs_switch_restore_on_stop">Restore mode on stop</string>
+    <string name="prefsum_switch_restore_on_stop">Restore the original HDMI mode when video ends.</string>
     <string name="prefs_fps_correct_enable">Apply player calibration</string>
     <string name="prefsum_fps_correct_enable">Some players feed frames to the decoder faster than
         nominal (e.g. YouTube on a 24 fps video measures ~25.2 fps, so AFR picks 25 Hz).
