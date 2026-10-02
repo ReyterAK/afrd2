@@ -1,6 +1,7 @@
 #include <unistd.h>
 #include <string.h>
 #include "afrd.h"
+#include "colorspace.h"
 #include "exec.h"
 #include "platform.h"
 #include "sink.h"
@@ -9,6 +10,9 @@
 #define HDMI_STATE_NEW	"/sys/class/extcon/extcon0/state"
 #define HDMI_STATE_OLD	"/sys/class/switch/hdmi/state"
 #define HDMI_STATE_OLD_CABLE	"/sys/class/switch/hdmi/cable.0/state"
+/* Вендорский клиент SystemControl: через него на Android 10-14 применяется
+ * цветовое пространство (sysfs-узел attr там только на чтение). */
+#define CS_CLI			"/vendor/bin/meson_display_client"
 
 static bool sf_backdoor_available (void)
 {
@@ -78,6 +82,16 @@ platform_t platform_detect (void)
 
 	if (p.kind == PLAT_ATV14 && !p.sf_backdoor)
 		trace (0, "ВНИМАНИЕ: backdoor SurfaceFlinger недоступен — AFR работать не будет\n");
+
+	/* Цветовое пространство (правила cs.select): на ATV14 применяем через
+	 * вендорский сервис — sysfs-узел attr пишется с ошибкой (проверено). */
+	if (p.kind == PLAT_ATV14)
+	{
+		if (access (CS_CLI, X_OK) == 0)
+			colorspace_set_apply_cmd (CS_CLI " -s \"HDMI Color ATTR\"");
+		else
+			trace (1, "нет %s — цветовое пространство не применяю\n", CS_CLI);
+	}
 
 	return p;
 }
