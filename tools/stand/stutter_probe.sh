@@ -57,28 +57,45 @@ else
 fi
 
 i=0
-while [ "$i" -lt 25 ]; do
+while [ "$i" -lt 40 ]; do
 	[ -n "$(fcount | head -1)" ] && break
 	sleep 1; i=$((i + 1))
 done
 echo "decoder_up_after=${i}s channels=$(chans)" >> "$LOG"
 
 i=0
-while [ "$i" -lt "$SECS" ]; do
+# Отсчёт по настенным часам: одна итерация длится больше секунды (лог/дампы),
+# поэтому «i секунд» не равно времени — устойчивый замер легко попадал уже
+# ПОСЛЕ остановки плеера. Держим запас STEADY_GAP от конца прогона.
+STEADY_GAP=${STEADY_GAP:-12}
+T0=$(cut -d' ' -f1 /proc/uptime)
+lat_pre=0; lat_steady=0
+while :; do
+	el=$(( ${T0%.*} ))
+	now=$(( $(cut -d' ' -f1 /proc/uptime | cut -d. -f1) - el ))
+	[ "$now" -ge "$SECS" ] && break
+
 	t=$(cut -d' ' -f1 /proc/uptime)
 	cf=$(fcount | head -1)
 	cl=$(fcount | tail -1)
 	ch=$(chans)
 	echo "$t,$ch,${cf:-0},${cl:-0},$(mode),$(syncnum)" >> "$CSV"
 
-	# латентность видео-слоя: до переключения и в устойчивом режиме после него
-	if [ "$i" = 12 ] || [ "$i" = $((SECS - 3)) ]; then
+	# латентность видео-слоя: после переключения (12 с) и в устойчивом режиме
+	# (за STEADY_GAP секунд до стопа — гарантированно при живом видео)
+	snap=""
+	[ "$lat_pre" = 0 ] && [ "$now" -ge 12 ] && snap=pre
+	[ "$lat_steady" = 0 ] && [ "$now" -ge $((SECS - STEADY_GAP)) ] && snap=steady
+	if [ -n "$snap" ]; then
+		[ "$snap" = pre ] && lat_pre=1 || lat_steady=1
 		lay=$(dumpsys SurfaceFlinger --list 2>/dev/null | grep 'SurfaceView\[' | grep -i blast | head -1)
-		echo "LAT i=$i layer=$lay" >> "$LOG"
-		[ -n "$lay" ] && dumpsys SurfaceFlinger --latency "$lay" > "$LATP.$i" 2>&1
+		echo "LAT $snap t=$now layer=$lay" >> "$LOG"
+		[ -n "$lay" ] && dumpsys SurfaceFlinger --latency "$lay" > "$LATP.$snap" 2>&1
 		# состояние vsync-режима HWC на момент замера: последнее событие FRA/HWC
 		# (переключение режима 1035 его НЕ пересчитывает — проверено)
-		echo "HWC@i=$i: $(logcat -d -v time 2>/dev/null | grep 'adjustVsyncMode' | tail -1)" >> "$LOG"
+		echo "HWC@$snap t=$now: $(logcat -d -v time 2>/dev/null | grep 'adjustVsyncMode' | tail -1)" >> "$LOG"
+		# снимок состояния SF для разбора: тип композиции видео-слоя, override частоты
+		dumpsys SurfaceFlinger > "$LATP.$snap.sf" 2>/dev/null
 	fi
 	sleep 1; i=$((i + 1))
 done
@@ -108,13 +125,16 @@ echo "=== $L: маркер ошибки HWC (video-on / MixMode) ==="
 fra_on=$(grep -c 'frameRateDisplay 1,' "$LOG")
 mix=$(grep -c 'adjustVsyncMode to MixMode' "$LOG")
 hwm=$(grep -c 'adjustVsyncMode to HwMode' "$LOG")
-echo "  HWC на устойчивом замере: $(grep 'HWC@i=' "$LOG" | tail -1 | sed 's/.*adjustVsyncMode/adjustVsyncMode/')"
+hwc_steady=$(grep 'HWC@steady' "$LOG" | tail -1 | sed 's/.*adjustVsyncMode/adjustVsyncMode/')
+echo "  HWC на устойчивом замере: ${hwc_steady:-нет строки}"
 if [ -n "$PIN" ]; then
 	echo "  PIN-прогон (id=$PIN): MixMode-маркер не показателен; смотрим удержания подачи"
-elif [ "$fra_on" -gt 0 ] && [ "$mix" -gt 0 ]; then
-	echo "  FRA video-on=$fra_on MixMode=$mix HwMode=$hwm — ОК (HWC входит в видео-режим)"
+elif ! printf '%s' "$hwc_steady" | grep -q 'adjustVsyncMode'; then
+	echo "  ЗАМЕР-ПУСТОЙ: видео не стартовало или леер не найден (FRA video-on=$fra_on)"
+elif [ "$hwc_steady" = "adjustVsyncMode to MixMode" ]; then
+	echo "  ОК: при живом видео HWC в MixMode (FRA video-on=$fra_on, всего MixMode=$mix HwMode=$hwm)"
 else
-	echo "  FRA video-on=$fra_on MixMode=$mix HwMode=$hwm — ДЕРГАНИЕ-МАРКЕР (нет входа в MixMode)"
+	echo "  !!ДЕРГАНИЕ-МАРКЕР: при живом видео HWC не в видео-режиме ($hwc_steady)"
 fi
 
 echo "=== $L: частоты (декодер vs подача слоя) ==="
@@ -124,10 +144,13 @@ awk -F, 'NR==1 { t0 = $1 + 0; f0 = $4 + 0 }
 
 echo "=== $L: вердикт ровности подачи слоя видео ==="
 echo "  норма: интервалы чередуются 2/3 периода 60-Гц сетки (≈33/50 мс при 24 Гц),"
-echo "  дёрганость = интервал > 1.35×среднего (удержание кадра сверх обычного)"
+echo "  дёрганость = интервал > 1.35×среднего (удержание кадра сверх обычного);"
+echo "  КАТАСТРОФА-ПО-ПОДАЧЕ = средний интервал > 2.5 периода дисплея (видео «как 10 fps»)"
 for f in "$LATP".*; do
 	[ -f "$f" ] || continue
+	case "$f" in *.sf) continue;; esac
 	awk '
+	NR == 1 { period = $1 + 0; next }
 	NF == 3 && $2 + 0 > 0 && $2 + 0 < 1e17 { n++; t[n] = $2 + 0 }
 	END {
 		if (n < 3) { printf "    no-data n=%d\n", n; exit }
@@ -142,8 +165,9 @@ for f in "$LATP".*; do
 		avg = sum / m
 		hang = 0
 		for (i = 2; i <= n; i++) { d = (t[i] - t[i-1]) / 1e6; if (d > 1.35 * avg) hang++ }
-		printf "    %s n=%d avg=%.2fms min=%.2fms max=%.2fms удержаний=%d %s\n",
-		       FILENAME, n, avg, min, max, hang, (hang == 0 ? "SMOOTH" : "JANKY")
+		cat = ((avg > 100) || (min > 0 && avg > 2.5 * min)) ? " !!КАТАСТРОФА-ПО-ПОДАЧЕ" : ""
+		printf "    %s период=%.2fms n=%d avg=%.2fms min=%.2fms max=%.2fms удержаний=%d %s%s\n",
+		       FILENAME, period / 1e6, n, avg, min, max, hang, (hang == 0 ? "SMOOTH" : "JANKY"), cat
 	}' "$f"
 done
 
