@@ -114,6 +114,11 @@
     <string name="prefsum_fps_measure_envelope_max">How far to extend the observation when the
         confidence interval does not fit one rate group (larger is more accurate but switches later).
         Never less than the observation value.</string>
+    <string name="prefs_fps_measure_envelope_early">Early decision, ms</string>
+    <string name="prefsum_fps_measure_envelope_early">Do not wait for the full observation: if two
+        separated sub-windows yield the same rate class (quorum), the mode is switched already here.
+        Clear content (local files, 50/60 fps) switches earlier, while borderline 24/25 waits for the
+        full observation. 0 — full observation only.</string>
     <string name="prefs_fps_measure_envelope_sub">Sub-window, ms</string>
     <string name="prefsum_fps_measure_envelope_sub">Length of each sub-window the minimum rate is
         taken over. 5 s is a compromise: over 5 s a ±1 frame counter error is ±0.2 fps at 24 fps.</string>
@@ -141,13 +146,18 @@
     <string name="prefs_trigger_start_debounce">Start debounce, ms</string>
     <string name="prefsum_trigger_start_debounce">Delay after video appears, to filter out bounce.</string>
     <string name="prefs_trigger_stop_debounce">Stop debounce, ms</string>
-    <string name="prefsum_trigger_stop_debounce">Delay before restoring the original mode after video
-        ended.</string>
+    <string name="prefsum_trigger_stop_debounce">End-of-playback confirmation pause: after the
+        decoder disappears the daemon waits this long and re-checks, so short gaps (seeking, quality
+        switch, splice) are not taken for the end of the file. 0 — confirm immediately (the end is
+        handled sooner, but gaps are taken as the end too). Restoring the mode is controlled by the
+        separate "Restore mode on stop" item.</string>
     <string name="prefs_pause_keep">Keep mode while paused</string>
     <string name="prefsum_pause_keep">On — the mode is kept on pause; off — the original mode is restored
         on pause and set again on resume.</string>
     <string name="prefs_switch_restore_on_stop">Restore mode on stop</string>
-    <string name="prefsum_switch_restore_on_stop">Restore the original HDMI mode when video ends.</string>
+    <string name="prefsum_switch_restore_on_stop">Restore the original HDMI mode when video ends.
+        Disabled — the video mode stays (fewer screen blinks), but apps with their own AFR can change
+        the mode again: the backdoor flag is released anyway.</string>
     <string name="prefs_fps_correct_enable">Apply player calibration</string>
     <string name="prefsum_fps_correct_enable">Some players feed frames to the decoder faster than
         nominal (e.g. YouTube on a 24 fps video measures ~25.2 fps, so AFR picks 25 Hz).

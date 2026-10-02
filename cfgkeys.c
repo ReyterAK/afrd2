@@ -39,6 +39,7 @@ static const struct
 	{ "trigger.start.debounce.ms",	CFGKEY_ATV14, NULL },
 	{ "trigger.stop.debounce.ms",	CFGKEY_ATV14, NULL },
 	{ "fps.measure.envelope.ms",	CFGKEY_ATV14, NULL },
+	{ "fps.measure.envelope.early.ms", CFGKEY_ATV14, NULL },
 	{ "fps.measure.envelope.max.ms", CFGKEY_ATV14, NULL },
 	{ "fps.measure.envelope.sub.ms", CFGKEY_ATV14, NULL },
 	{ "fps.measure.envelope.skip.ms", CFGKEY_ATV14, NULL },

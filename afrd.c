@@ -1652,6 +1652,12 @@ static int run_atv14 (const platform_t *plat)
 	int env_skip_ms = cfg_get_int ("fps.measure.envelope.skip.ms", 2000);
 	if (env_skip_ms < 0) env_skip_ms = 0;
 
+	/* Раннее решение огибающей (§21.15): не ждать полного горизонта, если два
+	 * разнесённых решаемых подокна согласны по классу (см. fps_env.h).
+	 * 0 — выключено (решение только по полному горизонту). */
+	int env_early_ms = cfg_get_int ("fps.measure.envelope.early.ms", 0);
+	unsigned long long env_early_us = (unsigned long long)env_early_ms * 1000;
+
 	unsigned long long env_us = (unsigned long long)env_ms * 1000;
 	unsigned long long env_max_us = (unsigned long long)env_max_ms * 1000;
 	unsigned long long env_sub_us = (unsigned long long)env_sub_ms * 1000;
@@ -1659,6 +1665,12 @@ static int run_atv14 (const platform_t *plat)
 	/* Подокно должно начаться не раньше skip и уложиться в горизонт, поэтому
 	 * горизонт короче skip + sub не даёт ни одного окна: поднимаем до минимума
 	 * (иначе envelope.ms=0 или 5000 навсегда оставлял бы демон без решения). */
+	/* Раннему решению нужны ДВА разнесённых подокна после прогрева; плюс
+	 * запас ~1 с на дискретность опроса, иначе подтверждающее окно не
+	 * помещается между концом опорного и концом выборки */
+	if (env_early_us > 0 && env_early_us < (env_skip_us + 2 * env_sub_us + 1000000ULL))
+		env_early_us = env_skip_us + 2 * env_sub_us + 1000000ULL;
+
 	unsigned long long env_min_us = env_sub_us + env_skip_us;
 	if (env_us < env_min_us) env_us = env_min_us;
 	if (env_max_us < env_us) env_max_us = env_us;
@@ -1987,20 +1999,41 @@ static int run_atv14 (const platform_t *plat)
 					env_growing = false;
 				}
 
-				if (!fps_env_ready (&env, env_us))
+				bool env_full = fps_env_ready (&env, env_us);
+				/* Раннее решение: горизонт ещё не набран, но если два
+				 * разнесённых решаемых подокна согласны по классу — решаем
+				 * уже сейчас (проверка не ждёт горизонта). */
+				bool env_early = !env_full && (env_early_us > 0) &&
+				                 fps_env_ready (&env, env_early_us);
+
+				if (!env_full && !env_early)
 					continue;
 
 				double av1_off = correct_enable
 				                 ? fps_correct_av1_offset (v0.device, g_cur_pkg) : 0.0;
 
+				/* Раннее решение: горизонтом для отбора подокон служит вся
+				 * накопленная выборка (иначе подтверждающее подокно длиной
+				 * sub не помещается между концом опорного окна и «ранним
+				 * горизонтом» и согласия не находится никогда) */
+				unsigned long long env_span_us = (env.n > 1)
+					? (env.s [env.n - 1].t_us - env.s [0].t_us) : env_us;
+
 				int env_hz = 0;
-				unsigned long long env_used_us = env_us;
-				bool env_decided = fps_env_decide (&env, env_us, env_skip_us, env_sub_us,
-				                                   video_corr, av1_off, &env_hz);
+				unsigned long long env_used_us = env_early ? env_early_us : env_us;
+				bool env_decided = env_early
+					? fps_env_decide_early (&env, env_span_us, env_skip_us, env_sub_us,
+					                        video_corr, av1_off, &env_hz)
+					: fps_env_decide (&env, env_us, env_skip_us, env_sub_us,
+					                  video_corr, av1_off, &env_hz);
+
+				if (env_early && env_decided)
+					trace (1, "раннее решение огибающей: подокна согласны (%d мс наблюдения)\n",
+					       (int)(env_early_us / 1000));
 
 				/* базовый горизонт неоднозначен — решаем на расширенном
 				 * (fps.measure.envelope.max.ms), но только когда он набран */
-				if (!env_decided && fps_env_ready (&env, env_max_us))
+				if (!env_decided && env_full && fps_env_ready (&env, env_max_us))
 				{
 					env_decided = fps_env_decide (&env, env_max_us, env_skip_us, env_sub_us,
 					                              video_corr, av1_off, &env_hz);
