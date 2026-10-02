@@ -2032,6 +2032,7 @@ static int run_atv14 (const platform_t *plat)
 			if (have_prev_frames && (v0.frames < prev_frames))
 			{
 				trace (1, "счётчик кадров сброшен — новое видео, мерю заново\n");
+
 				want_sf_id = -1;
 				measure_failed = false;
 				retries = 0;
@@ -2205,8 +2206,19 @@ static int run_atv14 (const platform_t *plat)
 					       am, pm, expect_ms);
 			}
 			else if (am > 0)
-				trace (2, "подача в порядке: %d мс при периоде %d мс, ожидание %d мс\n",
-				       am, pm, expect_ms);
+			{
+				int base = (expect_ms > pm) ? expect_ms : pm;
+				/* Смешанная картина (часть интервалов в норме, часть
+				 * растянута) — это не дисплейная «половинная подача»,
+				 * а плеер, подающий кадры реже: переключение режима
+				 * ему безразлично, лечит только перезапуск ролика. */
+				if (am * 4 > base * 5)
+					trace (0, "подача неровная: %d мс при периоде %d мс, ожидание %d мс — плеер, вероятно, выбрал темп при старте под другим режимом; помогает перезапуск ролика\n",
+					       am, pm, expect_ms);
+				else
+					trace (2, "подача в порядке: %d мс при периоде %d мс, ожидание %d мс\n",
+					       am, pm, expect_ms);
+			}
 		}
 		else if (recheck_armed && mstime_expired (&recheck_timer))
 		{

@@ -1,5 +1,18 @@
 AFRd2 — a fork of AFRd (original by Andrey Zabolotnyi, anpaza @ 4pda)
 
+0.3.3 Fri Oct 02 21:10:00 MSK 2026
+
+    The log now recognises "uneven frame submission". Previously the post-switch
+    cadence check only complained about "exactly twice as slow" (a display-side
+    half-rate defect), while a player submitting frames slower on its own — for
+    example, one that picked its render cadence at video start and never raises it —
+    was reported as "подача в порядке". Now, when the mean interval deviates by more
+    than 25 % (and is not exactly twice), a line "подача неровная: X ms at period
+    Y ms, expectation Z ms" is written. The cause was found live on the stock
+    YouTube TV: a 30 fps video started under a 24 Hz mode stays at 24 fps even after
+    the display is raised to 60 Hz (only restarting the video helps). A limitation
+    note was added to the README.
+
 0.3.3 Fri Oct 02 20:05:00 MSK 2026
 
     The AV1 correction is enabled with the value 0.1 — the largest one at which no
