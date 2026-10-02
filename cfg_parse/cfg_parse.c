@@ -223,6 +223,18 @@ void cfg_delete(struct cfg_struct *cfg, const char *key)
   free(tkey);
 }
 
+void cfg_visit(struct cfg_struct *cfg, cfg_visit_t fn, void *ctx)
+{
+  if (cfg == NULL || fn == NULL) return;
+
+  struct cfg_node *temp = cfg->head;
+  while (temp != NULL)
+  {
+    fn(temp->key, temp->value, ctx);
+    temp = temp->next;
+  }
+}
+
 /* Create a cfg_struct */
 struct cfg_struct * cfg_init()
 {

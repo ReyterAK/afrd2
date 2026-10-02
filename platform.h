@@ -18,6 +18,7 @@ typedef struct
 	const char *hdmi_state;		/* признак подключённого HDMI */
 	const char *sf_dump_cmd;	/* команда получения таблицы режимов (с фильтром: дамп SF больше буфера) */
 	const char *display_dump_cmd;	/* команда активного разрешения и предпочтения (dumpsys display, с фильтром) */
+	const char *activity_dump_cmd;	/* команда пакета приложения на переднем плане (dumpsys activity, с фильтром) */
 	bool sf_backdoor;		/* доступна ли транзакция 1035 */
 } platform_t;
 

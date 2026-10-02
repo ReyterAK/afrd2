@@ -16,8 +16,11 @@
 #include "guard.h"
 #include "exec.h"
 #include "fps_class.h"
+#include "fps_env.h"
+#include "cfgkeys.h"
 
 #define __USE_GNU
+#include <math.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <linux/netlink.h>
@@ -1057,6 +1060,94 @@ static time_t g_config_mtime;
 static sf_mode_t g_sf_modes [SF_MODE_MAX];
 static int g_sf_modes_n = 0;
 
+/* Фильтр частот для sfmodes_select: на ATV14-пути действует тот же
+ * mode.blacklist.rates, что и в legacy-ветке (раньше ключ молча игнорировался). */
+static bool atv14_rate_allowed (int hz, void *ctx)
+{
+	(void)ctx;
+	return !rate_is_blacklisted (hz);
+}
+
+/* Выбор режима под частоту контента: кратные частоты (mode.prefer.exact) и
+ * чёрный список частот (mode.blacklist.rates) — правила legacy-ветки. */
+static int atv14_select_mode (int hz, int w, int h)
+{
+	sf_choice_t ch;
+	if (sfmodes_select (g_sf_modes, g_sf_modes_n, hz, w, h,
+	                    g_mode_prefer_exact, atv14_rate_allowed, NULL, &ch) != 0)
+		return -1;
+
+	if (ch.rate_n > 1)
+		trace (1, "режим " HZ_FMT " Гц выбран как кратный (x%d) для " HZ_FMT " Гц\n",
+		       HZ_ARGS (ch.hz), ch.rate_n, HZ_ARGS (hz));
+
+	return ch.id;
+}
+
+/* Пакет приложения на переднем плане (плеера) — по нему выбирается поправка
+ * частоты fps.correct.list. Разбор строки вида
+ *   topResumedActivity=ActivityRecord{b4e422c u0 com.pkg/.Activity t611}
+ * Возврат: true, если пакет разобран. */
+static bool parse_top_package (const char *dump, char *out, size_t out_sz)
+{
+	const char *p = strstr (dump, "topResumedActivity=ActivityRecord{");
+	if (!p)
+		return false;
+
+	p += strlen ("topResumedActivity=ActivityRecord{");
+	while (*p)
+	{
+		const char *sp = strchr (p, ' ');
+		if (!sp)
+			break;
+
+		/* после поля "u<uid> " сразу идёт компонент "<пакет>/<активити>" */
+		if ((sp [1] == 'u') && (sp [2] >= '0') && (sp [2] <= '9'))
+		{
+			const char *c = sp + 2;
+			while ((*c >= '0') && (*c <= '9'))
+				c++;
+			if (*c == ' ')
+				c++;
+
+			const char *slash = strchr (c, '/');
+			const char *end = slash ? slash : strpbrk (c, " }");
+			if (end && (end > c) && ((size_t)(end - c) < out_sz))
+			{
+				memcpy (out, c, (size_t)(end - c));
+				out [end - c] = 0;
+				return true;
+			}
+
+			return false;
+		}
+
+		p = sp + 1;
+	}
+
+	return false;
+}
+
+/* Пакет плеера текущего видео. Пустая строка — не удалось определить. */
+static char g_cur_pkg [64];
+
+static void atv14_probe_package (const platform_t *plat)
+{
+	g_cur_pkg [0] = 0;
+	if (!plat->activity_dump_cmd)
+		return;
+
+	static char dump [4096];
+	if (exec_capture (plat->activity_dump_cmd, dump, sizeof (dump)) != 0)
+	{
+		trace (1, "не удалось определить приложение на переднем плане\n");
+		return;
+	}
+
+	if (!parse_top_package (dump, g_cur_pkg, sizeof (g_cur_pkg)))
+		trace (1, "приложение на переднем плане не разобрано\n");
+}
+
 /* Сон с оглядкой на завершение: просыпаемся не реже, чем раз в 200 мс. */
 static void msleep (int ms)
 {
@@ -1291,9 +1382,9 @@ static void atv14_give_up (const platform_t *plat,
  * принимать блокировку за потерю данных. */
 static unsigned long long g_vdec_last_ok_us;
 
-static int vdec_poll (const char *path, vdec_status_t *st)
+static int vdec_poll (const char *path, vdec_status_t *st, vdec_sel_t *sel)
 {
-	int rc = vdec_read (path, st);
+	int rc = vdec_read (path, st, sel);
 	if ((rc == 0) && st->active)
 		g_vdec_last_ok_us = now_us ();
 	return rc;
@@ -1370,7 +1461,9 @@ static int run_atv14 (const platform_t *plat)
 	int orig_sf_id = -1, cur_sf_id = -1, want_sf_id = -1;
 	bool held = false;
 	bool video = false;
-	vdec_status_t v0, v1;
+	vdec_status_t v0;
+	/* R61: состояние выбора канала vdec_status (растущий счётчик) */
+	vdec_sel_t vdec_sel = { 0 };
 	int retries = 0;
 	/* частоту в этом видео определить не удалось — больше не мерить
 	 * до его конца (сбрасывается, когда видео закончилось) */
@@ -1382,6 +1475,18 @@ static int run_atv14 (const platform_t *plat)
 	mstime_t recheck_timer = 0;
 	bool recheck_armed = false;
 	int preferred_id;
+	/* поправка частоты для плеера текущего видео (fps.correct.list):
+	 * пакет определяется один раз на видео, при первом замере */
+	bool pkg_probed = false;
+	double video_corr = 1.0;
+
+	/* Наблюдение частоты: кольцо выборок счётчика (см. fps_env.h). Решение
+	 * принимается по нижней огибающей, а не по одному окну. */
+	fps_env_t env;
+	/* счётчик рос на прошлой выборке — о простое сообщаем только на переходе
+	 * «рос → стоит», а не на каждой итерации паузы */
+	bool env_growing = false;
+	fps_env_reset (&env);
 
 	/* Поведенческие ключи профиля (R28). */
 	int prefer_api = cfg_get_int ("fps.prefer.api", 1);
@@ -1454,14 +1559,6 @@ static int run_atv14 (const platform_t *plat)
 	if (last_sf_pid <= 0)
 		last_sf_pid = -1;
 
-	int window_ms = cfg_get_int ("fps.measure.window.ms", 1500);
-	if (window_ms < 150)
-		window_ms = 150;   /* окно короче 150 мс не различает и 50/60 Гц */
-	/* Предел расширения окна замера: пока fps_classify_window не даст
-	 * однозначный ответ, окно растёт шагом window_ms/3 (см. цикл замера) */
-	int window_max_ms = cfg_get_int ("fps.measure.window.max.ms", 6000);
-	if (window_max_ms < window_ms)
-		window_max_ms = window_ms;   /* опечатка в конфиге не должна гасить замер */
 	int max_retries = cfg_get_int ("fps.measure.retries", 3);
 	/* Уточнение замера заявленной длительностью кадра (vdec_status: frame dur),
 	 * %: на IPTV счётчик кадров завышен на 2–4% (см. fps_refine_declared) */
@@ -1475,8 +1572,81 @@ static int run_atv14 (const platform_t *plat)
 	 * смещено набором буфера — 60-фпс канал давал 50.3 fps и режим 50 Гц).
 	 * 0 — перепроверка выключена. Знание о плеерах не нужно. */
 	int recheck_ms = cfg_get_int ("fps.recheck.delay.ms", 8000);
+
+	/* Огибающая: горизонт наблюдения, предел расширения, подокно, прогрев
+	 * (см. fps_env.h и config/afrd2.ini). envelope.ms=0 — решение по первому
+	 * подокну (быстрое переключение, как было до 01.10); фактически 0 всё
+	 * равно поднимается до skip + sub — раньше этого подокна просто нет. */
+	int env_ms = cfg_get_int ("fps.measure.envelope.ms", 20000);
+	if (env_ms < 0) env_ms = 0;
+	int env_max_ms = cfg_get_int ("fps.measure.envelope.max.ms", 30000);
+	if (env_max_ms < env_ms) env_max_ms = env_ms;
+	int env_sub_ms = cfg_get_int ("fps.measure.envelope.sub.ms", 5000);
+	if (env_sub_ms < 200) env_sub_ms = 200;
+	int env_skip_ms = cfg_get_int ("fps.measure.envelope.skip.ms", 2000);
+	if (env_skip_ms < 0) env_skip_ms = 0;
+
+	unsigned long long env_us = (unsigned long long)env_ms * 1000;
+	unsigned long long env_max_us = (unsigned long long)env_max_ms * 1000;
+	unsigned long long env_sub_us = (unsigned long long)env_sub_ms * 1000;
+	unsigned long long env_skip_us = (unsigned long long)env_skip_ms * 1000;
+	/* Подокно должно начаться не раньше skip и уложиться в горизонт, поэтому
+	 * горизонт короче skip + sub не даёт ни одного окна: поднимаем до минимума
+	 * (иначе envelope.ms=0 или 5000 навсегда оставлял бы демон без решения). */
+	unsigned long long env_min_us = env_sub_us + env_skip_us;
+	if (env_us < env_min_us) env_us = env_min_us;
+	if (env_max_us < env_us) env_max_us = env_us;
+
+	/* Горизонт ограничен ёмкостью кольца наблюдения (FPS_ENV_MAX выборок):
+	 * больше него данных не накопить — старые выборки вытесняются. Молчаливое
+	 * усечение запрещено: это тот же класс, что «молча выпавший ключ». */
+	unsigned long long env_ring_us = (unsigned long long)(FPS_ENV_MAX - 1) * (unsigned long long)cur_hz * 1000;
+	if (env_max_us > env_ring_us)
+	{
+		trace (0, "fps.measure.envelope.max.ms=%d больше ёмкости кольца наблюдения (%llu мс при trigger.poll.ms=%d) — ограничиваю\n",
+		       env_max_ms, env_ring_us / 1000, cur_hz);
+		env_max_us = env_ring_us;
+		if (env_us > env_max_us)
+			env_us = env_max_us;
+	}
+
 	int start_deb = cfg_get_int ("trigger.start.debounce.ms", 500);
 	int stop_deb = cfg_get_int ("trigger.stop.debounce.ms", 1500);
+	/* Поправка на систематическое завышение счётчика конкретным плеером
+	 * (по умолчанию выключена — см. fps.correct.* в fps_class.h). */
+	int correct_enable = cfg_get_int ("fps.correct.enable", 0);
+	if (correct_enable)
+	{
+		const char *clist = cfg_get_str ("fps.correct.list", NULL);
+		fps_correct_load (clist);
+		trace (1, "поправка частоты по плеерам: %s\n",
+		       (clist && *clist) ? clist : "(список пуст)");
+
+		/* Поправка AV1 задаётся отдельным ключом и ставится после
+		 * fps_correct_load: load() начинается с fps_correct_clear(), который
+		 * сбрасывает и её (см. fps_class.h). */
+		const char *av1_val = cfg_get_str ("fps.correct.av1.offset", NULL);
+		const char *av1_pkg = cfg_get_str ("fps.correct.av1.pkg", NULL);
+		double av1_off_cfg = av1_val ? atof (av1_val) : 0.0;
+		fps_correct_set_av1 (av1_off_cfg, av1_pkg);
+		if (av1_off_cfg > 0.0)
+		{
+			int p = (int)(av1_off_cfg * 100.0 + 0.5);
+			trace (1, "поправка AV1: минус %d.%02d кадра/с%s%s\n", p / 100, p % 100,
+			       (av1_pkg && *av1_pkg) ? ", только для " : "",
+			       (av1_pkg && *av1_pkg) ? av1_pkg : "");
+		}
+	}
+	else
+	{
+		fps_correct_clear ();
+
+		/* R5: выключенная калибровка не должна молча съедать настроенную
+		 * поправку AV1 — она действует только при fps.correct.enable=1. */
+		const char *av1_off_str = cfg_get_str ("fps.correct.av1.offset", NULL);
+		if (av1_off_str && (atof (av1_off_str) > 0.0))
+			trace (0, "fps.correct.av1.offset=%s, но fps.correct.enable=0 — поправка AV1 не применена\n", av1_off_str);
+	}
 
 	while (!g_shutdown)
 	{
@@ -1529,7 +1699,16 @@ static int run_atv14 (const platform_t *plat)
 				last_sf_pid = sf_pid;	/* первая достоверная проверка */
 		}
 
-		if (vdec_poll (plat->vdec_status, &v0) != 0)
+		/* Метка времени выборки — середина чтения (само чтение под нагрузкой
+		 * занимает миллисекунды, а окна считаются по крайним выборкам) и его
+		 * длительность как неопределённость интервала. */
+		unsigned long long read_a = now_us ();
+		int poll_rc = vdec_poll (plat->vdec_status, &v0, &vdec_sel);
+		unsigned long long read_b = now_us ();
+		unsigned long long sample_t = read_a + (read_b - read_a) / 2;
+		unsigned long long sample_unc = read_b - read_a;
+
+		if (poll_rc != 0)
 		{
 			/* R34г: серия отказов чтения — сообщаем один раз, без шторма */
 			if (++vdec_fails == max_vdec_fails)
@@ -1561,8 +1740,10 @@ static int run_atv14 (const platform_t *plat)
 		{
 			msleep (new_video ? start_deb : stop_deb);
 
-			vdec_status_t again;
-			if (vdec_poll (plat->vdec_status, &again) == 0 && again.active == new_video)
+			/* дебаунс не должен сдвигать состояние выбора канала (R61) */
+			bool again_active = false;
+			if (vdec_probe_active (plat->vdec_status, &again_active) == 0 &&
+			    again_active == new_video)
 				video = new_video;
 			else
 				continue;	/* дребезг старта/стопа — игнорируем */
@@ -1583,6 +1764,13 @@ static int run_atv14 (const platform_t *plat)
 				retries = 0;
 				recheck_armed = false;	/* R56: перепроверка — на текущее видео */
 				mstime_disable (&recheck_timer);
+				/* плеер нового видео может быть другим — поправку
+				 * (fps.correct.list) берём заново */
+				pkg_probed = false;
+				video_corr = 1.0;
+				/* кадры двух видео не должны попасть в одну огибающую */
+				fps_env_reset (&env);
+				env_growing = false;
 			}
 
 			if (have_prev_frames && (v0.frames == prev_frames))
@@ -1623,6 +1811,12 @@ static int run_atv14 (const platform_t *plat)
 			/* R56: перепроверка — тоже на текущее видео */
 			recheck_armed = false;
 			mstime_disable (&recheck_timer);
+			/* поправка плеера относится к текущему видео */
+			pkg_probed = false;
+			video_corr = 1.0;
+			/* видео закончилось/пауза — наблюдение начинается заново */
+			fps_env_reset (&env);
+			env_growing = false;
 		}
 		else if (recheck_armed && mstime_expired (&recheck_timer))
 		{
@@ -1639,6 +1833,24 @@ static int run_atv14 (const platform_t *plat)
 		{
 			int hz = 0;
 
+			/* Поправка частоты конкретного плеера: пакет на переднем плане
+			 * определяется один раз на видео (fps.correct.list). */
+			if (!pkg_probed)
+			{
+				pkg_probed = true;
+				if (correct_enable)
+				{
+					atv14_probe_package (plat);
+					video_corr = fps_correct_factor (g_cur_pkg);
+					if (video_corr != 1.0)
+					{
+						int p = (int)(fabs (video_corr - 1.0) * 10000.0 + 0.5);
+						trace (1, "плеер %s: поправка замера %s%d.%02d %% (fps.correct.list)\n",
+						       g_cur_pkg, (video_corr < 1.0) ? "-" : "+", p / 100, p % 100);
+					}
+				}
+			}
+
 			/* fps.prefer.api: подсказку плеера (24.8 fixed-point, живёт 1 с)
 			 * предпочитаем собственному замеру — она точнее и мгновенна */
 			int api_hz = 0;
@@ -1652,169 +1864,99 @@ static int run_atv14 (const platform_t *plat)
 				trace (1, "видео: " HZ_FMT " Гц по подсказке плеера, ищу режим\n",
 				       HZ_ARGS (hz));
 			}
-			else
+			else if (v0.active)
 			{
-				/* Замер: окно window_ms, разбитое на под-срезы slice_ms,
-				 * с расширением до window_max_ms, пока частота не будет
-				 * определена однозначно.
-				 * Счётчик кадров дискретен (±1 кадр) и метки времени имеют
-				 * неопределённость, поэтому короткое окно не различает соседние
-				 * частоты: граница 24 -> 25 проходит на 24.49 fps, а один кадр
-				 * за 1.5 с — это 0.67 fps. Живой случай: «24.642 fps -> 25 Гц»
-				 * (R47), из-за чего 24-фпс поток уводился в 1080p25hz.
-				 * Выборка годится, только если декодер активен всё окно и
-				 * счётчик строго растёт в каждом под-срезе: если середина
-				 * окна попала на паузу/буферизацию, дельта окажется меньше
-				 * реальной, и частота «уедет» в чужой стандарт (напр. 50 Гц
-				 * при полуокне простоя дадут ровно 25 Гц). v0 читаем здесь
-				 * же: к этому моменту мог пройти дебаунс старта, и прочитанное
-				 * в начале цикла значение было бы на дебаунс старше.
-				 * Метка времени выборки — середина чтения: само чтение не
-				 * мгновенно (под нагрузкой — десятки мс), а интервал считают
-				 * крайние выборки, и перекос между ними уводит частоту. */
-				unsigned long long read_a = now_us ();
-				if (vdec_poll (plat->vdec_status, &v0) != 0)
+				/* Наблюдение (fps_env): счётчик кадров на ATV14 завышен
+				 * односторонне, поэтому решение берётся по нижней огибающей
+				 * подокон. Пока горизонт не набран — режим не трогаем. */
+				bool env_grew = fps_env_push (&env, sample_t, v0.frames, sample_unc);
+				if (env_grew)
+					env_growing = true;
+				else if (env_growing)
+				{
+					/* только переход «рос → стоит» (пауза/сброс счётчика):
+					 * иначе строка печаталась бы на каждой итерации паузы */
+					trace (1, "счётчик кадров не растёт — наблюдение начато заново\n");
+					env_growing = false;
+				}
+
+				if (!fps_env_ready (&env, env_us))
 					continue;
-				unsigned long long read_b = now_us ();
-				unsigned long long t0 = read_a + (read_b - read_a) / 2;
-				unsigned long long read0_us = read_b - read_a;
 
-				int slice_ms = window_ms / 3;
-				if (slice_ms < 1)
-					slice_ms = 1;
-				unsigned long long window_us = (unsigned long long)window_ms * 1000;
-				unsigned long long window_max_us = (unsigned long long)window_max_ms * 1000;
+				double av1_off = correct_enable
+				                 ? fps_correct_av1_offset (v0.device, g_cur_pkg) : 0.0;
 
-				bool grown = v0.active;
-				bool stalled = false;   /* окно прервано простоем счётчика/чтением */
-				v1 = v0;
-				int decided_ms = 0;
-				unsigned long long t1 = t0, dt_us = 0, dt_unc_us = 0;
-				unsigned long long frames_delta = 0;
-				double fps = 0.0;
+				int env_hz = 0;
+				unsigned long long env_used_us = env_us;
+				bool env_decided = fps_env_decide (&env, env_us, env_skip_us, env_sub_us,
+				                                   video_corr, av1_off, &env_hz);
 
-				while (grown)
+				/* базовый горизонт неоднозначен — решаем на расширенном
+				 * (fps.measure.envelope.max.ms), но только когда он набран */
+				if (!env_decided && fps_env_ready (&env, env_max_us))
 				{
-					/* Окно длинное (до window_max_ms), и всё это время надо
-					 * обслуживать UDP-сокет API: иначе `status`/`afrd -s` и
-					 * подсказка плеера ждут конца окна (находка ревью R51).
-					 * Границы окна считаются по реальным меткам времени —
-					 * atv14_wait возвращается и раньше срока, если пришёл
-					 * запрос API. */
-					if (g_shutdown)
-						break;
-					if (atv14_wait (slice_ms) != 0)
-						msleep (slice_ms);
-
-					vdec_status_t cur;
-					unsigned long long ca = now_us ();
-					if (vdec_poll (plat->vdec_status, &cur) != 0)
-					{
-						grown = false;
-						stalled = true;   /* данных нет — это не «не смог измерить» */
-						break;
-					}
-					unsigned long long cb = now_us ();
-
-					if (!cur.active || (cur.frames <= v1.frames))
-					{
-						/* пауза/буферизация/конец файла: счётчик стоит —
-						 * попытку замера тратить нельзя (иначе пауза в первые
-						 * секунды видео выключала AFR до конца файла) */
-						grown = false;
-						stalled = true;
-						break;
-					}
-
-					v1 = cur;
-					t1 = ca + (cb - ca) / 2;
-					dt_us = (t1 > t0) ? (t1 - t0) : 0;
-
-					if (dt_us < window_us)
-						continue;
-
-					frames_delta = v1.frames - v0.frames;
-					/* полусумма длительностей крайних чтений: оценка
-					 * сверху для разброса середин чтений */
-					dt_unc_us = (read0_us + (cb - ca)) / 2;
-					fps = dt_us
-					    ? (double)frames_delta * 1000000.0 / (double)dt_us
-					    : 0.0;
-
-					if (fps_classify_window (frames_delta, dt_us, dt_unc_us, &hz))
-					{
-						decided_ms = (int)(dt_us / 1000);
-
-						/* IPTV: счётчик кадров завышен — плеер повторно
-						 * декодирует кадры на границах HLS-сегментов (живой
-						 * замер 30.09: поток 23.976 -> счётчик 24.56, +2.4%,
-						 * и 24-фпс канал уходил в 25 Гц). Заявленная длина
-						 * кадра (`frame dur`) на живых потоках совпадает с
-						 * номиналом, поэтому уточняем ею решение — но только
-						 * если она рядом (иначе это мусор в поле). */
-						if (v1.decl_dur)
-						{
-							int refined = 0;
-							if (fps_refine_declared (hz, 96000.0 / (double)v1.decl_dur,
-							                         (double)declared_pct, &refined))
-							{
-								/* в лог — только когда группа частоты
-								 * действительно изменилась: на нормальных
-								 * номиналах уточнение no-op */
-								if (refined != hz)
-									trace (1, "частота уточнена по frame dur (%u): "
-									       HZ_FMT " Гц вместо " HZ_FMT " Гц\n",
-									       v1.decl_dur, HZ_ARGS (refined), HZ_ARGS (hz));
-
-								hz = refined;
-							}
-						}
-
-						break;
-					}
-
-					if (dt_us >= window_max_us)
-						break;
+					env_decided = fps_env_decide (&env, env_max_us, env_skip_us, env_sub_us,
+					                              video_corr, av1_off, &env_hz);
+					env_used_us = env_max_us;
 				}
 
-				/* Подсказка плеера приоритетнее замера: сюда мы попадаем,
-				 * только если на входе в ветку её не было, значит любая
-				 * живая подсказка пришла во время окна (atv14_wait её принял) */
-				if (!hz && prefer_api && mstime_running (&g_frame_rate_hint.stamp))
+				if (!env_decided)
 				{
-					hz = fps_rate_hz (fps_rate_index_for_hz (g_frame_rate_hint.fps));
-					decided_ms = (int)(dt_us / 1000);
-					trace (1, "видео: " HZ_FMT " Гц по подсказке плеера (пришла во время замера)\n",
-					       HZ_ARGS (hz));
-				}
-
-				if (!hz)
-				{
-					/* Окно прервано простоем счётчика или нечитаемостью узла —
-					 * данных для решения не было, это не отказ измерения:
-					 * попытку не тратим (иначе пауза в первые секунды видео
-					 * исчерпывала retries и выключала AFR до конца файла). */
-					if (stalled)
+					/* решения нет ни на одном горизонте: наблюдаем дальше
+					 * (попытку не тратим), но не дольше предела */
+					if (!fps_env_ready (&env, env_max_us))
 						continue;
 
+					trace (1, "огибающая не дала решения за %d с наблюдения\n",
+					       (int)(env_max_us / 1000000));
 					if (++retries >= max_retries)
 					{
 						trace (1, "частоту определить не удалось (%d попыток), пропускаю\n", retries);
 						measure_failed = true;
 						want_sf_id = -1;
-						/* как и выше: при сменившейся таблице режимов
-						 * orig_sf_id может быть из старой нумерации */
 						if (!g_sf_table_changed)
 							atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
 					}
+
+					fps_env_reset (&env);
+					env_growing = false;
 					continue;
 				}
 
-				retries = 0;
-				trace (1, "видео: %.3f fps (%s), окно %d мс (ΔF=%llu, ±%.0f мс), ищу режим\n",
-				       fps, fps_rate_name (fps_rate_index_for_hz (hz)), decided_ms,
-				       frames_delta, (double)dt_unc_us / 1000.0);
+				hz = env_hz;
+
+				if (av1_off > 0.0)
+					trace (1, "решение уточнено поправкой AV1: минус %.2f кадра/с\n", av1_off);
+
+				/* заявленная длительность кадра (frame dur) уточняет решение —
+				 * как и раньше, но теперь уточняется решение огибающей */
+				if (v0.decl_dur)
+				{
+					int refined = 0;
+					if (fps_refine_declared (hz, 96000.0 / (double)v0.decl_dur,
+					                         (double)declared_pct, &refined))
+					{
+						if (refined != hz)
+							trace (1, "частота уточнена по frame dur (%u): "
+							       HZ_FMT " Гц вместо " HZ_FMT " Гц\n",
+							       v0.decl_dur, HZ_ARGS (refined), HZ_ARGS (hz));
+
+						hz = refined;
+					}
+				}
+
+				trace (1, "видео: " HZ_FMT " Гц по огибающей (%d с наблюдения, "
+				       "горизонт %d мс), ищу режим\n",
+				       HZ_ARGS (hz),
+				       (int)((env.s [env.n - 1].t_us - env.s [0].t_us) / 1000000),
+				       (int)(env_used_us / 1000));
+
+				/* следующее измерение (перепроверка, новое видео) — заново */
+				fps_env_reset (&env);
+				env_growing = false;
 			}
+			else
+				continue;
 
 			retries = 0;
 
@@ -1846,7 +1988,7 @@ static int run_atv14 (const platform_t *plat)
 				h = active.height;
 			}
 
-			cur_sf_id = sfmodes_find (g_sf_modes, g_sf_modes_n, hz, w, h);
+			cur_sf_id = atv14_select_mode (hz, w, h);
 			if (cur_sf_id < 0)
 			{
 				trace (1, "режим для %d.%02d Гц не найден в списке\n",
@@ -1886,7 +2028,7 @@ static int run_atv14 (const platform_t *plat)
 				h = active.height;
 			}
 
-			int hint_id = sfmodes_find (g_sf_modes, g_sf_modes_n, hint_hz, w, h);
+			int hint_id = atv14_select_mode (hint_hz, w, h);
 			if (hint_id < 0)
 			{
 				/* режима нет в текущей таблице (напр. частота есть только для
@@ -2017,9 +2159,23 @@ static int run_atv14 (const platform_t *plat)
 
 static platform_t g_plat;
 
+/* Вывод предупреждений аудита ключей конфига — в лог демона. */
+static void cfg_audit_warn (const char *msg, void *ctx)
+{
+	(void)ctx;
+	trace (0, "%s\n", msg);
+}
+
 int afrd_run ()
 {
 	g_plat = platform_detect ();
+
+	/* «Громкие ключи»: настройка, которая на выбранном пути не действует,
+	 * должна быть названа в логе, а не молча проигнорирована (именно так
+	 * потерялось удвоение частоты, mode.prefer.exact). */
+	cfgkeys_audit (g_config,
+	               (g_plat.kind == PLAT_ATV14) ? CFGKEY_ATV14 : CFGKEY_LEGACY,
+	               cfg_audit_warn, NULL);
 
 	if (g_plat.kind == PLAT_ATV14)
 		return run_atv14 (&g_plat);

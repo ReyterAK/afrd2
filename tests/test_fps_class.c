@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include "../fps_class.h"
@@ -64,6 +65,58 @@ static void t_classify_window(void)
 	assert(fps_classify_window(36, 1000, 1000, &hz) == 0);   /* интервал не определён */
 	assert(fps_classify_window(1, 1500000, 0, &hz) == 0);    /* слишком мало кадров */
 	assert(fps_classify_window(255, 1500000, 0, &hz) == 0);  /* 170 fps — вне ряда */
+}
+
+/* Живой случай 2026-10-01: приложение YouTube на 24-фпс ролике (AV1) давало
+ * по счётчику ~25.2 fps, из-за чего решение уходило в группу 25. Поправка
+ * плеера (fps.correct.list: com.google.android.youtube.tv=4.5) возвращает
+ * решение в группу 24 — на окне до fps.measure.window.max.ms (у 24 Гц и 25 Гц
+ * доверительные интервалы ±1 кадр перекрываются дольше, чем без поправки). */
+static void t_correct_window(void)
+{
+	int hz = 0;
+
+	/* 25.17 fps на окне 6 с (ΔF=151): без поправки — группа 25... */
+	assert(fps_classify_window(151, 6000000, 0, &hz) == 1 && hz == fps_rate_hz(2));
+	/* ...с поправкой 4.5% (25.17 -> 24.08) — группа 24 */
+	assert(fps_classify_window_scaled(151, 6000000, 0, 1.045, &hz) == 1 && hz == fps_rate_hz(0));
+
+	/* YouTube на настоящем 25-фпс ролике: замер 26.17, с поправкой 25.04 —
+	 * группа 25 остаётся правильной */
+	assert(fps_classify_window(157, 6000000, 0, &hz) == 1 && hz == fps_rate_hz(2));
+	assert(fps_classify_window_scaled(157, 6000000, 0, 1.045, &hz) == 1 && hz == fps_rate_hz(2));
+
+	/* Множитель 1.0 (или <= 0) — ровно прежнее поведение */
+	assert(fps_classify_window_scaled(151, 6000000, 0, 1.0, &hz) == 1 && hz == fps_rate_hz(2));
+	assert(fps_classify_window_scaled(151, 6000000, 0, 0.0, &hz) == 1 && hz == fps_rate_hz(2));
+}
+
+/* Разбор списка поправок: "<пакет>=<проценты>" через пробел. */
+static void t_correct_list(void)
+{
+	fps_correct_clear();
+	assert(fps_correct_factor("com.google.android.youtube.tv") == 1.0);
+
+	fps_correct_load("com.google.android.youtube.tv=4.5  studio.scillarium.ottnavigator=2.4");
+	assert(fabs(fps_correct_factor("com.google.android.youtube.tv") - 1.045) < 1e-9);
+	assert(fabs(fps_correct_factor("studio.scillarium.ottnavigator") - 1.024) < 1e-9);
+	/* чужой пакет и NULL — без поправки */
+	assert(fps_correct_factor("org.videolan.vlc") == 1.0);
+	assert(fps_correct_factor(NULL) == 1.0);
+
+	/* мусорные записи игнорируются, корректные рядом с ними — работают */
+	fps_correct_load("мусор =5 =3 youtube=0 com.google.android.youtube.tv=5.0");
+	assert(fps_correct_factor("мусор") == 1.0);
+	assert(fps_correct_factor("") == 1.0);
+	assert(fps_correct_factor("youtube") == 1.0);		/* 0% — не поправка */
+	assert(fabs(fps_correct_factor("com.google.android.youtube.tv") - 1.05) < 1e-9);
+
+	/* отрицательное значение (плеер занижает) тоже допустимо */
+	fps_correct_load("some.player=-3");
+	assert(fabs(fps_correct_factor("some.player") - 0.97) < 1e-9);
+
+	fps_correct_clear();
+	assert(fps_correct_factor("com.google.android.youtube.tv") == 1.0);
 }
 
 static void t_group(void)
@@ -147,6 +200,73 @@ static void t_table(void)
 	assert(fps_rate_index_for_hz(25 * 256) == 2);
 }
 
+/* Аддитивная поправка (fps.correct.av1.offset) и множитель плеера применяются
+ * к числу кадров окна, а не к уже готовой частоте. */
+static void t_corrected(void)
+{
+	int hz = -1;
+
+	/* 24 fps за 5 с (120 кадров): без поправок — группа 24 */
+	assert(fps_classify_window_corrected(120, 5000000, 0, 1.0, 0.0, &hz) == 1);
+	assert(hz == fps_rate_hz(0));
+
+	/* завышение AV1 на 0.5 кадра/с: 122.5 кадра за 5 с — всё ещё группа 24 */
+	assert(fps_classify_window_corrected(122, 5000000, 0, 1.0, 0.5, &hz) == 1);
+	assert(hz == fps_rate_hz(0));
+
+	/* 128 кадров за 5 с (25.6 fps) без поправки — это уже 25 */
+	assert(fps_classify_window_corrected(128, 5000000, 0, 1.0, 0.0, &hz) == 1);
+	assert(hz == fps_rate_hz(2));
+
+	/* 125 кадров за 5 с = 25.0; поправка 0.5 даёт 24.5, а ±1 кадр накрывает
+	 * и 24, и 25 -> решения нет */
+	assert(fps_classify_window_corrected(125, 5000000, 0, 1.0, 0.5, &hz) == 0);
+
+	/* множитель (fps.correct.list) работает как раньше: 126/1.05 = 120 -> 24 */
+	assert(fps_classify_window_corrected(126, 5000000, 0, 1.05, 0.0, &hz) == 1);
+	assert(hz == fps_rate_hz(0));
+
+	/* factor <= 0 трактуется как «без поправки» */
+	assert(fps_classify_window_corrected(120, 5000000, 0, 0.0, 0.0, &hz) == 1);
+	assert(hz == fps_rate_hz(0));
+}
+
+static void t_correct_av1(void)
+{
+	fps_correct_clear ();
+
+	/* поправка не задана — ноль для любого устройства */
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "com.google.android.youtube.tv") == 0.0);
+
+	/* поправка без пакета действует для любого плеера, но только на AV1 */
+	fps_correct_set_av1 (0.5, NULL);
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "org.videolan.vlc") == 0.5);
+	assert(fps_correct_av1_offset ("AMVDEC_AV1_V4L", NULL) == 0.5);	/* без учёта регистра, без пакета */
+	assert(fps_correct_av1_offset (NULL, NULL) == 0.0);		/* нет устройства — нет поправки */
+	assert(fps_correct_av1_offset ("ammvdec_h264_v4", "org.videolan.vlc") == 0.0);
+	assert(fps_correct_av1_offset ("", "org.videolan.vlc") == 0.0);
+
+	/* с пакетом — только для него (пакет в конфиге бывает с пробелами) */
+	fps_correct_set_av1 (1.05, " com.google.android.youtube.tv ");
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "com.google.android.youtube.tv") == 1.05);
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "org.videolan.vlc") == 0.0);
+
+	/* имя пакета длиннее поля (64 байта): поправка отбрасывается целиком,
+	 * иначе пустой пакет расширил бы её на все плееры */
+	fps_correct_set_av1 (0.5, "com.google.android.youtube.tv.some.really.long.package.name.over.64.chars");
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "короткий") == 0.0);
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "com.google.android.youtube.tv.some.really.long.package.name.over.64.chars") == 0.0);
+
+	/* fps_correct_clear сбрасывает и её */
+	fps_correct_set_av1 (0.5, NULL);
+	fps_correct_clear ();
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", NULL) == 0.0);
+
+	/* выключенная поправка (0) — не действует */
+	fps_correct_set_av1 (0.0, NULL);
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", NULL) == 0.0);
+}
+
 int main(void)
 {
 	t_classify();
@@ -156,6 +276,10 @@ int main(void)
 	t_live_scenario();
 	t_group();
 	t_table();
+	t_correct_window();
+	t_correct_list();
+	t_corrected();
+	t_correct_av1();
 	printf("fps_class: OK\n");
 	return 0;
 }

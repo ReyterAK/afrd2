@@ -23,6 +23,8 @@ import android.view.ViewGroup;
 
 import java.util.Vector;
 
+import ru.cobra.zap.afrd.Control;
+
 /**
  * This fragment implements a editor for AFRd settings.
  */
@@ -32,6 +34,57 @@ public class SettingsFragment extends PreferenceFragment
 {
     private MainActivity mMain;
     Vector<PreferenceScreen> mPrefStack = new Vector<> ();
+
+    /* Настройки, которые на новом пути демона (Android 10-14) не действуют:
+     * режим переключает фреймворк транзакцией SurfaceFlinger 1035, затемнения
+     * нет, цвета/HDR ведёт вендорский стек, uevent-фильтры не нужны. Демон эти
+     * ключи не читает (см. таблицу в cfgkeys.c) и сообщает о них в логе.
+     * В GUI они остаются видимыми, но выключенными — чтобы не создавать
+     * впечатление работающей настройки. */
+    private static final String [] kInactiveOnAtv14 =
+    {
+        "mode_extra",
+        "cs_select",
+        "switch_delay_on",
+        "switch_delay_off",
+        "switch_delay_retry",
+        "switch_blackout",
+        "switch_ignore",
+        "switch_hdmi",
+        "vdec_blacklist",
+        "frhint_vdec_blacklist",
+    };
+
+    private static boolean isInactive (String key)
+    {
+        if (!Control.isAtv14 ())
+            return false;
+
+        for (String k : kInactiveOnAtv14)
+            if (k.equals (key))
+                return true;
+
+        return false;
+    }
+
+    private void markInapplicable (PreferenceGroup group)
+    {
+        for (int i = 0; i < group.getPreferenceCount (); i++)
+        {
+            Preference p = group.getPreference (i);
+            if (p instanceof PreferenceGroup)
+                markInapplicable ((PreferenceGroup)p);
+            else if (!isInactive (p.getKey ()))
+                continue;
+            else
+            {
+                p.setEnabled (false);
+                CharSequence s = p.getSummary ();
+                p.setSummary ((s == null ? "" : s + " ") +
+                              getString (R.string.not_applicable_atv14));
+            }
+        }
+    }
 
     static SettingsFragment create ()
     {
@@ -50,6 +103,7 @@ public class SettingsFragment extends PreferenceFragment
             try
             {
                 addPreferencesFromResource (R.xml.preferences);
+                markInapplicable (getPreferenceScreen ());
                 break;
             }
             catch (Exception ignored)

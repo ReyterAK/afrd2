@@ -47,9 +47,10 @@ for c in $CLIPS; do
 
 	am start -n $VLC -a android.intent.action.VIEW -d "file://$f" -t video/mp4 >/dev/null 2>&1
 
-	# ждём смены режима (до 12 с)
+	# ждём смены режима (до 30 с: решение по огибающей — skip.ms + envelope.ms,
+	# в профиле 2 + 20 = 22 с, плюс сброс удержания и дебаунс старта)
 	i=0
-	while [ "$i" -lt 24 ]; do
+	while [ "$i" -lt 60 ]; do
 		sleep 0.5
 		i=$((i + 1))
 		m=$(mode)

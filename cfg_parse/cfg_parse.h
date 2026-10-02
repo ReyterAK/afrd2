@@ -31,4 +31,8 @@ void cfg_set(struct cfg_struct *, const char *, const char *);
 /* Delete key (+value) from cfg_struct */
 void cfg_delete(struct cfg_struct *, const char *);
 
+/* Visit every key/value pair (для аудита применимости ключей). */
+typedef void (*cfg_visit_t) (const char *key, const char *value, void *ctx);
+void cfg_visit(struct cfg_struct *, cfg_visit_t, void *);
+
 #endif

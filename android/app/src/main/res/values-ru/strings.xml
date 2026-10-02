@@ -89,6 +89,75 @@
     <string name="mode_use_fract_use">Предпочитать дробные частоты</string>
     <string name="mode_use_fract_int">Предпочитать целые частоты</string>
     <string name="settings_advanced">Настройки для опытных пользователей</string>
+    <string name="not_applicable_atv14">(не действует на Android 10-14)</string>
+    <string name="prefs_group_correct">Калибровка частоты по плееру</string>
+    <string name="prefs_group_atv14">Настройки для Android 10 и выше</string>
+    <string name="prefs_fps_prefer_api">Доверять подсказке плеера</string>
+    <string name="prefsum_fps_prefer_api">Если плеер сам сообщает частоту через API AFRd
+        (frame_rate_hint), предпочитать её собственному замеру по счётчику кадров.</string>
+    <string name="prefs_fps_measure_envelope">Наблюдение перед переключением, мс</string>
+    <string name="prefsum_fps_measure_envelope">Демон не переключает режим, пока не наберёт столько
+        миллисекунд наблюдения. Частота берётся как минимум из частот подокон (5 с), поэтому
+        короткие всплески и повторные кадры на границах сегментов не сбивают решение.
+        20000 — измеренный оптимум: 24-фпс ролики YouTube определяются верно в 86 % случаев;
+        0 — переключать сразу по первому подокну.</string>
+    <string name="prefs_fps_measure_envelope_max">Предел наблюдения, мс</string>
+    <string name="prefsum_fps_measure_envelope_max">До какого размера расширять наблюдение, если
+        доверительный интервал не уложился в одну группу частот (больше — точнее, но позже
+        переключение). Меньше значения наблюдения не бывает.</string>
+    <string name="prefs_fps_measure_envelope_sub">Подокно, мс</string>
+    <string name="prefsum_fps_measure_envelope_sub">Длина подокна, по минимуму частот которых
+        принимается решение. 5 с — компромисс: за 5 с ошибка счётчика ±1 кадр даёт ±0.2 кадра/с
+        при 24 fps.</string>
+    <string name="prefs_fps_measure_envelope_skip">Прогрев, мс</string>
+    <string name="prefsum_fps_measure_envelope_skip">Подокна, начинающиеся раньше, не рассматриваются.
+        Некоторые плееры занижают частоту в первые секунды (набор буфера), а минимум чувствителен
+        к такому провалу.</string>
+    <string name="prefs_fps_measure_retries">Число попыток замера</string>
+    <string name="prefsum_fps_measure_retries">Сколько раз пробовать заново, прежде чем оставить
+        режим как есть до конца видео.</string>
+    <string name="prefs_fps_declared_crosscheck">Уточнение по длительности кадра, %</string>
+    <string name="prefsum_fps_declared_crosscheck">Если заявленная длительность кадра (frame dur)
+        отличается от замера не более чем на этот процент, решение берётся по ней. 0 — выключить.</string>
+    <string name="prefs_fps_recheck_delay">Перепроверка замера, мс</string>
+    <string name="prefsum_fps_recheck_delay">Через сколько мс после переключения перемерить частоту и
+        поправить режим, если класс другой (лечит смещённое первое окно). 0 — выключить.</string>
+    <string name="prefs_trigger_poll">Период опроса декодера, мс</string>
+    <string name="prefsum_trigger_poll">Как часто проверять /sys/class/vdec/vdec_status, чтобы заметить
+        старт и остановку видео.</string>
+    <string name="prefs_trigger_start_debounce">Задержка старта, мс</string>
+    <string name="prefsum_trigger_start_debounce">Пауза после появления видео, чтобы отсеять дребезг.</string>
+    <string name="prefs_trigger_stop_debounce">Задержка остановки, мс</string>
+    <string name="prefsum_trigger_stop_debounce">Пауза перед возвратом исходного режима после конца
+        видео.</string>
+    <string name="prefs_pause_keep">Удерживать режим на паузе</string>
+    <string name="prefsum_pause_keep">Включено — на паузе режим сохраняется; выключено — на паузе
+        возвращается исходный, а на возобновлении режим выставляется снова.</string>
+    <string name="prefs_switch_restore_on_stop">Возвращать режим при остановке</string>
+    <string name="prefsum_switch_restore_on_stop">Возвращать исходный режим HDMI, когда видео
+        закончилось.</string>
+    <string name="prefs_fps_correct_enable">Учитывать поправку плеера</string>
+    <string name="prefsum_fps_correct_enable">Некоторые плееры подают кадры в декодер чаще номинала
+        (например, YouTube на 24-фпс ролике даёт по счётчику ~25.2 fps, и AFR уходит в 25 Гц).
+        Поправка применяется к замеру до выбора режима. По умолчанию включено: работает поправка
+        AV1 ниже, список поправок по плеерам пуст.</string>
+    <string name="prefs_fps_correct_list">Поправки (пакет=проценты)</string>
+    <string name="prefsum_fps_correct_list">Список через пробел, например:
+        com.google.android.youtube.tv=5.0. Проценты — на сколько плеер завышает частоту.
+        Измерить можно по строке «плеер &lt;пакет&gt;: поправка замера ±P % (fps.correct.list)»;
+        решение видно строкой «видео: &lt;HZ&gt; Гц по огибающей (N с наблюдения, горизонт M мс),
+        ищу режим». Сравнить с номиналом ролика.</string>
+    <string name="prefs_fps_correct_av1_offset">Поправка AV1 (кадр/с)</string>
+    <string name="prefsum_fps_correct_av1_offset">Аддитивная поправка на завышение счётчика
+        AV1-трактом декодера. Измерено: AV1 отдаёт +0.5 кадра/с против H.264 на том же файле.
+        Рекомендуемое значение — 0.3, а не 0.5: ошибка «24 fps определён как 25 Гц» предпочтительнее
+        обратной, а 0.5 уводит честный 25-фпс контент в 24 Гц. По умолчанию 0.3 (включено):
+        наблюдение по огибающей уже снимает большую часть завышения.
+        Действует только при включённой калибровке плеера (переключатель выше): при выключенной
+        значение не применяется и в лог не пишется. Для Android 10-14.</string>
+    <string name="prefs_fps_correct_av1_pkg">Поправка AV1: только для пакета</string>
+    <string name="prefsum_fps_correct_av1_pkg">Ограничить поправку AV1 одним пакетом плеера
+        (fps.correct.av1.pkg). Пусто — для любого плеера.</string>
     <string name="notif_start_afrd">Включить АПЧ</string>
     <string name="notif_stop_afrd">Отключить АПЧ</string>
     <string name="notif_enabled">AFRd включён</string>

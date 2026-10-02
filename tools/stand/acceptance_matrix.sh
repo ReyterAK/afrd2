@@ -9,18 +9,19 @@
 # Опционально: шаг 2a — пауза/возобновление (PAUSE_TEST=1) и шаг 3 — плеер
 # со своим AFR (OWN_AFR_TEST=1).
 #
-# Эталон ожиданий. Три клипа подтверждены живым прогоном 2026-09-29
-# (`/tmp/afrd-acceptance-2208.log`, затем полный прогон `/tmp/afrd-acceptance-fix2.log`:
-# OK=19 FAIL=0 SKIP=0), значения в таблице — измеренные:
+# Эталон ожиданий:
 #
 #   клип             | во время видео                  | после стопа
 #   long_24000_1001  | 1080p24hz + activeMode=23.98 Hz | 1080p60hz + 59.94 Hz + backdoor=false
-#   long_25          | 1080p25hz + activeMode=25.00 Hz | 1080p60hz + 59.94 Hz + backdoor=false
+#   long_25          | 1080p50hz + activeMode=50.00 Hz | 1080p60hz + 59.94 Hz + backdoor=false
 #   long_50          | 1080p50hz + activeMode=50.00 Hz | 1080p60hz + 59.94 Hz + backdoor=false
 #
-# Для 25 fps ожидание было 1080p50hz (ошибка плана, R48): резолвер ATV14 берёт
-# точную частоту из таблицы SurfaceFlinger, поэтому 25 fps -> 1080p25hz, а не
-# удвоение. Исправлено по факту живого прогона.
+# Режимы удержания подтверждены живым прогоном 2026-09-29 (полный прогон
+# `/tmp/afrd-acceptance-fix2.log`: OK=19 FAIL=0 SKIP=0). Для 25 fps тогда
+# ожидалось и наблюдалось 1080p25hz, потому что mode.prefer.exact на новом пути
+# молча игнорировался (R48). С 2026-10-01 ключ читается (профиль
+# mode.prefer.exact=0), поэтому 25 fps идёт в 1080p50hz удвоением 2:1 — ожидание
+# приведено к тому же виду, что в README и в плане приёмки.
 #
 # Запуск:
 #   sh tools/stand/acceptance_matrix.sh
@@ -33,7 +34,10 @@
 #   CLIPS           — клипы без расширения (long_24000_1001 long_25 long_50);
 #   CLIP_DIR        — каталог с клипами на устройстве (/sdcard/Download/afr);
 #   ORIG_MODE       — режим, куда демон обязан вернуться (1080p60hz);
-#   HOLD_WAIT/STOP_WAIT — паузы в секундах (8 / 5);
+#   HOLD_WAIT/STOP_WAIT — паузы в секундах (26 / 5); HOLD_WAIT должен быть больше
+#                     fps.measure.envelope.skip.ms + fps.measure.envelope.ms
+#                     (в профиле 2000 + 20000 = 22 с — решение по огибающей
+#                     принимается не раньше этого срока, поэтому 26 с);
 #   PLAYER          — компонент плеера без своего AFR (org.videolan.vlc/.StartActivity);
 #   PAUSE_TEST      — 1: добавить проверку паузы; PAUSE_CLIP — клип для неё;
 #   PAUSE_EXPECT    — keep (профиль pause.keep=1, по умолчанию) | restore (pause.keep=0);
@@ -62,7 +66,7 @@ SDIR=$(cd "$(dirname "$0")" && pwd)
 CLIP_DIR=${CLIP_DIR:-/sdcard/Download/afr}
 CLIPS=${CLIPS:-"long_24000_1001 long_25 long_50"}
 ORIG_MODE=${ORIG_MODE:-1080p60hz}
-HOLD_WAIT=${HOLD_WAIT:-8}
+HOLD_WAIT=${HOLD_WAIT:-26}
 STOP_WAIT=${STOP_WAIT:-5}
 PLAYER=${PLAYER:-org.videolan.vlc/.StartActivity}
 PAUSE_TEST=${PAUSE_TEST:-0}
@@ -202,7 +206,7 @@ for clip in $CLIPS; do
 
 	case "$clip" in
 		*23976*|*24000*) exp_hz=23.98; exp_mode=1080p24hz ;;
-		*_25)            exp_hz=25.00; exp_mode=1080p25hz ;;
+		*_25)            exp_hz=50.00; exp_mode=1080p50hz ;;
 		*_50)            exp_hz=50.00; exp_mode=1080p50hz ;;
 		*)               exp_hz=;      exp_mode= ;;
 	esac

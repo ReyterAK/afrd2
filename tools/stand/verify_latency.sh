@@ -1,6 +1,8 @@
 #!/system/bin/sh
 # AFRd2: приёмка с опросом режима каждые 0.5 с — видно, когда режим реально
 # появился в sysfs относительно строк лога демона (у демона свои метки времени).
+# Опрос 60 с (120 шагов): решение по огибающей требует skip.ms + envelope.ms
+# (в профиле 2 + 20 = 22 с), режим появляется примерно через 22 с после старта.
 CLIPS=${CLIPS:-"long_24000_1001 long_25 long_50"}
 CDIR=${CDIR:-/sdcard/Download/afr}
 DLOG=${DLOG:-/data/local/afrd.log}
@@ -18,7 +20,7 @@ for c in $CLIPS; do
 	am start -n $VLC -a android.intent.action.VIEW -d "file://$f" -t video/mp4 >/dev/null 2>&1
 
 	i=0
-	while [ "$i" -lt 30 ]; do
+	while [ "$i" -lt 120 ]; do
 		sd=$(sed -n 's/^[[:space:]]*sync_duration_num[[:space:]]*:[[:space:]]*//p' /sys/class/display/vinfo | head -1)
 		echo "  $(date +%H:%M:%S) $(cat /sys/class/display/mode) sync=${sd:-?}"
 		sleep 0.5

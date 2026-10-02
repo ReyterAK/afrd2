@@ -98,6 +98,74 @@
     <string name="notif_stop_afrd">Disable AFR</string>
     <string name="notif_start_afrd">Enable AFR</string>
     <string name="settings_advanced">Advanced settings</string>
+    <string name="not_applicable_atv14">(has no effect on Android 10-14)</string>
+    <string name="prefs_group_correct">Per-player frame rate calibration</string>
+    <string name="prefs_group_atv14">Settings for Android 10 and above</string>
+    <string name="prefs_fps_prefer_api">Trust the player hint</string>
+    <string name="prefsum_fps_prefer_api">If the player reports the frame rate itself via the AFRd API
+        (frame_rate_hint), prefer it over our own frame counter measurement.</string>
+    <string name="prefs_fps_measure_envelope">Observation before switching, ms</string>
+    <string name="prefsum_fps_measure_envelope">The daemon does not switch the mode until it has
+        collected this many milliseconds of observation. The rate is taken as the minimum over
+        sub-windows (5 s), so short bursts and repeated frames at segment boundaries do not derail
+        the decision. 20000 is the measured optimum: 24 fps YouTube videos are detected correctly in
+        86 % of cases; 0 — decide from the first sub-window.</string>
+    <string name="prefs_fps_measure_envelope_max">Observation limit, ms</string>
+    <string name="prefsum_fps_measure_envelope_max">How far to extend the observation when the
+        confidence interval does not fit one rate group (larger is more accurate but switches later).
+        Never less than the observation value.</string>
+    <string name="prefs_fps_measure_envelope_sub">Sub-window, ms</string>
+    <string name="prefsum_fps_measure_envelope_sub">Length of each sub-window the minimum rate is
+        taken over. 5 s is a compromise: over 5 s a ±1 frame counter error is ±0.2 fps at 24 fps.</string>
+    <string name="prefs_fps_measure_envelope_skip">Warm-up, ms</string>
+    <string name="prefsum_fps_measure_envelope_skip">Sub-windows starting earlier are ignored. Some
+        players under-report the rate while filling the buffer in the first seconds, and the minimum
+        is sensitive to such a dip.</string>
+    <string name="prefs_fps_measure_retries">Measurement attempts</string>
+    <string name="prefsum_fps_measure_retries">How many times to retry before leaving the mode as is
+        until the end of the video.</string>
+    <string name="prefs_fps_declared_crosscheck">Declared frame duration tolerance, %</string>
+    <string name="prefsum_fps_declared_crosscheck">If the declared frame duration (frame dur) differs
+        from the measurement by no more than this percent, the decision is taken from it.
+        0 — disabled.</string>
+    <string name="prefs_fps_recheck_delay">Re-measurement delay, ms</string>
+    <string name="prefsum_fps_recheck_delay">How many ms after switching to measure again and fix the
+        mode if the class differs (heals a biased first window). 0 — disabled.</string>
+    <string name="prefs_trigger_poll">Decoder poll period, ms</string>
+    <string name="prefsum_trigger_poll">How often to check /sys/class/vdec/vdec_status to notice video
+        start and stop.</string>
+    <string name="prefs_trigger_start_debounce">Start debounce, ms</string>
+    <string name="prefsum_trigger_start_debounce">Delay after video appears, to filter out bounce.</string>
+    <string name="prefs_trigger_stop_debounce">Stop debounce, ms</string>
+    <string name="prefsum_trigger_stop_debounce">Delay before restoring the original mode after video
+        ended.</string>
+    <string name="prefs_pause_keep">Keep mode while paused</string>
+    <string name="prefsum_pause_keep">On — the mode is kept on pause; off — the original mode is restored
+        on pause and set again on resume.</string>
+    <string name="prefs_switch_restore_on_stop">Restore mode on stop</string>
+    <string name="prefsum_switch_restore_on_stop">Restore the original HDMI mode when video ends.</string>
+    <string name="prefs_fps_correct_enable">Apply player calibration</string>
+    <string name="prefsum_fps_correct_enable">Some players feed frames to the decoder faster than
+        nominal (e.g. YouTube on a 24 fps video measures ~25.2 fps, so AFR picks 25 Hz).
+        The correction is applied to the measurement before the mode is chosen. On by default:
+        the AV1 correction below is active, the per-player list is empty.</string>
+    <string name="prefs_fps_correct_list">Corrections (package=percent)</string>
+    <string name="prefsum_fps_correct_list">Space separated list, e.g.
+        com.google.android.youtube.tv=5.0. Percent is how much the player over-reports the rate.
+        Measure it from the daemon log line &quot;плеер &lt;пакет&gt;: поправка замера ±P %
+        (fps.correct.list)&quot;; the decision is shown by &quot;видео: &lt;HZ&gt; Гц по огибающей
+        (N с наблюдения, горизонт M мс), ищу режим&quot;. Compare with the nominal rate of the video.</string>
+    <string name="prefs_fps_correct_av1_offset">AV1 correction (frames/s)</string>
+    <string name="prefsum_fps_correct_av1_offset">Additive correction for the AV1 decoder path
+        over-reporting the frame counter. Measured: AV1 gives +0.5 frames/s versus H.264 on the same
+        file. Recommended value is 0.3, not 0.5: an error of "24 fps detected as 25 Hz" is preferable
+        to the reverse, while 0.5 pushes honest 25-fps content into 24 Hz. Default 0.3 (enabled):
+        the envelope observation already removes most of the bias.
+        Applied only when player calibration is enabled (see the switch above): with it off the value
+        is neither used nor logged. Android 10-14.</string>
+    <string name="prefs_fps_correct_av1_pkg">AV1 correction: package only</string>
+    <string name="prefsum_fps_correct_av1_pkg">Limit the AV1 correction to one player package
+        (fps.correct.av1.pkg). Empty — any player.</string>
     <string name="mode_use_fract_auto">Auto (use best)</string>
     <string name="mode_use_fract_use">Only fractional</string>
     <string name="mode_use_fract_int">Only integer</string>
