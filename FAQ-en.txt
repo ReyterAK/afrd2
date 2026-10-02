@@ -76,7 +76,7 @@
 ! 14 seconds). The observation window is configurable in "Settings for
 ! Android 10 and above" ("Observation before switching", "Early decision").
 
-? How to make the screen blink less during playback?
+? How to make the screen blink less often during playback?
 
 ! Turn off "Restore mode on stop" - this is the analogue of the old "Stop delay"
 ! option: after video ends the mode is not restored, so there is no extra switch.
