@@ -216,6 +216,10 @@ typedef struct
 	uint32_t original_hz;
 	/// afrd version suffix
 	char ver_sfx [8];
+	/// признак жизни: демон увеличивает на каждой итерации своего цикла.
+	/// Приложение-сторож (R57) отличает по нему живого демона от мёртвого:
+	/// процессы root ему не видны (/proc смонтирован с hidepid=invisible)
+	uint32_t heartbeat;
 	/// a copy of crc32 from first field
 	uint32_t crc32_copy;
 } __attribute__((packed)) afrd_shmem_t;

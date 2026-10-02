@@ -228,6 +228,16 @@ static struct
 	int original_hz;	/* 24.8 fixed-point */
 } g_atv14_state;
 
+/* Признак жизни для сторожа приложения (R57): heartbeat растёт на каждой
+ * итерации цикла, поэтому в shmem меняется CRC-штамп. Мёртвый демон его не
+ * обновляет — приложение это видит и перезапускает демон (само оно процессы
+ * root не наблюдает: /proc смонтирован с hidepid=invisible). Дёшево: 60 байт. */
+static void stats_heartbeat ()
+{
+	g_afrd_stats.heartbeat++;
+	shmem_update ();
+}
+
 static void update_stats ()
 {
 	g_afrd_stats.enabled = g_enable;
@@ -1315,6 +1325,10 @@ static int preferred_mode_id (const platform_t *plat)
  * Возврат: 0 = ок (в т.ч. EINTR), -1 = poll сорвался. */
 static int atv14_wait (int ms)
 {
+	/* вызывается раз за итерацию во всех ветках run_atv14 — удобная точка
+	 * для «сердцебиения» (признак жизни демона для сторожа приложения) */
+	stats_heartbeat ();
+
 	struct pollfd pfd [4];
 	memset (pfd, 0, sizeof (pfd));
 
