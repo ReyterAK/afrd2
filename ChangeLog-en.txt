@@ -1,5 +1,52 @@
 AFRd2 — a fork of AFRd (original by Andrey Zabolotnyi, anpaza @ 4pda)
 
+0.3.3 Fri Oct 02 19:00:00 MSK 2026
+
+    Display attributes (HDR Mode, HDR Policy, HDR Priority, SDR Mode, FORCE HDR
+    Mode) are read from the built-in service and shown in the log (with -v) and
+    in the API status reply. The daemon only reads them: HDR/SDR modes are still
+    chosen by the system and the player.
+
+    A memory leak on config reload is fixed: the pointer array of the string
+    lists (decoder blacklists) was not freed.
+
+0.3.3 Fri Oct 02 18:20:00 MSK 2026
+
+    Fixed a daemon crash on config reload (the reconf command or editing
+    afrd.ini): the freed pointer to the current color space was not cleared, so
+    the next initialization freed the same memory again (double free, heap
+    corruption). It took two reloads in a row — reproduced live on ATV14. The
+    file-change check on the legacy path now uses the shared function (one rule
+    instead of two copies).
+
+0.3.3 Fri Oct 02 18:10:00 MSK 2026
+
+    Config reload (the reconf API command or editing afrd.ini) now works on
+    Android 10-14 too. Previously the new path read the keys once on entry, and
+    the daemon had to be restarted after editing the file.
+
+    The daemon notices the file change and the reconf command, restores the
+    original mode, releases the mode-switch flag, re-reads the config and keeps
+    running — without restarting the process and without interrupting the API.
+
+0.3.3 Fri Oct 02 18:00:00 MSK 2026
+
+    The daemon no longer gets stuck on decoder leftovers and can detect the rate
+    when the frame counter is silent; color space settings are applied on
+    Android 10-14 again.
+
+    If the player is closed but a decoder instance remains (the frame counter
+    stands still), the daemon notices that the application has left the
+    foreground and releases the mode hold — previously the mode stayed with the
+    mode-switch flag set until a reboot.
+
+    When the decoder frame counter is silent but the picture is running, the rate
+    is taken from video layer submission — a source that does not depend on the
+    counter.
+
+    The color space (cs.select rules) is applied on Android 10-14 as well: the
+    value is set through the built-in service after a mode switch.
+
 0.3.3 Fri Oct 02 12:00:00 MSK 2026
 
     The application and the daemon are now called AFRd2.
