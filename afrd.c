@@ -2934,7 +2934,10 @@ void afrd_fini ()
 	uevent_filter_fini (&g_filter_vdec);
 	uevent_filter_fini (&g_filter_hdmi);
 	uevent_filter_fini (&g_filter_hdcp);
+	/* оба списка: g_vdec_blacklist и g_frhint_vdec_blacklist загружаются
+	 * в afrd_init() заново на каждой перезагрузке конфига */
 	strlist_free (&g_vdec_blacklist);
+	strlist_free (&g_frhint_vdec_blacklist);
 	g_mode_blacklist_rates_count = 0;
 
 	g_enable = false;
