@@ -206,9 +206,6 @@
     <string name="about_history">История версий</string>
     <string name="about_authors">Разработчик программы</string>
     <string name="about_me">Reyter / Reyter @ 4PDA + DeepSeek</string>
-    <string name="about_thanks">Особая благодарность</string>
-    <string name="about_testing">Тестирование</string>
-    <string name="about_supporter">Болельщик</string>
     <string name="menu_desc_about">Авторы, история версий</string>
     <string name="prefs_toast">Показ частоты развёртки при изменении</string>
     <string name="prefsum_toast">При изменении показать частоту развёртки в маленьком всплывающем
@@ -217,7 +214,6 @@
     <string name="menu_faq">ЧАВО</string>
     <string name="menu_desc_faq">ЧАсто задаваемые ВОпросы</string>
     <string name="faq_title">Часто Задаваемые Вопросы и полезные советы</string>
-    <string name="about_testing_support">Тестирование и поддержка</string>
     <string name="afrdctl_version">Версия %s-%s</string>
     <string name="prefs_vdec_blacklist">Чёрный список декодеров видео</string>
     <string name="prefsum_vdec_blacklist">Список декодеров видео, для которых afrd не будет

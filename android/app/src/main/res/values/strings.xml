@@ -207,15 +207,6 @@
     <string name="about_history">Version history</string>
     <string name="about_authors">Program made by</string>
     <string name="about_me">Reyter / Reyter @ 4PDA + DeepSeek</string>
-    <string name="about_thanks">Special thanks to</string>
-    <string name="about_kigba" translatable="false">kigba @ 4pda</string>
-    <string name="about_sasvlad" translatable="false">sasvlad @ 4pda</string>
-    <string name="about_full_length" translatable="false">full-length @ 4pda</string>
-    <string name="about_yadoff" translatable="false">yadoff @ 4pda</string>
-    <string name="about_serge_kononoff" translatable="false">serge_kononoff @ 4pda</string>
-    <string name="about_testing">Testing</string>
-    <string name="about_testing_support">Testing &amp; Support</string>
-    <string name="about_supporter">Supporter</string>
     <string name="about_fork">This application is a fork of AFRd by</string>
     <string name="about_orig_author">Andrey Zabolotnyi / anpaza @ 4pda</string>
     <string name="about_orig_email" translatable="false">zapparello@ya.ru</string>

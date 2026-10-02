@@ -1145,20 +1145,30 @@ static bool parse_top_package (const char *dump, char *out, size_t out_sz)
 /* Пакет плеера текущего видео. Пустая строка — не удалось определить. */
 static char g_cur_pkg [64];
 
-static void atv14_probe_package (const platform_t *plat)
+/* Приложение на переднем плане.
+ * Возврат: 0 — разобрано (*out заполнен), -1 — команда не удалась,
+ * -2 — вывод не разобран. */
+static int atv14_top_package (const platform_t *plat, char *out, size_t out_sz)
 {
-	g_cur_pkg [0] = 0;
+	if (out && out_sz)
+		out [0] = 0;
+
 	if (!plat->activity_dump_cmd)
-		return;
+		return -1;
 
 	static char dump [4096];
 	if (exec_capture (plat->activity_dump_cmd, dump, sizeof (dump)) != 0)
-	{
-		trace (1, "не удалось определить приложение на переднем плане\n");
-		return;
-	}
+		return -1;
 
-	if (!parse_top_package (dump, g_cur_pkg, sizeof (g_cur_pkg)))
+	return parse_top_package (dump, out, out_sz) ? 0 : -2;
+}
+
+static void atv14_probe_package (const platform_t *plat)
+{
+	int rc = atv14_top_package (plat, g_cur_pkg, sizeof (g_cur_pkg));
+	if (rc == -1)
+		trace (1, "не удалось определить приложение на переднем плане\n");
+	else if (rc == -2)
 		trace (1, "приложение на переднем плане не разобрано\n");
 }
 
@@ -1390,9 +1400,11 @@ static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skip
  * Возврат true — подача вдвое реже ожидаемого; period_ms и avg_ms — для лога.
  * Разбор делает awk на устройстве (`dumpsys SurfaceFlinger --latency`):
  * первая строка — период дисплея в нс, дальше интервалы фактической подачи. */
-static bool atv14_cadence_halved (int expect_ms, int *period_ms, int *avg_ms)
+static bool atv14_layer_stats (double *period_ms, double *avg_ms, int *count)
 {
-	*period_ms = *avg_ms = 0;
+	*period_ms = *avg_ms = 0.0;
+	if (count)
+		*count = 0;
 
 	char out [4096];
 	const char *cmd =
@@ -1403,13 +1415,28 @@ static bool atv14_cadence_halved (int expect_ms, int *period_ms, int *avg_ms)
 		"NF==3 && $2+0>0 && $2+0<1e17 { n++; t[n]=$2+0 } "
 		"END { if (n<3) exit; m=0; s=0; "
 		"for (i=2;i<=n;i++) { d=(t[i]-t[i-1])/1e6; if (d>0) { m++; s+=d } } "
-		"if (m>0) printf \"%.2f %.2f\", p, s/m }'";
+		"if (m>0) printf \"%.2f %.2f %d\", p, s/m, m }'";
 
 	if (exec_capture (cmd, out, sizeof (out)) != 0)
 		return false;
 
 	double p = 0, a = 0;
-	if ((sscanf (out, "%lf %lf", &p, &a) != 2) || (a <= 0) || (p <= 0))
+	int n = 0;
+	if ((sscanf (out, "%lf %lf %d", &p, &a, &n) != 3) || (a <= 0) || (p <= 0))
+		return false;
+
+	*period_ms = p;
+	*avg_ms = a;
+	if (count)
+		*count = n;
+
+	return true;
+}
+
+static bool atv14_cadence_halved (int expect_ms, int *period_ms, int *avg_ms)
+{
+	double p = 0, a = 0;
+	if (!atv14_layer_stats (&p, &a, NULL))
 		return false;
 
 	*period_ms = (int) (p + 0.5);
@@ -1417,6 +1444,33 @@ static bool atv14_cadence_halved (int expect_ms, int *period_ms, int *avg_ms)
 
 	double base = ((double) expect_ms > p) ? (double) expect_ms : p;
 	return (a > 1.5 * base);
+}
+
+/* Запасной источник частоты: средний интервал подачи видео-слоя. Он не зависит
+ * от счётчика кадров декодера (тот на ATV14 бывает завышен, а иногда и вовсе
+ * замирает), поэтому по нему можно судить о частоте контента. Если слой
+ * обновляется на частоте дисплея (кадры идут «как есть»), о контенте это ничего
+ * не говорит — тогда 0. Возврат: fixed-point 24.8 Гц или 0. */
+static int atv14_layer_fps_hz (void)
+{
+	double p = 0, a = 0;
+	int n = 0;
+	if (!atv14_layer_stats (&p, &a, &n))
+		return 0;
+
+	if ((n < 60) || (a <= 0.0))
+		return 0;			/* слишком мало данных */
+
+	if (a <= p * 1.05)
+		return 0;			/* слой обновляется на частоте дисплея */
+
+	unsigned long long frames = (unsigned long long) (n - 1);
+	unsigned long long dt_us = (unsigned long long) (a * 1000.0 * (double) frames + 0.5);
+	int hz = 0;
+	if (!fps_classify_window_corrected (frames, dt_us, 2000, 1.0, 0.0, &hz))
+		return 0;			/* интервал не уложился в класс */
+
+	return hz;
 }
 
 /* Отказ от удержания режима: частоту определить не удалось — вернуть исходный
@@ -1536,6 +1590,12 @@ static int run_atv14 (const platform_t *plat)
 	/* R56: одноразовая перепроверка замера после смены режима */
 	mstime_t recheck_timer = 0;
 	bool recheck_armed = false;
+	/* Залипший канал: плеер, который вёл текущее видео, и число подряд
+	 * идущих проверок, где он уже не на переднем плане */
+	char video_pkg [64] = { 0 };
+	int pkg_mismatch = 0;
+	unsigned long long pkg_probe_us = 0;
+
 	/* Заморозка счётчика кадров (AV1 и т.п.): сколько живём без роста и
 	 * сообщили ли уже об этом (логируем один раз на видео) */
 	unsigned long long counter_last_grow_us = 0;
@@ -1831,7 +1891,23 @@ static int run_atv14 (const platform_t *plat)
 			bool again_active = false;
 			if (vdec_probe_active (plat->vdec_status, &again_active) == 0 &&
 			    again_active == new_video)
+			{
 				video = new_video;
+
+				/* Запоминаем приложение, которое ведёт это видео: по нему
+				 * ловим «залипший» инстанс декодера (плеер ушёл, а канал
+				 * остался и счётчик стоит) */
+				if (new_video)
+				{
+					video_pkg [0] = 0;
+					pkg_mismatch = 0;
+					pkg_probe_us = 0;
+					if (atv14_top_package (plat, video_pkg, sizeof (video_pkg)) == 0)
+						trace (2, "видео ведёт приложение %s\n", video_pkg);
+					else
+						video_pkg [0] = 0;
+				}
+			}
 			else
 				continue;	/* дребезг старта/стопа — игнорируем */
 		}
@@ -1871,12 +1947,48 @@ static int run_atv14 (const platform_t *plat)
 			paused = (still >= 2);
 			prev_frames = v0.frames;
 			have_prev_frames = true;
+
+			/* Залипший канал (см. §todo): счётчик стоит, режим удержан, но
+			 * приложение, которое вело это видео, ушло с переднего плана —
+			 * значит в системе остался инстанс декодера без плеера. Настоящая
+			 * пауза так не выглядит (плеер остаётся на экране), а при
+			 * pause.keep=1 режим с флагом backdoor иначе остался бы навсегда.
+			 * Проверяем не чаще раза в 5 с и требуем двух подтверждений. */
+			if (paused && held && video_pkg [0] &&
+			    (now_us () - pkg_probe_us) > 5000000ULL)
+			{
+				char top [64] = { 0 };
+				pkg_probe_us = now_us ();
+				if (atv14_top_package (plat, top, sizeof (top)) == 0)
+				{
+					if (top [0] && (strcmp (top, video_pkg) != 0))
+					{
+						if (++pkg_mismatch >= 2)
+						{
+							trace (0, "плеер %s ушёл с переднего плана (сейчас %s), "
+							       "а счётчик кадров стоит — снимаю удержание режима\n",
+							       video_pkg, top);
+							atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
+							video = false;
+							want_sf_id = -1;
+							video_pkg [0] = 0;
+							pkg_mismatch = 0;
+							fps_env_reset (&env);
+							env_growing = false;
+						}
+					}
+					else
+						pkg_mismatch = 0;
+				}
+			}
 		}
 		else
 		{
 			still = 0;
 			paused = false;
 			have_prev_frames = false;
+			video_pkg [0] = 0;
+			pkg_mismatch = 0;
 		}
 
 		/* pause.keep==0: пауза обрабатывается как стоп (guard вернёт режим) */
@@ -2025,6 +2137,32 @@ static int run_atv14 (const platform_t *plat)
 					trace (0, "счётчик кадров декодера не растёт %llu с (декодер активен, "
 					       "частота неизвестна) — режим не переключаю\n",
 					       (unsigned long long)((sample_t - counter_last_grow_us) / 1000000ULL));
+
+					/* Запасной источник — подача видео-слоя: она от счётчика
+					 * не зависит, а картинка идёт. Пробуем один раз за эпизод
+					 * (флаг снимется, когда счётчик снова пойдёт). */
+					int lhz = atv14_layer_fps_hz ();
+					if (lhz)
+					{
+						sf_mode_t act;
+						int w = 1920, h = 1080;
+						if (sf_active_mode (plat, &act) == 0)
+						{
+							w = act.width;
+							h = act.height;
+						}
+
+						int id = atv14_select_mode (lhz, w, h);
+						if (id >= 0)
+						{
+							want_sf_id = id;
+							trace (0, "частота по подаче видео-слоя: " HZ_FMT
+							       " Гц (счётчик кадров молчит) — переключаю режим\n",
+							       HZ_ARGS (lhz));
+						}
+					}
+					else
+						trace (1, "подача видео-слоя частоту не дала\n");
 				}
 
 				bool env_full = fps_env_ready (&env, env_us);
