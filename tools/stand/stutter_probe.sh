@@ -1,0 +1,111 @@
+#!/system/bin/sh
+# AFRd2: прогон ролика с полной инструментацией «гладко/дёргано» (журнал, §19).
+#
+# Пишет:
+#   /data/local/tmp/<label>.csv — раз в секунду: uptime, счётчики каналов, mode, sync
+#   /data/local/tmp/<label>.log — метки (старт/стоп, каналы, вендорские vsync-события, лог демона)
+#   /data/local/tmp/<label>.lat.<i> — дампы `dumpsys SurfaceFlinger --latency` видео-слоя
+#     (шаг i=12 — до переключения, i=SECS-8 — после; вердикт считается по каждому дампу)
+# и печатает вердикт по ровности фактической подачи кадров слоя (интервалы actualPresentTime).
+#
+# Запуск (ТВ включён; демон уже поднят на стенде):
+#   adb -s 192.168.88.50:5555 shell 'URL="https://www.youtube.com/watch?v=zhApeaHMvfs" \
+#       sh /data/local/tmp/stutter_probe.sh run1'
+#
+# Переменные: URL (ролик), SECS (секунд наблюдения, по умолчанию 45),
+#             PKG/START (плеер; по умолчанию штатный YouTube TV).
+
+L=${1:-run}
+URL=${URL:-https://www.youtube.com/watch?v=zhApeaHMvfs}
+SECS=${SECS:-45}
+PKG=${PKG:-com.google.android.youtube.tv}
+START=${START:-}
+DIR=/data/local/tmp
+CSV=$DIR/$L.csv
+LOG=$DIR/$L.log
+LATP=$DIR/$L.lat
+
+: > "$CSV"; : > "$LOG"
+rm -f "$LATP".* 2>/dev/null
+
+chans () { grep -c 'device name' /sys/class/vdec/vdec_status 2>/dev/null; }
+fcount () { sed -n 's/.*frame count : //p' /sys/class/vdec/vdec_status 2>/dev/null; }
+mode () { cat /sys/class/display/mode 2>/dev/null; }
+syncnum () { grep -m1 sync_duration_num /sys/class/display/vinfo 2>/dev/null | tr -dc 0-9; }
+backdoor () { dumpsys SurfaceFlinger 2>/dev/null | grep -m1 -o 'debugDisplayModeSetByBackdoor=[a-z]*'; }
+
+echo "start label=$L url=$URL mode=$(mode) uptime=$(cut -d' ' -f1 /proc/uptime)" >> "$LOG"
+logcat -c 2>/dev/null
+am force-stop "$PKG" >/dev/null 2>&1
+sleep 3
+
+if [ -n "$START" ]; then
+	am start -n "$START" -a android.intent.action.VIEW -d "$URL" >/dev/null 2>&1
+else
+	am start -a android.intent.action.VIEW -d "$URL" >/dev/null 2>&1
+fi
+
+i=0
+while [ "$i" -lt 25 ]; do
+	[ -n "$(fcount | head -1)" ] && break
+	sleep 1; i=$((i + 1))
+done
+echo "decoder_up_after=${i}s channels=$(chans)" >> "$LOG"
+
+i=0
+while [ "$i" -lt "$SECS" ]; do
+	t=$(cut -d' ' -f1 /proc/uptime)
+	cf=$(fcount | head -1)
+	cl=$(fcount | tail -1)
+	ch=$(chans)
+	echo "$t,$ch,${cf:-0},${cl:-0},$(mode),$(syncnum)" >> "$CSV"
+
+	# латентность видео-слоя: в середине прогона и перед стопом
+	if [ "$i" = 12 ] || [ "$i" = $((SECS - 8)) ]; then
+		lay=$(dumpsys SurfaceFlinger --list 2>/dev/null | grep 'SurfaceView\[' | grep -i blast | head -1)
+		echo "LAT i=$i layer=$lay" >> "$LOG"
+		[ -n "$lay" ] && dumpsys SurfaceFlinger --latency "$lay" > "$LATP.$i" 2>&1
+	fi
+	sleep 1; i=$((i + 1))
+done
+
+am force-stop "$PKG" >/dev/null 2>&1
+sleep 4
+echo "meta mode=$(mode) backdoor=$(backdoor) uptime=$(cut -d' ' -f1 /proc/uptime)" >> "$LOG"
+
+# вендорский путь: события FRA/HWC (журнал, §19.4)
+logcat -d -v time 2>/dev/null | grep -E \
+	"frameRateDisplay|setVideoLayerOn|adjustVsyncMode|configure width|Created component|waitMixVsync|wait for hw vsync|ModePolicy" \
+	>> "$LOG"
+echo "--- daemon ---" >> "$LOG"
+tail -n 40 /data/local/afrd.log >> "$LOG"
+
+echo "=== $L: режим по секундам (mode sync) ==="
+awk -F, 'NR==1{p="";s=""} {k=$5" "$6; if(k!=p){printf "  t=%s %s\n",$1,k; p=k}}' "$CSV"
+
+echo "=== $L: вердикт ровности подачи слоя видео ==="
+echo "  норма: интервалы чередуются 2/3 периода 60-Гц сетки (≈33/50 мс при 24 Гц),"
+echo "  дёрганость = интервал > 1.35×среднего (удержание кадра сверх обычного)"
+for f in "$LATP".*; do
+	[ -f "$f" ] || continue
+	awk '
+	NF == 3 && $2 + 0 > 0 && $2 + 0 < 1e17 { n++; t[n] = $2 + 0 }
+	END {
+		if (n < 3) { printf "    no-data n=%d\n", n; exit }
+		m = 0; sum = 0; max = 0; min = 0
+		for (i = 2; i <= n; i++) {
+			d = (t[i] - t[i-1]) / 1e6; if (d <= 0) continue
+			m++; sum += d
+			if (d > max) max = d
+			if (min == 0 || d < min) min = d
+		}
+		if (m < 2) { printf "    %s no-data n=%d\n", FILENAME, n; exit }
+		avg = sum / m
+		hang = 0
+		for (i = 2; i <= n; i++) { d = (t[i] - t[i-1]) / 1e6; if (d > 1.35 * avg) hang++ }
+		printf "    %s n=%d avg=%.2fms min=%.2fms max=%.2fms удержаний=%d %s\n",
+		       FILENAME, n, avg, min, max, hang, (hang == 0 ? "SMOOTH" : "JANKY")
+	}' "$f"
+done
+
+echo "DONE $L"
