@@ -44,8 +44,10 @@ static void test_notes (void)
 	/* ключи старого пути */
 	assert (cfgkeys_note ("mode.extra", CFGKEY_LEGACY) == NULL);
 	assert (cfgkeys_note ("mode.extra", CFGKEY_ATV14) != NULL);
+	/* cs.* с 2026-10-02 действуют на обоих путях: на ATV14 — через
+	 * вендорский сервис, а не только записью в sysfs */
 	assert (cfgkeys_note ("cs.select", CFGKEY_LEGACY) == NULL);
-	assert (cfgkeys_note ("cs.select", CFGKEY_ATV14) != NULL);
+	assert (cfgkeys_note ("cs.select", CFGKEY_ATV14) == NULL);
 	assert (cfgkeys_note ("uevent.filter.vdec", CFGKEY_LEGACY) == NULL);
 	assert (cfgkeys_note ("uevent.filter.vdec", CFGKEY_ATV14) != NULL);
 

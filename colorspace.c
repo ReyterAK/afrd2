@@ -435,8 +435,16 @@ void colorspace_fini ()
 
 	g_cs_filter_size = 0;
 
-	if (g_cs_default)
+	/* Указатель обязан быть обнулён: следующий afrd_init() (перезагрузка
+	 * конфига: reconf или правка afrd.ini) вызовет colorspace_refresh(),
+	 * которая освобождает g_cs_default перед повторным чтением, — без
+	 * обнуления это освобождение уже освобождённой памяти (двойной free,
+	 * повреждение кучи и падение демона; воспроизведено живьём на ATV14
+	 * при второй перезагрузке конфига подряд). */
+	if (g_cs_default) {
 		free (g_cs_default);
+		g_cs_default = NULL;
+	}
 
 	g_cs_list_path = g_cs_path = NULL;
 }
