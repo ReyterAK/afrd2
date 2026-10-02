@@ -1,5 +1,20 @@
 AFRd2 — a fork of AFRd (original by Andrey Zabolotnyi, anpaza @ 4pda)
 
+0.3.3 Fri Oct 02 19:45:00 MSK 2026
+
+    The AV1 correction (fps.correct.*) is now off by default. The owner compared on
+    a TV (all picture "enhancers" disabled): 24 fps video in a 25 Hz mode looks
+    noticeably better than 25 fps in a 24 Hz mode. The correction moves the
+    measurement downwards, i.e. can produce exactly the worse side, while its gain
+    is small and does not reproduce from run to run. The keys remain — enable them
+    deliberately, for a specific player or decoder path.
+
+    Application settings now take effect immediately: after the config is written
+    the daemon is woken up, so the "enable automatic frame rate matching" switch
+    (and the notification "AFR on/off" action) apply within ~5 seconds, without
+    restarting the daemon. Previously turning it off had no effect until the daemon
+    was restarted.
+
 0.3.3 Fri Oct 02 19:00:00 MSK 2026
 
     Display attributes (HDR Mode, HDR Policy, HDR Priority, SDR Mode, FORCE HDR
