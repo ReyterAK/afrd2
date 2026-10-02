@@ -65,6 +65,36 @@
 ! video stream, the quality of the hardware decoder, the program
 ! for playing video, the setup of your TV.
 
+? Why does the mode switch not immediately, but 10-20 seconds after video start?
+
+! The frame rate is detected from the hardware decoder frame counter. The counter
+! can be overestimated (repeated frames at segment boundaries, AV1 decoder
+! specifics), so a short measurement cannot tell 24 and 25 fps apart; the
+! decision is taken over an observation window of several seconds.
+
+! When two independent measurements agree, the switch happens earlier (about
+! 14 seconds). The observation window is configurable in "Settings for
+! Android 10 and above" ("Observation before switching", "Early decision").
+
+? How to make the screen blink less during playback?
+
+! Turn off "Restore mode on stop" - this is the analogue of the old "Stop delay"
+! option: after video ends the mode is not restored, so there is no extra switch.
+! Applications with their own frame rate matching keep working.
+
+! "Keep mode while paused" is enabled by default: on pause the mode is kept, and
+! on resume it is not switched again.
+
+? Sometimes after switching the picture goes with jerks, as if 10-15 frames per second.
+
+! This is a known peculiarity of mode switching: the system does not always
+! re-configure synchronization for the new rate, and frames reach the display
+! twice as rarely. The daemon checks delivery after switching and, if this
+! happened, switches the mode once more (away and back); the log will contain
+! a "delivery twice as rare" line.
+
+! If the jerks persist, restart AFRd and, if it repeats, send the log.
+
 ? Green-ish/purple-ish image during playback
 ? Sometimes during playback image becomes "greenish" (sometimes:
 ? "purplish"). What do I do?
@@ -101,6 +131,10 @@
 ! mode - it is not possible to transmit an RGB stream at 4k resolution
 ! and >30hz refresh rates via HDMI 1.x.
 
+! On Android 10 and above this does not apply: colors are managed by the
+! system and the player (including HDR/Dolby Vision), the daemon does not
+! apply color space settings.
+
 ? My TV doesn't "like" certain refresh rates
 ? I use the "Prefer exact refresh rates" option but, still, I want to use
 ? 60Hz refresh instead of 30Hz. How can I do it?
@@ -112,19 +146,18 @@
 ? Why after video start the screen goes to black for some time, even if
 ? video framerate is not different from display refresh rate?
 
-! When video starts, after a short interval AFRd will turn the screen to
-! black to avoid displaying the first frames of the video, after which
-! usually a refresh rate switch happens, which is painful for eyes.
+! On Android 6-9 AFRd turns the screen to black shortly after video start to
+! avoid displaying the first frames, after which a refresh rate switch usually
+! happens and is painful for eyes. This feature can be turned off in preferences.
 
-! So, to make the switch easier for eyes it was found that a preliminary
-! switch to black helps.
+! But at the moment when AFRd switches display to black it doesn't know yet the
+! video framerate - detection takes from half to a few seconds, so an
+! unnecessary black screen can't be avoided completely.
 
-! But at the moment when AFRd switches display to black it doesn't know
-! yet the video framerate - detection is a lengthy process taking from
-! half to a few seconds. So, at the time AFRd turns display off it doesn't
-! know yet the framerate and can't avoid the unneccessary black screen.
-
-! If you wish, you can turn off this feature in preferences.
+! On Android 10 and above this does not apply: the daemon does not turn the
+! screen to black. It first measures the frame rate (this takes 10-20 seconds)
+! and only then switches the mode, so the "click" happens 10-20 seconds after
+! video start, not at the very beginning.
 
 ? Why display doesn't turn off when I start one video immediately after another?
 
@@ -138,6 +171,9 @@
 
 ! If you want display to turn off after the start of video, wait first
 ! for the original refresh rate to restore.
+
+! On Android 10 and above this does not apply: the screen is never turned
+! to black.
 
 ? What is the meaning of "Fractional rate usage policy" option?
 ? What does the option that allows to choose between "fractional" and
@@ -157,17 +193,21 @@
 ! a slight error here will result in just a single frame inserted
 ! or removed every ~41 seconds.
 
-? Why refresh rate doesn't switch on low-res videos in KODI/SPMC?
-? When playing in KODI/SPMC videos with low resolution (less than 720p),
-? refresh rate doesn't switch. Same happens with MX Player when using
-? the "SW" decoder option.
+? Why refresh rate doesn't switch in my media/IPTV player?
 
-! AFRd supports automatical framerate switching only when using the
-! hardware decoder. KODI developers decided to use, when possible
-! (if enough processor power) the software decoder.
+! AFRd supports automatic frame rate switching only when the hardware decoder is
+! used. Many players are able to use the software decoder - usually because of
+! compatibility problems between the video and the hardware decoder. In such
+! cases either use the frame rate matching built into the application (if any),
+! or change its settings to use the hardware decoder.
 
-! In SPMC you can solve this problem by changing the options
-! "Accelerate MPEG2/MPEG4/h264/hevc" to "Always" in section
-! "Settings -> Player". In MX Player problem is solved by choosing
-! "HW" or "HW+" decoder option. In KODI this problem has no solution
-! yet.
+? Do I need root (Superuser) privileges?
+
+! Yes. AFRd switches the display mode through system mechanisms and requires
+! Administrator rights - both on Android 6-9 and on Android 10 and above. The
+! application asks for them on the first run (Magisk/su).
+
+! On Android 10 and above an additional mechanism built into the firmware is
+! required (SurfaceFlinger "backdoor"). If the vendor removed it, the daemon
+! switches to the passive mode: only the API and statistics work, the mode is
+! not switched.
