@@ -2712,7 +2712,7 @@ int afrd_run ()
 			    !mstime_enabled (&g_ost_hdmi)) {
 				mstime_arm (&g_ost_config, CONFIG_CHECK_PERIOD);
 				time_t cmt = mtime (g_config);
-				if ((cmt != 0) && (cmt != g_config_mtime)) {
+				if (config_mtime_changed (cmt, g_config_mtime)) {
 					trace (1, "config file %s changed, reloading\n", g_config);
 					ret = 1;
 					break;
