@@ -45,6 +45,14 @@
         android:fillAlpha="1"
         android:strokeLineCap="butt"/>
     <path
+        android:pathData="M28.3,31.4 C28.3,28.0 35.7,28.0 35.7,31.4 C35.7,34.4 29.0,36.6 28.3,43.2 L35.7,43.2"
+        android:strokeAlpha="1"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:strokeColor="#ff000000"/>
+    <path
         android:pathData="M31,6.2543h2v4h-2z"
         android:strokeAlpha="1"
         android:strokeWidth="4"

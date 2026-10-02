@@ -3,11 +3,11 @@ apply plugin: 'com.android.application'
 android {
     compileSdkVersion 27
     defaultConfig {
-        applicationId 'ru.cobra.zap.afrd'
+        applicationId 'ru.reyter.afrd2'
         minSdkVersion 23
         compileSdkVersion 27
-        versionCode 2
-        versionName '0.3.2'
+        versionCode 303
+        versionName '0.3.3'
         targetSdkVersion 28
         versionNameSuffix ''
         project.ext.set ('archivesBaseName', "${applicationId}-${versionName}${versionNameSuffix}".toString ())

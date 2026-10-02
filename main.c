@@ -34,7 +34,7 @@
 
 #include "afrd.h"
 
-const char *g_version = "0.3.2";
+const char *g_version = "0.3.3";
 const char *g_ver_sfx = "";
 const char *g_bdate = BDATE;
 const char *g_config = "/etc/afrd.ini";
