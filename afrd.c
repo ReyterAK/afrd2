@@ -37,6 +37,11 @@
 #define CMSG_FOREACH(cmsg, mh)                                          \
 	for ((cmsg) = CMSG_FIRSTHDR(mh); (cmsg); (cmsg) = CMSG_NXTHDR((mh), (cmsg)))
 
+/* Выдержка перед повторным чтением HDR/SDR-атрибутов после смены режима:
+ * система выставляет их асинхронно, значения «в момент» ещё старые (та же
+ * причина, по которой цвета применяются второй раз; см. fps.cadence.fix.ms). */
+#define HDRINFO_SETTLE_MS	2500
+
 const char *g_hdmi_dev = NULL;
 const char *g_mode_path = NULL;
 
@@ -1672,6 +1677,10 @@ static int run_atv14 (const platform_t *plat)
 	int cadence_fixes = 0;
 	/* ожидаемый интервал подачи контента (мс) — из измеренной частоты */
 	int cadence_expect_ms = 0;
+	/* HDR/SDR-атрибуты: перечитать, когда система уже выставила свои значения
+	 * после смены режима (не зависит от fps.cadence.fix.ms) */
+	mstime_t hdrinfo_timer = 0;
+	bool hdrinfo_armed = false;
 	int preferred_id;
 	/* поправка частоты для плеера текущего видео (fps.correct.list):
 	 * пакет определяется один раз на видео, при первом замере */
@@ -1721,6 +1730,12 @@ static int run_atv14 (const platform_t *plat)
 	mstime_update ();
 	mstime_arm (&config_timer, 1);
 
+	/* Атрибуты дисплея (HDR/SDR-режимы) — только чтение и показ: применяют их
+	 * система и плеер (см. README). Читаем до развилки на пассивные режимы,
+	 * чтобы значения были и на пути без backdoor SurfaceFlinger. */
+	hdrinfo_refresh (plat->vendor_cli);
+	hdrinfo_log ("атрибуты дисплея при старте");
+
 	/* Backdoor недоступен — переключать режимы нечем. Пассивный режим
 	 * (спека §3.2.6): ни одного sink_apply, только обслуживание API, чтобы
 	 * работали frame_rate_hint и afrd -s. Перезагрузка конфига работает и
@@ -1747,11 +1762,6 @@ static int run_atv14 (const platform_t *plat)
 	sf_modes_refresh (plat);
 
 	trace (1, "предпочтительный режим ТВ: %d\n", preferred_id);
-
-	/* Атрибуты дисплея (HDR/SDR-режимы) — только чтение и показ: применяют их
-	 * система и плеер (см. README). Значения видны в журнале и в API `status`. */
-	hdrinfo_refresh (plat->vendor_cli);
-	hdrinfo_log ("атрибуты дисплея при старте");
 
 	/* страховка: снять «залипший» флаг прошлого запуска */
 	sink_release_backdoor (plat->sink);
@@ -2030,6 +2040,8 @@ static int run_atv14 (const platform_t *plat)
 				cadence_armed = false;
 				mstime_disable (&cadence_timer);
 				cadence_fixes = 0;
+				hdrinfo_armed = false;
+				mstime_disable (&hdrinfo_timer);
 				/* плеер нового видео может быть другим — поправку
 				 * (fps.correct.list) берём заново */
 				pkg_probed = false;
@@ -2122,8 +2134,18 @@ static int run_atv14 (const platform_t *plat)
 			cadence_armed = false;
 			mstime_disable (&cadence_timer);
 			cadence_fixes = 0;
+			hdrinfo_armed = false;
+			mstime_disable (&hdrinfo_timer);
 			counter_last_grow_us = 0;
 			counter_stall_logged = false;
+		}
+		else if (hdrinfo_armed && mstime_expired (&hdrinfo_timer))
+		{
+			/* Режим уже устоялся — система выставила свои HDR/SDR-значения.
+			 * Проверка не зависит от fps.cadence.fix.ms. */
+			hdrinfo_armed = false;
+			hdrinfo_refresh (plat->vendor_cli);
+			hdrinfo_log ("атрибуты дисплея после переключения");
 		}
 		else if (cadence_armed && mstime_expired (&cadence_timer))
 		{
@@ -2157,12 +2179,6 @@ static int run_atv14 (const platform_t *plat)
 						colorspace_apply (nm2);
 				}
 			}
-
-			/* Тот же момент, когда цвета уже устоялись, — перечитываем
-			 * HDR/SDR-атрибуты: система выставляет их асинхронно после смены
-			 * режима. В журнал идёт строка только при уровнях -v. */
-			hdrinfo_refresh (plat->vendor_cli);
-			hdrinfo_log ("атрибуты дисплея после переключения");
 
 			int pm = 0, am = 0;
 			int expect_ms = cadence_expect_ms;
@@ -2552,6 +2568,12 @@ static int run_atv14 (const platform_t *plat)
 					mstime_arm (&cadence_timer, (uint32_t)cadence_fix_ms);
 					cadence_armed = true;
 				}
+
+				/* HDR/SDR-атрибуты: перечитать, когда система выставит свои
+				 * значения (асинхронно после смены режима) */
+				mstime_update ();
+				mstime_arm (&hdrinfo_timer, HDRINFO_SETTLE_MS);
+				hdrinfo_armed = true;
 			}
 		}
 		else if (act == GUARD_RESTORE)
