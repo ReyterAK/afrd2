@@ -1066,6 +1066,10 @@ static time_t g_config_mtime;
 
 /* ---- ATV14: поллинг декодера + измерение fps + backdoor SurfaceFlinger ---- */
 
+/* Через сколько молчания счётчика кадров сообщить, что частота неизвестна
+ * (декодер при этом числится активным). Логируем один раз на видео. */
+#define COUNTER_STALL_MS	10000ULL
+
 /* Таблица режимов, полученная от SurfaceFlinger (заполняется sf_modes_refresh). */
 static sf_mode_t g_sf_modes [SF_MODE_MAX];
 static int g_sf_modes_n = 0;
@@ -1532,6 +1536,11 @@ static int run_atv14 (const platform_t *plat)
 	/* R56: одноразовая перепроверка замера после смены режима */
 	mstime_t recheck_timer = 0;
 	bool recheck_armed = false;
+	/* Заморозка счётчика кадров (AV1 и т.п.): сколько живём без роста и
+	 * сообщили ли уже об этом (логируем один раз на видео) */
+	unsigned long long counter_last_grow_us = 0;
+	bool counter_stall_logged = false;
+
 	/* §21.9: проверка, что после смены режима кадры реально идут на подачу */
 	mstime_t cadence_timer = 0;
 	bool cadence_armed = false;
@@ -1901,6 +1910,8 @@ static int run_atv14 (const platform_t *plat)
 			cadence_armed = false;
 			mstime_disable (&cadence_timer);
 			cadence_fixes = 0;
+			counter_last_grow_us = 0;
+			counter_stall_logged = false;
 		}
 		else if (cadence_armed && mstime_expired (&cadence_timer))
 		{
@@ -1990,13 +2001,30 @@ static int run_atv14 (const platform_t *plat)
 				 * подокон. Пока горизонт не набран — режим не трогаем. */
 				bool env_grew = fps_env_push (&env, sample_t, v0.frames, sample_unc);
 				if (env_grew)
+				{
 					env_growing = true;
+					counter_last_grow_us = sample_t;
+					counter_stall_logged = false;
+				}
 				else if (env_growing)
 				{
 					/* только переход «рос → стоит» (пауза/сброс счётчика):
 					 * иначе строка печаталась бы на каждой итерации паузы */
 					trace (1, "счётчик кадров не растёт — наблюдение начато заново\n");
 					env_growing = false;
+				}
+
+				/* Заморозка счётчика: декодер числится активным, но кадры не
+				 * идут. Частоту так не определить, и демон молча ничего не
+				 * делает до конца видео — сообщаем один раз и громко. */
+				if (counter_last_grow_us &&
+				    (sample_t - counter_last_grow_us) > COUNTER_STALL_MS * 1000ULL &&
+				    !counter_stall_logged)
+				{
+					counter_stall_logged = true;
+					trace (0, "счётчик кадров декодера не растёт %llu с (декодер активен, "
+					       "частота неизвестна) — режим не переключаю\n",
+					       (unsigned long long)((sample_t - counter_last_grow_us) / 1000000ULL));
 				}
 
 				bool env_full = fps_env_ready (&env, env_us);
