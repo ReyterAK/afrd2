@@ -85,6 +85,11 @@ static uevent_filter_t g_filter_hdcp;
 
 static strlist_t g_vdec_blacklist;
 static strlist_t g_frhint_vdec_blacklist;
+/* Пакеты из switch.skip.pkg: демон их мерит и пишет в журнал, но режим не
+ * переключает и не удерживает — плеер сам выбирает темп отрисовки под текущий
+ * режим экрана, а удержанный низкий режим «зажимал» бы следующий ролик
+ * (проверено живьём на YouTube TV, см. README, ограничение 8). */
+static strlist_t g_skip_pkgs;
 
 /**
  * The one-shot timer used to switch display mode.
@@ -1788,6 +1793,10 @@ static int run_atv14 (const platform_t *plat)
 	/* Залипший канал: плеер, который вёл текущее видео, и число подряд
 	 * идущих проверок, где он уже не на переднем плане */
 	char video_pkg [64] = { 0 };
+	/* признак «пакет в списке switch.skip.pkg» — считается на каждой итерации
+	 * и логируется один раз на видео */
+	bool skip_pkg = false;
+	bool skip_logged = false;
 	int pkg_mismatch = 0;
 	unsigned long long pkg_probe_us = 0;
 
@@ -2234,6 +2243,13 @@ static int run_atv14 (const platform_t *plat)
 		if (!pause_keep && paused)
 			video_eff = false;
 
+		/* Пакет в списке switch.skip.pkg: режим не переключаем и не удерживаем
+		 * (плеер сам выбирает темп отрисовки под текущий режим экрана, а
+		 * удержанный низкий режим «зажимал» бы следующий ролик — проверено
+		 * живьём на YouTube TV, см. README, ограничение 8). */
+		skip_pkg = (g_skip_pkgs.size > 0) && video_eff && (video_pkg [0] != 0) &&
+		           strlist_contains (&g_skip_pkgs, video_pkg);
+
 		/* R50: сброс состояния замера висит на video_eff, а не на video.
 		 * Пауза при pause.keep==0 для замера равносильна концу видео: пока
 		 * счётчик кадров стоит, окно замера бессмысленно (и, исчерпав
@@ -2369,7 +2385,7 @@ static int run_atv14 (const platform_t *plat)
 			if (!pkg_probed)
 			{
 				pkg_probed = true;
-				if (correct_enable || (g_mode_min_hz_count > 0))
+				if (correct_enable || (g_mode_min_hz_count > 0) || (g_skip_pkgs.size > 0))
 				{
 					atv14_probe_package (plat);
 					video_corr = fps_correct_factor (g_cur_pkg);
@@ -2577,6 +2593,17 @@ static int run_atv14 (const platform_t *plat)
 			 * периода, и это норма) */
 			cadence_expect_ms = (hz > 0) ? (256000 + hz / 2) / hz : 0;
 
+			/* Для плеера из switch.skip.pkg переключения не будет, но проверку
+			 * подачи всё равно делаем — чтобы в журнале был ответ, если плеер
+			 * сам подаёт кадры неровно (переключение режима ему безразлично,
+			 * лечится перезапуском ролика). */
+			if (skip_pkg && (cadence_fix_ms > 0) && !cadence_armed)
+			{
+				mstime_update ();
+				mstime_arm (&cadence_timer, (uint32_t)cadence_fix_ms);
+				cadence_armed = true;
+			}
+
 			/* текущий режим / исходный id */
 			if (g_sf_modes_n <= 0)
 				sf_modes_refresh (plat);
@@ -2676,6 +2703,36 @@ static int run_atv14 (const platform_t *plat)
 			                  &held, &measure_failed, &retries);
 			continue;
 		}
+
+		/* Плеер из switch.skip.pkg: ничего не переключаем и не удерживаем.
+		 * Если что-то было удержано от предыдущего видео (плеер сменился или
+		 * пакет добавили в список на ходу) — возвращаем исходный режим и
+		 * снимаем флаг backdoor, иначе он остался бы поднятым. */
+		if (skip_pkg)
+		{
+			if (!skip_logged)
+			{
+				skip_logged = true;
+				trace (0, "пакет %s в списке switch.skip.pkg — режим не переключаю и не удерживаю\n",
+				       video_pkg);
+			}
+
+			want_sf_id = -1;
+
+			if (held)
+			{
+				int rc = atv14_apply_mode (plat, orig_sf_id,
+				                           "switch.skip.pkg: возврат, флаг backdoor снят");
+				if (rc == 0)
+				{
+					cur_sf_id = orig_sf_id;
+					orig_sf_id = -1;
+				}
+				guard_note_restored (&held);
+			}
+		}
+		else
+			skip_logged = false;
 
 		act = guard_decide (video_eff, want_sf_id, cur_sf_id, &orig_sf_id, &held);
 
@@ -3081,6 +3138,7 @@ int afrd_init ()
 	g_mode_use_fract = cfg_get_int ("mode.use.fract", DEFAULT_MODE_USE_FRACT);
 	blacklist_rates_load ("mode.blacklist.rates");
 	mode_min_hz_load ("mode.min.hz.list");
+	strlist_load (&g_skip_pkgs, "switch.skip.pkg", "packages: no mode switching");
 
 	trace (1, "\trefresh rate selection: use fractional %d, exact %d\n",
 		g_mode_use_fract, g_mode_prefer_exact);
@@ -3137,6 +3195,7 @@ void afrd_fini ()
 	 * в afrd_init() заново на каждой перезагрузке конфига */
 	strlist_free (&g_vdec_blacklist);
 	strlist_free (&g_frhint_vdec_blacklist);
+	strlist_free (&g_skip_pkgs);
 	g_mode_blacklist_rates_count = 0;
 
 	g_enable = false;

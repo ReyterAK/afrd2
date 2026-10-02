@@ -1,5 +1,35 @@
 AFRd2 — a fork of AFRd (original by Andrey Zabolotnyi, anpaza @ 4pda)
 
+0.3.3 Fri Oct 02 22:45:00 MSK 2026
+
+    A caveat for switch.skip.pkg: for an excluded player the display mode is chosen
+    by the system itself, so that mode must not be lower than the content rate. On
+    the test panel the EDID prefers 50 Hz and the "user preferred" setting still
+    held 50 Hz (leftovers from earlier experiments), so the exclusion initially
+    produced 30 Hz and a 24 fps video ran at an uneven 1.25 periods. The cure is to
+    set the mode explicitly: `cmd display set-user-preferred-display-mode 1920 1080 60`
+    (after that both 24 and 25 fps videos play evenly at their own rate on a 60 Hz
+    display). README limitation 8 updated with the caveat.
+
+0.3.3 Fri Oct 02 22:30:00 MSK 2026
+
+    New key switch.skip.pkg — players that AFR gets in the way of. For them the
+    daemon measures the rate and logs everything, but never switches or holds the
+    display mode (nor honours their frame rate hint). The stock YouTube is in the
+    list by default.
+
+    Reason: the player picks its render cadence at video start from the then-current
+    display mode and never recovers (30 fps under 24 Hz -> 24.2 fps, 60 fps under
+    50 Hz -> 50.3 fps), so a mode held from the previous video clamped the next one
+    — and that is the main scenario, browsing videos. With a display the daemon
+    leaves alone (usually 60 Hz) clamping is impossible in principle, and the player
+    itself lays 24/25/30/60 fps out on the 60 Hz grid. As a side effect this player
+    sees no screen blinking and pause.keep/switch.restore.on.stop do not apply
+    (there is nothing to hold).
+
+    mode.min.hz.list remains a tool for other clamping players (YouTube removed
+    from it).
+
 0.3.3 Fri Oct 02 22:05:00 MSK 2026
 
     The "residual" clamping case was checked and turned out to be systematic rather
