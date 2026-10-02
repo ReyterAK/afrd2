@@ -48,6 +48,7 @@ static const struct
 	{ "fps.recheck.delay.ms",	CFGKEY_ATV14, NULL },
 	{ "fps.cadence.fix.ms",		CFGKEY_ATV14, NULL },
 	{ "fps.prefer.api",		CFGKEY_ATV14, NULL },
+	{ "mode.min.hz.list",		CFGKEY_ATV14, NULL },
 	{ "pause.keep",			CFGKEY_ATV14, NULL },
 	{ "switch.restore.on.stop",	CFGKEY_ATV14, NULL },
 	{ "fps.correct.enable",		CFGKEY_ATV14, NULL },

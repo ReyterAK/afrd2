@@ -62,6 +62,20 @@ static int g_mode_use_fract;
 static int g_mode_blacklist_rates [10];
 static int g_mode_blacklist_rates_count;
 
+/* Минимальная частота режима для конкретных плееров (mode.min.hz.list):
+ * некоторые плееры выбирают темп отрисовки в момент старта ролика по текущему
+ * режиму экрана и потом его не поднимают, поэтому для них низкие режимы не
+ * выбираем (проверено живьём на YouTube TV, см. README, ограничение 8). */
+#define MODE_MIN_HZ_MAX		8
+#define MODE_MIN_HZ_PKG_LEN	64
+typedef struct
+{
+	char pkg [MODE_MIN_HZ_PKG_LEN];
+	int hz;			/* 24.8 fixed-point */
+} mode_min_hz_t;
+static mode_min_hz_t g_mode_min_hz [MODE_MIN_HZ_MAX];
+static int g_mode_min_hz_count;
+
 static bool g_enable;                 // enabled in config file
 
 static uevent_filter_t g_filter_frhint;
@@ -1086,26 +1100,40 @@ static bool g_reconf_requested;
 static sf_mode_t g_sf_modes [SF_MODE_MAX];
 static int g_sf_modes_n = 0;
 
+/* Минимальная частота режима (24.8) для пакета; 0 — ограничения нет
+ * (mode.min.hz.list, определение ниже). */
+static int mode_min_hz_for (const char *pkg);
+
 /* Фильтр частот для sfmodes_select: на ATV14-пути действует тот же
  * mode.blacklist.rates, что и в legacy-ветке (раньше ключ молча игнорировался). */
 static bool atv14_rate_allowed (int hz, void *ctx)
 {
-	(void)ctx;
+	/* ctx — минимальная частота (24.8) для текущего плеера либо NULL */
+	int floor = ctx ? *(const int *) ctx : 0;
+
+	if (floor && (hz < floor))
+		return false;
+
 	return !rate_is_blacklisted (hz);
 }
 
 /* Выбор режима под частоту контента: кратные частоты (mode.prefer.exact) и
  * чёрный список частот (mode.blacklist.rates) — правила legacy-ветки. */
-static int atv14_select_mode (int hz, int w, int h)
+static int atv14_select_mode (int hz, int w, int h, int floor)
 {
 	sf_choice_t ch;
+	int fl = floor;
 	if (sfmodes_select (g_sf_modes, g_sf_modes_n, hz, w, h,
-	                    g_mode_prefer_exact, atv14_rate_allowed, NULL, &ch) != 0)
+	                    g_mode_prefer_exact, atv14_rate_allowed,
+	                    fl ? &fl : NULL, &ch) != 0)
 		return -1;
 
 	if (ch.rate_n > 1)
 		trace (1, "режим " HZ_FMT " Гц выбран как кратный (x%d) для " HZ_FMT " Гц\n",
 		       HZ_ARGS (ch.hz), ch.rate_n, HZ_ARGS (hz));
+
+	if (fl && (ch.hz < fl))
+		trace (1, "("HZ_FMT" Гц ниже минимума "HZ_FMT" Гц)\n", HZ_ARGS (ch.hz), HZ_ARGS (fl));
 
 	return ch.id;
 }
@@ -2240,7 +2268,7 @@ static int run_atv14 (const platform_t *plat)
 			if (!pkg_probed)
 			{
 				pkg_probed = true;
-				if (correct_enable)
+				if (correct_enable || (g_mode_min_hz_count > 0))
 				{
 					atv14_probe_package (plat);
 					video_corr = fps_correct_factor (g_cur_pkg);
@@ -2312,7 +2340,7 @@ static int run_atv14 (const platform_t *plat)
 							h = act.height;
 						}
 
-						int id = atv14_select_mode (lhz, w, h);
+						int id = atv14_select_mode (lhz, w, h, mode_min_hz_for (g_cur_pkg));
 						if (id >= 0)
 						{
 							want_sf_id = id;
@@ -2460,7 +2488,7 @@ static int run_atv14 (const platform_t *plat)
 				h = active.height;
 			}
 
-			cur_sf_id = atv14_select_mode (hz, w, h);
+			cur_sf_id = atv14_select_mode (hz, w, h, mode_min_hz_for (g_cur_pkg));
 			if (cur_sf_id < 0)
 			{
 				trace (1, "режим для %d.%02d Гц не найден в списке\n",
@@ -2500,7 +2528,7 @@ static int run_atv14 (const platform_t *plat)
 				h = active.height;
 			}
 
-			int hint_id = atv14_select_mode (hint_hz, w, h);
+			int hint_id = atv14_select_mode (hint_hz, w, h, mode_min_hz_for (g_cur_pkg));
 			if (hint_id < 0)
 			{
 				/* режима нет в текущей таблице (напр. частота есть только для
@@ -2856,6 +2884,63 @@ static void blacklist_rates_load (const char *kw)
 	free (tmp);
 }
 
+/* mode.min.hz.list: «<пакет>=<частота Гц>», например
+ * `com.google.android.youtube.tv=50` — для этого плеера режимы ниже 50 Гц не
+ * выбираются (он «зажимает» темп отрисовки, если ролик стартовал под низким
+ * режимом). Формат — как у fps.correct.list. */
+static void mode_min_hz_load (const char *kw)
+{
+	g_mode_min_hz_count = 0;
+
+	const char *str = cfg_get_str (kw, NULL);
+	if (!str)
+		return;
+
+	trace (1, "\tloading minimal mode rates per package\n");
+
+	char *tmp = strdup (str);
+	char *cur = tmp;
+	while (*cur) {
+		cur += strspn (cur, spaces);
+		char *next = cur + strcspn (cur, spaces);
+		if (*next)
+			*next++ = 0;
+
+		char *eq = strchr (cur, '=');
+		if (eq && cur [0]) {
+			*eq++ = 0;
+			float hz;
+			if ((sscanf (eq, "%f", &hz) == 1) && (hz >= 1) && (hz <= 1000) &&
+			    (g_mode_min_hz_count < ARRAY_SIZE (g_mode_min_hz))) {
+				snprintf (g_mode_min_hz [g_mode_min_hz_count].pkg,
+				          sizeof (g_mode_min_hz [0].pkg), "%s", cur);
+				g_mode_min_hz [g_mode_min_hz_count].hz = (int) (256.0 * hz + 0.5);
+				trace (2, "\t+ %s: " HZ_FMT " Гц или выше\n",
+				       g_mode_min_hz [g_mode_min_hz_count].pkg,
+				       HZ_ARGS (g_mode_min_hz [g_mode_min_hz_count].hz));
+				g_mode_min_hz_count++;
+			}
+		}
+
+		cur = next;
+	}
+
+	free (tmp);
+}
+
+/* Минимальная частота режима (24.8) для пакета; 0 — ограничения нет. */
+static int mode_min_hz_for (const char *pkg)
+{
+	if (!pkg || !pkg [0])
+		return 0;
+
+	for (int i = 0; i < g_mode_min_hz_count; i++)
+		if (!strcmp (g_mode_min_hz [i].pkg, pkg))
+			return g_mode_min_hz [i].hz;
+
+	return 0;
+}
+
 int afrd_init ()
 {
 	/* load config if not loaded already */
@@ -2894,6 +2979,7 @@ int afrd_init ()
 	g_mode_prefer_exact = cfg_get_int ("mode.prefer.exact", DEFAULT_MODE_PREFER_EXACT);
 	g_mode_use_fract = cfg_get_int ("mode.use.fract", DEFAULT_MODE_USE_FRACT);
 	blacklist_rates_load ("mode.blacklist.rates");
+	mode_min_hz_load ("mode.min.hz.list");
 
 	trace (1, "\trefresh rate selection: use fractional %d, exact %d\n",
 		g_mode_use_fract, g_mode_prefer_exact);

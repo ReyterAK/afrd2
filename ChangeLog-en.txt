@@ -1,5 +1,17 @@
 AFRd2 — a fork of AFRd (original by Andrey Zabolotnyi, anpaza @ 4pda)
 
+0.3.3 Fri Oct 02 21:35:00 MSK 2026
+
+    New key mode.min.hz.list ("package=Hz"): for the listed players the daemon does
+    not choose modes below the given rate. This cures a "stuck render cadence": a
+    player picks its render cadence at video start from the then-current display
+    mode and never raises it (verified live on the stock YouTube TV: a 30 fps video
+    started under a 24 Hz mode kept running at 24 fps; only restarting the video or
+    the player helps). The default is com.google.android.youtube.tv=50: 24 fps
+    videos on YouTube are shown at 50 Hz (mild 2:2.08 instead of an ideal 1:1), but
+    30/60 fps videos after them are no longer clamped. List format is the same as
+    fps.correct.list.
+
 0.3.3 Fri Oct 02 21:10:00 MSK 2026
 
     The log now recognises "uneven frame submission". Previously the post-switch
