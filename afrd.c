@@ -1379,10 +1379,14 @@ static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skip
  * пересчитывает. Повторная выдача того же режима не помогает; помогает смена
  * режима «туда-обратно» (проверено на стенде).
  *
- * Возврат true — подача вдвое реже периода; period_ms и avg_ms — для лога.
+ * Сравнивать с периодом дисплея нельзя: у 24-фпс видео на 60 Гц подача и должна
+ * быть ~2.5 периода. Поэтому порог — максимум из периода дисплея и ожидаемого
+ * интервала контента (expect_ms, из частоты выбранного режима).
+ *
+ * Возврат true — подача вдвое реже ожидаемого; period_ms и avg_ms — для лога.
  * Разбор делает awk на устройстве (`dumpsys SurfaceFlinger --latency`):
  * первая строка — период дисплея в нс, дальше интервалы фактической подачи. */
-static bool atv14_cadence_halved (int *period_ms, int *avg_ms)
+static bool atv14_cadence_halved (int expect_ms, int *period_ms, int *avg_ms)
 {
 	*period_ms = *avg_ms = 0;
 
@@ -1406,7 +1410,9 @@ static bool atv14_cadence_halved (int *period_ms, int *avg_ms)
 
 	*period_ms = (int) (p + 0.5);
 	*avg_ms = (int) (a + 0.5);
-	return (a > 1.5 * p);
+
+	double base = ((double) expect_ms > p) ? (double) expect_ms : p;
+	return (a > 1.5 * base);
 }
 
 /* Отказ от удержания режима: частоту определить не удалось — вернуть исходный
@@ -1890,14 +1896,16 @@ static int run_atv14 (const platform_t *plat)
 			 * помогает, а смена его пересобирает vsync-путь HWC/SF. */
 			cadence_armed = false;
 			int pm = 0, am = 0;
-			if (atv14_cadence_halved (&pm, &am))
+			int want_hz = sfmodes_current_hz (g_sf_modes, g_sf_modes_n, want_sf_id);
+			int expect_ms = (want_hz > 0) ? (256000 + want_hz / 2) / want_hz : 0;
+			if (atv14_cadence_halved (expect_ms, &pm, &am))
 			{
 				int back = (orig_sf_id >= 0) ? orig_sf_id : preferred_id;
 				if ((cadence_fixes < 2) && (back >= 0) && (back != want_sf_id))
 				{
 					cadence_fixes++;
-					trace (0, "подача вдвое реже периода дисплея (%d мс при периоде %d мс) — переключаю режим туда-обратно (лечение %d)\n",
-					       am, pm, cadence_fixes);
+					trace (0, "подача вдвое реже ожидаемого (%d мс при периоде %d мс, ожидание %d мс) — переключаю режим туда-обратно (лечение %d)\n",
+					       am, pm, expect_ms, cadence_fixes);
 					if (atv14_apply_mode (plat, back, "лечение подачи: возврат") == 0)
 					{
 						msleep (200);
@@ -1909,11 +1917,12 @@ static int run_atv14 (const platform_t *plat)
 					cadence_armed = true;	/* проверить результат лечения */
 				}
 				else
-					trace (0, "подача вдвое реже периода дисплея (%d мс при периоде %d мс) — лечение не применяю\n",
-					       am, pm);
+					trace (0, "подача вдвое реже ожидаемого (%d мс при периоде %d мс, ожидание %d мс) — лечение не применяю\n",
+					       am, pm, expect_ms);
 			}
 			else if (am > 0)
-				trace (2, "подача в порядке: %d мс при периоде %d мс\n", am, pm);
+				trace (2, "подача в порядке: %d мс при периоде %d мс, ожидание %d мс\n",
+				       am, pm, expect_ms);
 		}
 		else if (recheck_armed && mstime_expired (&recheck_timer))
 		{
