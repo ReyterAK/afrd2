@@ -18,6 +18,7 @@
 #include "fps_class.h"
 #include "fps_env.h"
 #include "cfgkeys.h"
+#include "reconf.h"
 
 #define __USE_GNU
 #include <math.h>
@@ -1062,6 +1063,11 @@ static void safe_mstime_update (int to)
 
 static time_t g_config_mtime;
 
+/* Запрос перезагрузки конфига из API (команда reconf), см. afrd_reconf и
+ * atv14_reconf_pending. На legacy-пути достаточно mtime=-1, ATV14-цикл
+ * обслуживает явный флаг. */
+static bool g_reconf_requested;
+
 /* --------- * --------- * --------- * --------- * --------- * --------- */
 
 /* ---- ATV14: поллинг декодера + измерение fps + backdoor SurfaceFlinger ---- */
@@ -1592,6 +1598,43 @@ static void atv14_invalidate (const platform_t *plat, int *want_sf_id,
 	}
 }
 
+/* Пора ли выйти из run_atv14 на перезагрузку конфига: main.c при ret>0
+ * заново вызовет afrd_init/afrd_run, то есть конфиг будет перечитан
+ * (afrd_fini освобождает g_cfg, afrd_init его загружает).
+ *
+ * Два источника:
+ *  - API reconf (g_reconf_requested) — срабатывает сразу, не ожидая периода;
+ *  - правка файла конфига — проверяется не чаще CONFIG_CHECK_PERIOD по mtime.
+ *
+ * config_timer принадлежит вызывающему циклу: legacy-таймер g_ost_config здесь
+ * не тикает (его обслуживает только старый цикл).
+ *
+ * Зачем явный флаг, если afrd_reconf и так ставит g_config_mtime=-1: на
+ * legacy-пути этого достаточно (цикл сравнивает mtime), а ATV14-цикл узнал бы о
+ * reconf только из периодической проверки mtime — до 5 с задержки. Флаг делает
+ * reconf немедленным; mtime=-1 в afrd_reconf оставлен ради legacy-ветки. */
+static bool atv14_reconf_pending (mstime_t *config_timer)
+{
+	if (g_reconf_requested)
+	{
+		g_reconf_requested = false;
+		trace (1, "запрошена перезагрузка конфига (reconf)\n");
+		return true;
+	}
+
+	if (mstime_expired (config_timer))
+	{
+		mstime_arm (config_timer, CONFIG_CHECK_PERIOD);
+		if (config_mtime_changed (mtime (g_config), g_config_mtime))
+		{
+			trace (1, "config file %s changed, reloading\n", g_config);
+			return true;
+		}
+	}
+
+	return false;
+}
+
 static int run_atv14 (const platform_t *plat)
 {
 	guard_action_t act;
@@ -1670,16 +1713,31 @@ static int run_atv14 (const platform_t *plat)
 	/* инвалидация таблицы режимов по PID SurfaceFlinger */
 	int ticks = 0;
 
+	/* Перезагрузка конфига (reconf / правка файла): период проверки mtime
+	 * и признак «выходим на перезагрузку» (return 1). См. atv14_reconf_pending. */
+	mstime_t config_timer = 0;
+	bool reconf = false;
+	mstime_update ();
+	mstime_arm (&config_timer, 1);
+
 	/* Backdoor недоступен — переключать режимы нечем. Пассивный режим
 	 * (спека §3.2.6): ни одного sink_apply, только обслуживание API, чтобы
-	 * работали frame_rate_hint и afrd -s. */
+	 * работали frame_rate_hint и afrd -s. Перезагрузка конфига работает и
+	 * здесь: enable=0 снимается правкой файла, без перезапуска процесса. */
 	if (!plat->sf_backdoor)
 	{
 		trace (0, "backdoor SurfaceFlinger недоступен — пассивный режим\n");
 		atv14_stats_sync_passive (plat);
 		while (!g_shutdown)
+		{
+			/* без этого не тикает config_timer, а от него зависит
+			 * проверка правки файла (флаг reconf работает и так) */
+			mstime_update ();
 			if (atv14_wait (cur_hz) != 0)
 				msleep (cur_hz);
+			if (atv14_reconf_pending (&config_timer))
+				return 1;
+		}
 		return 0;
 	}
 
@@ -1701,8 +1759,14 @@ static int run_atv14 (const platform_t *plat)
 		trace (0, "enable=0 — переключение частоты выключено, только API\n");
 		atv14_stats_sync_passive (plat);
 		while (!g_shutdown)
+		{
+			mstime_update ();
 			if (atv14_wait (cur_hz) != 0)
 				msleep (cur_hz);
+			/* enable=1 из новой версии файла подхватится на перезагрузке */
+			if (atv14_reconf_pending (&config_timer))
+				return 1;
+		}
 		return 0;
 	}
 
@@ -1828,6 +1892,15 @@ static int run_atv14 (const platform_t *plat)
 
 		if (g_shutdown)
 			break;
+
+		/* Перезагрузка конфига: API reconf — сразу, правка файла — раз в
+		 * CONFIG_CHECK_PERIOD. Выходим штатным путём (ниже снимается
+		 * удержание и флаг backdoor), main.c перечитает конфиг. */
+		if (atv14_reconf_pending (&config_timer))
+		{
+			reconf = true;
+			break;
+		}
 
 		ticks++;
 
@@ -2519,7 +2592,8 @@ static int run_atv14 (const platform_t *plat)
 		guard_note_restored (&held);
 	}
 
-	return 0;
+	/* reconf/правка конфига: ret>0 — main.c перечитает конфиг и продолжит. */
+	return reconf ? 1 : 0;
 }
 
 /* --------- * --------- * --------- * --------- * --------- * --------- */
@@ -2545,7 +2619,12 @@ int afrd_run ()
 	               cfg_audit_warn, NULL);
 
 	if (g_plat.kind == PLAT_ATV14)
+	{
+		/* mtime нужен и ATV14-циклу: по нему ловится правка файла конфига
+		 * (legacy-ветка ставит его ниже, в своём блоке). */
+		g_config_mtime = mtime (g_config);
 		return run_atv14 (&g_plat);
+	}
 
 	if (g_uevent_sock == -1)
 		return -1;
@@ -2686,6 +2765,12 @@ void afrd_refresh_rate (int hz)
 
 void afrd_reconf ()
 {
+	/* legacy: взведённый таймер + mtime=-1 заставляют legacy-цикл вернуть 1
+	 * не позднее периода проверки. ATV14-цикл таймер g_ost_config не
+	 * обслуживает, поэтому запрос дублируется явным флагом: по API он
+	 * срабатывает на ближайшей итерации, не ожидая периода mtime
+	 * (см. atv14_reconf_pending). */
+	g_reconf_requested = true;
 	mstime_arm (&g_ost_config, 0);
 	g_config_mtime = (time_t)-1;
 }
