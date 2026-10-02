@@ -199,7 +199,10 @@ public class MainActivity extends Activity
         if (mControl.mIni.exists ())
             try
             {
-                rewrite = !prefs.getString ("afrd_ini_ver", "").equals (mPackageInfo.versionName);
+                /* ключ — время установки APK, а не versionName: форк держит
+                 * versionName неизменным, и обновление APK не переизвлекало
+                 * демон/профиль из ресурсов (в кэше оставался старый) */
+                rewrite = (prefs.getLong ("afrd_ini_ver", 0) != mPackageInfo.lastUpdateTime);
             }
             catch (java.lang.ClassCastException ignored)
             {
@@ -214,7 +217,7 @@ public class MainActivity extends Activity
                 return false;
             }
 
-            prefs.edit ().putString ("afrd_ini_ver", mPackageInfo.versionName).apply ();
+            prefs.edit ().putLong ("afrd_ini_ver", mPackageInfo.lastUpdateTime).apply ();
         }
 
         return updateConfig ();
@@ -251,7 +254,9 @@ public class MainActivity extends Activity
         if (mControl.mAfrd.exists ())
             try
             {
-                rewrite = !prefs.getString ("afrd_ver", "").equals (mPackageInfo.versionName);
+                /* см. prepareConfig: ключ — время установки APK, иначе
+                 * обновлённый APK оставлял в кэше старый бинарник демона */
+                rewrite = (prefs.getLong ("afrd_ver", 0) != mPackageInfo.lastUpdateTime);
             }
             catch (java.lang.ClassCastException ignored)
             {
@@ -267,7 +272,7 @@ public class MainActivity extends Activity
             return;
         }
 
-        prefs.edit ().putString ("afrd_ver", mPackageInfo.versionName).apply ();
+        prefs.edit ().putLong ("afrd_ver", mPackageInfo.lastUpdateTime).apply ();
     }
 
     private void prepareSuperuser ()

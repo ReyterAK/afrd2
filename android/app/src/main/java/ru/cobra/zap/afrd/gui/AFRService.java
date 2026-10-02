@@ -19,6 +19,7 @@ import android.graphics.drawable.Icon;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.SystemClock;
 import android.util.Log;
 import android.widget.Toast;
 
@@ -40,6 +41,16 @@ public class AFRService extends Service
     private SharedPreferences mOptions;
     private int mNotificationMask = -1;
     private boolean mFirstRun = true;
+    /* R57: метка последнего перезапуска демона — чтобы сторож не устроил
+     * шторм `su`, пока демон ещё поднимается после перезапуска */
+    private long mLastRestart = 0;
+    /* R57: сколько подряд обновлений статуса не меняли shmem (при живом демоне
+     * heartbeat меняет штамп на каждой итерации) */
+    private int mStaleTicks = 0;
+    /* heartbeat хотя бы раз продвинулся — только тогда застой считается смертью
+     * (иначе старый демон без heartbeat зациклил бы перезапуски) */
+    private boolean mHeartbeatSeen = false;
+    private static final int STALE_TICKS_MAX = 4;   /* 4 * 3 с = 12 с */
 
     @Override
     public void onCreate ()
@@ -79,6 +90,22 @@ public class AFRService extends Service
         if (!mStatus.ok ())
             mStatus.open ();
         boolean changed = mStatus.refresh ();
+
+        /* R57: считаем подряд идущие обновления, не менявшие shmem. Живой
+         * демон на ATV14 обновляет heartbeat каждый цикл, поэтому застой
+         * штампа = демон мёртв (проверяется в checkDaemon). */
+        if (mStatus.ok ())
+        {
+            if (changed)
+            {
+                mStaleTicks = 0;
+                mHeartbeatSeen = true;
+            }
+            else
+                mStaleTicks++;
+        }
+        else
+            mStaleTicks = 0;
 
         checkDaemon ();
         checkToast ();
@@ -191,8 +218,38 @@ public class AFRService extends Service
         throw new UnsupportedOperationException ("Not yet implemented");
     }
 
+    /* Перезапуск демона с паузой между попытками (демон поднимается не мгновенно). */
+    private void restartDaemon (String why)
+    {
+        long now = SystemClock.elapsedRealtime ();
+        if (now - mLastRestart < 10000)
+            return;
+
+        mLastRestart = now;
+        mFirstRun = false;
+        mStaleTicks = 0;
+        mHeartbeatSeen = false;
+        Log.i ("afrd", why);
+        mStatus.close ();
+        mControl.restart ();
+    }
+
     private void checkDaemon ()
     {
+        /* R57: на ATV14 демон держит флаг backdoor SurfaceFlinger; если он
+         * умер, не сняв флаг (kill -9, паника ядра), приложения со своим AFR
+         * перестают менять режим. Процессы root приложению не видны (/proc
+         * смонтирован с hidepid=invisible), поэтому судим по «сердцебиению»
+         * в общей памяти: демон обновляет его каждый цикл, и CRC-штамп
+         * перестаёт меняться, когда он мёртв (файл shmem при этом остаётся
+         * на диске, так что mStatus.ok() смерть не замечает). */
+        if (Control.isAtv14 () && mHeartbeatSeen && mStatus.ok () &&
+            mStaleTicks >= STALE_TICKS_MAX)
+        {
+            restartDaemon ("Daemon heartbeat stopped - restarting");
+            return;
+        }
+
         if (mStatus.ok ())
         {
             /* mStatus.mVersion может быть null: shmem уже отображён (ok()),

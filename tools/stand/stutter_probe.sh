@@ -14,6 +14,10 @@
 #
 # Переменные: URL (ролик), SECS (секунд наблюдения, по умолчанию 45),
 #             PKG/START (плеер; по умолчанию штатный YouTube TV).
+#             PIN — id режима SurfaceFlinger: закрепить его на прогон (флаг
+#             backdoor поднят, приложения со своим AFR не могут перебить).
+#             Нужен для сравнения дёрганья по режимам при остановленном демоне;
+#             ORIG_ID — mode id для восстановления (по умолчанию 135 = 59.94).
 
 L=${1:-run}
 URL=${URL:-https://www.youtube.com/watch?v=zhApeaHMvfs}
@@ -39,6 +43,13 @@ logcat -c 2>/dev/null
 am force-stop "$PKG" >/dev/null 2>&1
 sleep 3
 
+# Закрепить режим (для сравнения по режимам; демон должен быть остановлен)
+if [ -n "$PIN" ]; then
+	service call SurfaceFlinger 1035 i32 "$PIN" >> "$LOG" 2>&1
+	sleep 1
+	echo "pin: id=$PIN -> mode=$(mode) $(syncnum)" >> "$LOG"
+fi
+
 if [ -n "$START" ]; then
 	am start -n "$START" -a android.intent.action.VIEW -d "$URL" >/dev/null 2>&1
 else
@@ -60,8 +71,8 @@ while [ "$i" -lt "$SECS" ]; do
 	ch=$(chans)
 	echo "$t,$ch,${cf:-0},${cl:-0},$(mode),$(syncnum)" >> "$CSV"
 
-	# латентность видео-слоя: в середине прогона и перед стопом
-	if [ "$i" = 12 ] || [ "$i" = $((SECS - 8)) ]; then
+	# латентность видео-слоя: до переключения и в устойчивом режиме после него
+	if [ "$i" = 12 ] || [ "$i" = $((SECS - 3)) ]; then
 		lay=$(dumpsys SurfaceFlinger --list 2>/dev/null | grep 'SurfaceView\[' | grep -i blast | head -1)
 		echo "LAT i=$i layer=$lay" >> "$LOG"
 		[ -n "$lay" ] && dumpsys SurfaceFlinger --latency "$lay" > "$LATP.$i" 2>&1
@@ -73,6 +84,13 @@ am force-stop "$PKG" >/dev/null 2>&1
 sleep 4
 echo "meta mode=$(mode) backdoor=$(backdoor) uptime=$(cut -d' ' -f1 /proc/uptime)" >> "$LOG"
 
+# Снять закрепление: вернуть исходный режим и сбросить флаг backdoor
+if [ -n "$PIN" ]; then
+	service call SurfaceFlinger 1035 i32 "${ORIG_ID:-135}" >> "$LOG" 2>&1
+	service call SurfaceFlinger 1035 i32 9999 >> "$LOG" 2>&1
+	echo "unpin: mode=$(mode) $(syncnum) $(backdoor)" >> "$LOG"
+fi
+
 # вендорский путь: события FRA/HWC (журнал, §19.4)
 logcat -d -v time 2>/dev/null | grep -E \
 	"frameRateDisplay|setVideoLayerOn|adjustVsyncMode|configure width|Created component|waitMixVsync|wait for hw vsync|ModePolicy" \
@@ -82,6 +100,23 @@ tail -n 40 /data/local/afrd.log >> "$LOG"
 
 echo "=== $L: режим по секундам (mode sync) ==="
 awk -F, 'NR==1{p="";s=""} {k=$5" "$6; if(k!=p){printf "  t=%s %s\n",$1,k; p=k}}' "$CSV"
+
+echo "=== $L: маркер ошибки HWC (video-on / MixMode) ==="
+fra_on=$(grep -c 'frameRateDisplay 1,' "$LOG")
+mix=$(grep -c 'adjustVsyncMode to MixMode' "$LOG")
+hwm=$(grep -c 'adjustVsyncMode to HwMode' "$LOG")
+if [ -n "$PIN" ]; then
+	echo "  PIN-прогон (id=$PIN): MixMode-маркер не показателен; смотрим удержания подачи"
+elif [ "$fra_on" -gt 0 ] && [ "$mix" -gt 0 ]; then
+	echo "  FRA video-on=$fra_on MixMode=$mix HwMode=$hwm — ОК (HWC входит в видео-режим)"
+else
+	echo "  FRA video-on=$fra_on MixMode=$mix HwMode=$hwm — ДЕРГАНИЕ-МАРКЕР (нет входа в MixMode)"
+fi
+
+echo "=== $L: частоты (декодер vs подача слоя) ==="
+awk -F, 'NR==1 { t0 = $1 + 0; f0 = $4 + 0 }
+         END { if (($1 + 0) > t0) printf "  декодер: %.2f fps (ΔF=%d за %.1f с)\n",
+                        ($4 - f0) / ($1 - t0), $4 - f0, $1 - t0 }' "$CSV"
 
 echo "=== $L: вердикт ровности подачи слоя видео ==="
 echo "  норма: интервалы чередуются 2/3 периода 60-Гц сетки (≈33/50 мс при 24 Гц),"
