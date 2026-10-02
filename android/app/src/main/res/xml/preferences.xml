@@ -81,6 +81,10 @@
                           android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
                           android:singleLine="true" android:summary="@string/prefsum_fps_recheck_delay"
                           android:title="@string/prefs_fps_recheck_delay"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="2500" android:key="fps_cadence_fix_ms"
+                          android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
+                          android:singleLine="true" android:summary="@string/prefsum_fps_cadence_fix"
+                          android:title="@string/prefs_fps_cadence_fix"/>
         <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="300" android:key="trigger_poll_ms"
                           android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
                           android:singleLine="true" android:summary="@string/prefsum_trigger_poll"

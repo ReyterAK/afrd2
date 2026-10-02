@@ -122,6 +122,10 @@
     <string name="prefs_fps_recheck_delay">Перепроверка замера, мс</string>
     <string name="prefsum_fps_recheck_delay">Через сколько мс после переключения перемерить частоту и
         поправить режим, если класс другой (лечит смещённое первое окно). 0 — выключить.</string>
+    <string name="prefs_fps_cadence_fix">Проверка подачи после переключения, мс</string>
+    <string name="prefsum_fps_cadence_fix">Через сколько мс после переключения проверить подачу
+        видео-слоя; если кадры доходят до экрана вдвое реже (видео «как 13 fps»), режим
+        переключается «туда-обратно» (смена режима не перенастраивает vsync-путь HWC). 0 — выключить.</string>
     <string name="prefs_trigger_poll">Период опроса декодера, мс</string>
     <string name="prefsum_trigger_poll">Как часто проверять /sys/class/vdec/vdec_status, чтобы заметить
         старт и остановку видео.</string>
