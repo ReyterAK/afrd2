@@ -1382,9 +1382,9 @@ static void atv14_give_up (const platform_t *plat,
  * принимать блокировку за потерю данных. */
 static unsigned long long g_vdec_last_ok_us;
 
-static int vdec_poll (const char *path, vdec_status_t *st)
+static int vdec_poll (const char *path, vdec_status_t *st, vdec_sel_t *sel)
 {
-	int rc = vdec_read (path, st);
+	int rc = vdec_read (path, st, sel);
 	if ((rc == 0) && st->active)
 		g_vdec_last_ok_us = now_us ();
 	return rc;
@@ -1462,6 +1462,8 @@ static int run_atv14 (const platform_t *plat)
 	bool held = false;
 	bool video = false;
 	vdec_status_t v0;
+	/* R61: состояние выбора канала vdec_status (растущий счётчик) */
+	vdec_sel_t vdec_sel = { 0 };
 	int retries = 0;
 	/* частоту в этом видео определить не удалось — больше не мерить
 	 * до его конца (сбрасывается, когда видео закончилось) */
@@ -1701,7 +1703,7 @@ static int run_atv14 (const platform_t *plat)
 		 * занимает миллисекунды, а окна считаются по крайним выборкам) и его
 		 * длительность как неопределённость интервала. */
 		unsigned long long read_a = now_us ();
-		int poll_rc = vdec_poll (plat->vdec_status, &v0);
+		int poll_rc = vdec_poll (plat->vdec_status, &v0, &vdec_sel);
 		unsigned long long read_b = now_us ();
 		unsigned long long sample_t = read_a + (read_b - read_a) / 2;
 		unsigned long long sample_unc = read_b - read_a;
@@ -1738,8 +1740,10 @@ static int run_atv14 (const platform_t *plat)
 		{
 			msleep (new_video ? start_deb : stop_deb);
 
-			vdec_status_t again;
-			if (vdec_poll (plat->vdec_status, &again) == 0 && again.active == new_video)
+			/* дебаунс не должен сдвигать состояние выбора канала (R61) */
+			bool again_active = false;
+			if (vdec_probe_active (plat->vdec_status, &again_active) == 0 &&
+			    again_active == new_video)
 				video = new_video;
 			else
 				continue;	/* дребезг старта/стопа — игнорируем */

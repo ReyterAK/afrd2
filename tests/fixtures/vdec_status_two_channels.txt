@@ -1,0 +1,32 @@
+vdec channel 0 statistics:
+  device name : amvdec_av1_v4l
+  frame width : 3840
+ frame height : 2160
+   frame rate : 30 fps
+     bit rate : 0 kbps
+       status : 53
+    frame dur : 3200
+   frame data : 1229 KB
+  frame count : 264
+   drop count : 0
+fra err count : 0
+ hw err count : 0
+   total data : 0 KB
+ratio_control : 0
+
+vdec channel 1 statistics:
+  device name : amvdec_av1_v4l
+  frame width : 3840
+ frame height : 2160
+   frame rate : 30 fps
+     bit rate : 2072 kbps
+       status : 5
+    frame dur : 3200
+   frame data : 1591 KB
+  frame count : 1139
+   drop count : 0
+fra err count : 0
+ hw err count : 0
+   total data : 0 KB
+ratio_control : 0
+
