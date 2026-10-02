@@ -1,5 +1,19 @@
 AFRd2 — a fork of AFRd (original by Andrey Zabolotnyi, anpaza @ 4pda)
 
+0.3.3 Fri Oct 02 21:50:00 MSK 2026
+
+    Refined the mode.min.hz.list rule: when there is no clean multiple for the
+    content rate, the fastest available mode is taken instead of the one closest to
+    the double. Verified live: 23.976/24 fps -> 60 Hz (at 50 Hz the hiccups are rare
+    but 20 ms long, at 60 Hz the 3:2 pattern spreads them over 8 ms; the owner
+    compared visually and chose 60), 25 fps -> 50 Hz (a clean multiple), 29.97/30
+    fps -> 59.94 Hz.
+
+    The source of the video on which the owner saw residual unevenness was checked
+    separately: CFR 30 fps without duplicates (599 frames, all intervals 33.3 ms),
+    i.e. the unevenness was on the submission side and went away after restarting
+    the video — a fresh start at 60 Hz gives an even 33.4 ms.
+
 0.3.3 Fri Oct 02 21:35:00 MSK 2026
 
     New key mode.min.hz.list ("package=Hz"): for the listed players the daemon does

@@ -1117,11 +1117,110 @@ static bool atv14_rate_allowed (int hz, void *ctx)
 	return !rate_is_blacklisted (hz);
 }
 
+/* Пакет на переднем плане (определение ниже, нужно для mode.min.hz.list). */
+static char g_cur_pkg [64];
+
+/* Самый быстрый режим с нужной геометрией и частотой не ниже floor; -1 — нет.
+ * Нужен для плееров с mode.min.hz.list: если ровного кратного для частоты
+ * контента нет, берём самый быстрый режим (24 fps -> 60 Гц, а не 50: в 50 Гц
+ * получаются редкие, но заметные рывки по 20 мс, в 60 Гц — распределённое 3:2
+ * с отклонением 8 мс; проверено владельцем на глаз). */
+static int atv14_fastest_mode (int w, int h, int floor)
+{
+	int best = -1, best_hz = 0;
+
+	for (int i = 0; i < g_sf_modes_n; i++)
+	{
+		const sf_mode_t *m = &g_sf_modes [i];
+		if ((m->width != w) || (m->height != h))
+			continue;
+		if (floor && (m->hz < floor))
+			continue;
+		if (m->hz > best_hz)
+		{
+			best_hz = m->hz;
+			best = m->id;
+		}
+	}
+
+	return best;
+}
+
+/* Ровное кратное (x2 или x3) частоты контента не ниже floor, ошибка до 1 %
+ * (то же правило «кратности ≤ 3», что и в sfmodes_select, но без его допуска
+ * 4.3 %); -1 — нет. */
+static int atv14_multiple_mode (int hz, int w, int h, int floor, int *mult)
+{
+	int best = -1, best_hz = 0, best_k = 0;
+
+	if (mult)
+		*mult = 0;
+
+	for (int k = 2; k <= 3; k++)
+	{
+		int want = hz * k;
+
+		for (int i = 0; i < g_sf_modes_n; i++)
+		{
+			const sf_mode_t *m = &g_sf_modes [i];
+			if ((m->width != w) || (m->height != h))
+				continue;
+			if (floor && (m->hz < floor))
+				continue;
+
+			int diff = m->hz - want;
+			if (diff < 0)
+				diff = -diff;
+			if (diff * 100 > want)
+				continue;		/* ошибка больше 1 % */
+
+			if ((best < 0) || (m->hz < best_hz))
+			{
+				best = m->id;
+				best_hz = m->hz;
+				best_k = k;
+			}
+		}
+
+		if (best >= 0)
+			break;				/* меньшая кратность лучше */
+	}
+
+	if (mult)
+		*mult = best_k;
+
+	return best;
+}
+
 /* Выбор режима под частоту контента: кратные частоты (mode.prefer.exact) и
- * чёрный список частот (mode.blacklist.rates) — правила legacy-ветки. */
+ * чёрный список частот (mode.blacklist.rates) — правила legacy-ветки.
+ * floor (mode.min.hz.list, 24.8) — минимальная частота режима для текущего
+ * плеера: ниже неё режимы не выбираются (см. README, ограничение 8). */
 static int atv14_select_mode (int hz, int w, int h, int floor)
 {
 	sf_choice_t ch;
+
+	/* Частота контента ниже порога плеера: 24/23.976 и подобные низкие режимы
+	 * не подходят вообще, поэтому берём ровное кратное (25 -> 50), а если
+	 * ровного кратного нет — самый быстрый режим (24 -> 60). */
+	if (floor && (hz < floor))
+	{
+		int k = 0;
+		int id = atv14_multiple_mode (hz, w, h, floor, &k);
+		if (id < 0)
+			id = atv14_fastest_mode (w, h, floor);
+
+		if (id < 0)
+			return -1;
+
+		trace (1, "частота контента " HZ_FMT " Гц ниже минимума " HZ_FMT " Гц (%s) — беру " HZ_FMT " Гц%s\n",
+		       HZ_ARGS (hz), HZ_ARGS (floor), g_cur_pkg,
+		       HZ_ARGS (sfmodes_current_hz (g_sf_modes, g_sf_modes_n, id)),
+		       k ? " как кратное" : " как самый быстрый");
+
+		return id;
+	}
+
 	int fl = floor;
 	if (sfmodes_select (g_sf_modes, g_sf_modes_n, hz, w, h,
 	                    g_mode_prefer_exact, atv14_rate_allowed,
@@ -1131,9 +1230,6 @@ static int atv14_select_mode (int hz, int w, int h, int floor)
 	if (ch.rate_n > 1)
 		trace (1, "режим " HZ_FMT " Гц выбран как кратный (x%d) для " HZ_FMT " Гц\n",
 		       HZ_ARGS (ch.hz), ch.rate_n, HZ_ARGS (hz));
-
-	if (fl && (ch.hz < fl))
-		trace (1, "("HZ_FMT" Гц ниже минимума "HZ_FMT" Гц)\n", HZ_ARGS (ch.hz), HZ_ARGS (fl));
 
 	return ch.id;
 }
@@ -1182,7 +1278,8 @@ static bool parse_top_package (const char *dump, char *out, size_t out_sz)
 	return false;
 }
 
-/* Пакет плеера текущего видео. Пустая строка — не удалось определить. */
+/* Пакет плеера текущего видео. Пустая строка — не удалось определить.
+ * (Объявление — выше, в выборе режима: mode.min.hz.list.) */
 static char g_cur_pkg [64];
 
 /* Приложение на переднем плане.
