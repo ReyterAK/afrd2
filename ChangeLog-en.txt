@@ -1,5 +1,17 @@
 AFRd2 — a fork of AFRd (original by Andrey Zabolotnyi, anpaza @ 4pda)
 
+0.3.3 Fri Oct 02 22:05:00 MSK 2026
+
+    The "residual" clamping case was checked and turned out to be systematic rather
+    than one-off: a 60 fps video started while a 50 Hz mode is held (i.e. right after
+    a 25 or 50 fps video in the same player) is clamped to 50 fps (live measurement:
+    50.35 fps with the display at 60 Hz) and does not recover by itself. Re-opening
+    the video helps: afterwards 59.94 fps with all intervals at 16.7 ms.
+
+    The daemon now names this case in the log: the cadence check threshold was
+    lowered from 1.25 to 1.125 (this case — 1.18 — used to pass as "подача в
+    порядке"). README limitation 8 updated.
+
 0.3.3 Fri Oct 02 21:50:00 MSK 2026
 
     Refined the mode.min.hz.list rule: when there is no clean multiple for the
