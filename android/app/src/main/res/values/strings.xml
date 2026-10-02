@@ -131,6 +131,10 @@
     <string name="prefs_fps_recheck_delay">Re-measurement delay, ms</string>
     <string name="prefsum_fps_recheck_delay">How many ms after switching to measure again and fix the
         mode if the class differs (heals a biased first window). 0 — disabled.</string>
+    <string name="prefs_fps_cadence_fix">Delivery check after switching, ms</string>
+    <string name="prefsum_fps_cadence_fix">How many ms after switching to check the video layer
+        delivery cadence; if frames reach the display twice as rarely (video looks like 13 fps), the
+        mode is switched away and back (a mode change does not re-init the HWC vsync path). 0 — disabled.</string>
     <string name="prefs_trigger_poll">Decoder poll period, ms</string>
     <string name="prefsum_trigger_poll">How often to check /sys/class/vdec/vdec_status to notice video
         start and stop.</string>
