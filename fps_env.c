@@ -69,25 +69,25 @@ typedef struct
 	unsigned long long delta;	/* кадров в окне */
 	unsigned long long dt;		/* длительность окна, мкс */
 	unsigned long long unc;		/* неопределённость меток окна, мкс */
+	unsigned long long t_start;	/* начало окна, мкс от первой выборки */
+	unsigned long long t_end;	/* конец окна */
 } fps_cand_t;
 
-int fps_env_decide (const fps_env_t *e, unsigned long long horizon_us, unsigned long long skip_us,
-                    unsigned long long sub_us, double factor, double offset, int *hz_out)
+/* Кандидаты-подокна, отсортированные от самых медленных. Возврат: число окон. */
+static int env_candidates (const fps_env_t *e, unsigned long long horizon_us,
+                           unsigned long long skip_us, unsigned long long sub_us,
+                           fps_cand_t *cand, int max)
 {
-	if (hz_out)
-		*hz_out = 0;
-
-	if ((e->n < 2) || (sub_us == 0))
+	if ((e->n < 2) || (sub_us == 0) || (max <= 0))
 		return 0;
 
 	if (skip_us >= horizon_us)
 		skip_us = 0;	/* опечатка в конфиге не должна гасить замер */
 
 	unsigned long long t0 = e->s [0].t_us;
-	fps_cand_t cand [FPS_ENV_MAX];	/* окон не больше, чем выборок минус одно */
 	int n_cand = 0;
 
-	for (int i = 0; (i + 1) < e->n; i++)
+	for (int i = 0; (i + 1) < e->n && n_cand < max; i++)
 	{
 		unsigned long long ti = e->s [i].t_us;
 
@@ -113,11 +113,15 @@ int fps_env_decide (const fps_env_t *e, unsigned long long horizon_us, unsigned 
 
 		unsigned long long delta = e->s [j].frames - e->s [i].frames;
 		unsigned long long dt = e->s [j].t_us - e->s [i].t_us;
+		if (delta == 0)
+			continue;
 
 		cand [n_cand].rate_us = dt / delta;
 		cand [n_cand].delta = delta;
 		cand [n_cand].dt = dt;
 		cand [n_cand].unc = (e->s [i].unc_us + e->s [j].unc_us) / 2;
+		cand [n_cand].t_start = ti - t0;
+		cand [n_cand].t_end = e->s [j].t_us - t0;
 		n_cand++;
 	}
 
@@ -136,6 +140,18 @@ int fps_env_decide (const fps_env_t *e, unsigned long long horizon_us, unsigned 
 		cand [k] = c;
 	}
 
+	return n_cand;
+}
+
+int fps_env_decide (const fps_env_t *e, unsigned long long horizon_us, unsigned long long skip_us,
+                    unsigned long long sub_us, double factor, double offset, int *hz_out)
+{
+	if (hz_out)
+		*hz_out = 0;
+
+	fps_cand_t cand [FPS_ENV_MAX];	/* окон не больше, чем выборок минус одно */
+	int n_cand = env_candidates (e, horizon_us, skip_us, sub_us, cand, FPS_ENV_MAX);
+
 	/* Первое (самое медленное) окно, чей доверительный интервал однозначен.
 	 * Пограничное окно у границы класса (±1 кадр и ±unc_us) не должно
 	 * блокировать решение целиком: следующее по медленности окно обычно
@@ -144,6 +160,58 @@ int fps_env_decide (const fps_env_t *e, unsigned long long horizon_us, unsigned 
 		if (fps_classify_window_corrected (cand [i].delta, cand [i].dt, cand [i].unc,
 		                                   factor, offset, hz_out))
 			return 1;
+
+	return 0;
+}
+
+int fps_env_decide_early (const fps_env_t *e, unsigned long long horizon_us,
+                          unsigned long long skip_us, unsigned long long sub_us,
+                          double factor, double offset, int *hz_out)
+{
+	if (hz_out)
+		*hz_out = 0;
+
+	fps_cand_t cand [FPS_ENV_MAX];
+	int n_cand = env_candidates (e, horizon_us, skip_us, sub_us, cand, FPS_ENV_MAX);
+
+	int i0 = -1, hz0 = 0;
+	for (int i = 0; i < n_cand; i++)
+		if (fps_classify_window_corrected (cand [i].delta, cand [i].dt, cand [i].unc,
+		                                   factor, offset, &hz0))
+		{
+			i0 = i;
+			break;
+		}
+
+	if (i0 < 0)
+		return 0;		/* решаемых окон нет — ждать горизонт */
+
+	for (int i = i0 + 1; i < n_cand; i++)
+	{
+		int hz = 0;
+		if (!fps_classify_window_corrected (cand [i].delta, cand [i].dt, cand [i].unc,
+		                                    factor, offset, &hz))
+			continue;
+		if (hz != hz0)
+			continue;	/* окна расходятся — согласия нет */
+
+		/* Скорости подтверждающего и опорного окон должны быть близки: у
+		 * «завышенного» счётчика (повторные кадры) окна гуляют заметно
+		 * сильнее, и согласие по классу там случайно. 1.5 %. */
+		unsigned long long d = (cand [i].rate_us > cand [i0].rate_us)
+			? (cand [i].rate_us - cand [i0].rate_us)
+			: (cand [i0].rate_us - cand [i].rate_us);
+		if (d * 1000 > cand [i0].rate_us * 15)
+			continue;
+
+		/* подтверждение должно быть разнесено с опорным окном по времени */
+		if ((cand [i].t_start >= cand [i0].t_end) || (cand [i0].t_start >= cand [i].t_end))
+		{
+			if (hz_out)
+				*hz_out = hz0;
+			return 1;
+		}
+	}
 
 	return 0;
 }

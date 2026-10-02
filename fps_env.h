@@ -70,4 +70,17 @@ bool fps_env_ready (const fps_env_t *e, unsigned long long horizon_us);
 int fps_env_decide (const fps_env_t *e, unsigned long long horizon_us, unsigned long long skip_us,
                     unsigned long long sub_us, double factor, double offset, int *hz_out);
 
+/*
+ * Раннее решение, не дожидаясь полного горизонта: берём самое медленное
+ * РЕШАЕМОЕ подокно (как в fps_env_decide) и требуем, чтобы класс подтвердило
+ * ещё одно решаемое подокно, разнесённое с ним по времени (кворум двух
+ * неперикрывающихся окон). Так счётчик с разовым выбросом не уводит решение,
+ * а понятный контент переключается раньше горизонта.
+ *
+ * Возврат: 1 — решение есть (*hz_out), 0 — согласия нет (ждать горизонт).
+ */
+int fps_env_decide_early (const fps_env_t *e, unsigned long long horizon_us,
+                          unsigned long long skip_us, unsigned long long sub_us,
+                          double factor, double offset, int *hz_out);
+
 #endif

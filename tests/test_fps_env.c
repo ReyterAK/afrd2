@@ -269,9 +269,49 @@ static void t_ready_full_ring (void)
 	assert (fps_env_ready (&env, ENV_HORIZON));
 }
 
+/* Раннее решение: класс должен подтвердить второй, разнесённый по времени
+ * решаемый подокон (кворум); иначе — ждать полного горизонта. */
+static void t_early_quorum (void)
+{
+	fps_env_t env;
+	int hz = 0;
+	unsigned i;
+
+	/* 14 с ровно 25 fps: в раннем окне 12 с есть пара разнесённых подокон */
+	fps_env_reset (&env);
+	for (i = 0; i <= 14; i++)
+		fps_env_push (&env, i * 1000000ULL, 25ULL * i, 2000);
+	assert (fps_env_decide_early (&env, 12000000ULL, ENV_SKIP, ENV_SUB, 1.0, 0.0, &hz) == 1);
+	assert (hz == 25 * 256);
+
+	/* всего 7 с данных (одно подокно) — подтверждения нет */
+	fps_env_reset (&env);
+	for (i = 0; i <= 7; i++)
+		fps_env_push (&env, i * 1000000ULL, 25ULL * i, 2000);
+	assert (fps_env_decide_early (&env, 12000000ULL, ENV_SKIP, ENV_SUB, 1.0, 0.0, &hz) == 0);
+}
+
+/* Подокна расходятся по классу (24 fps, затем 25 fps) — раннего решения нет. */
+static void t_early_disagree (void)
+{
+	fps_env_t env;
+	int hz = 0;
+	unsigned i;
+
+	fps_env_reset (&env);
+	for (i = 0; i <= 6; i++)
+		fps_env_push (&env, i * 1000000ULL, 24ULL * i, 2000);
+	for (i = 7; i <= 12; i++)
+		fps_env_push (&env, i * 1000000ULL, 24ULL * 6 + 25ULL * (i - 6), 2000);
+
+	assert (fps_env_decide_early (&env, 12000000ULL, ENV_SKIP, ENV_SUB, 1.0, 0.0, &hz) == 0);
+}
+
 int main (void)
 {
 	t_fixtures ();
+	t_early_quorum ();
+	t_early_disagree ();
 	t_startup_dip ();
 	t_pause ();
 	t_counter_reset ();

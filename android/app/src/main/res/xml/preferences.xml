@@ -61,6 +61,10 @@
                           android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
                           android:singleLine="true" android:summary="@string/prefsum_fps_measure_envelope_max"
                           android:title="@string/prefs_fps_measure_envelope_max"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="12000" android:key="fps_measure_envelope_early_ms"
+                          android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
+                          android:singleLine="true" android:summary="@string/prefsum_fps_measure_envelope_early"
+                          android:title="@string/prefs_fps_measure_envelope_early"/>
         <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="5000" android:key="fps_measure_envelope_sub_ms"
                           android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
                           android:singleLine="true" android:summary="@string/prefsum_fps_measure_envelope_sub"
