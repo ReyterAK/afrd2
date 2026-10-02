@@ -1,5 +1,19 @@
 AFRd2 — a fork of AFRd (original by Andrey Zabolotnyi, anpaza @ 4pda)
 
+0.3.3 Fri Oct 02 20:05:00 MSK 2026
+
+    The AV1 correction is enabled with the value 0.1 — the largest one at which no
+    25 fps clip is pushed into 24 Hz. Tuned on live recordings (13 YouTube clips,
+    the same statistic the daemon uses — lower envelope): without the correction
+    "24 correct / 25 correct" = 5/7 and 6/6; at 0.1 — 6/7 and 6/6; at 0.3 — 6/7
+    and 5/6 (a genuine 25 fps clip lands in 24 Hz); at 0.5 — 7/7 and 4/6. In the
+    application: "Apply player calibration" is on, "AV1 correction" = 0.1.
+
+    No value gives a "100 %" guarantee: on a 65-clip control sample two genuine
+    25 fps clips measured below the class boundary with no correction at all (the
+    envelope is biased downwards), and the spread within a single playback reaches
+    ±0.5 frames/s.
+
 0.3.3 Fri Oct 02 19:45:00 MSK 2026
 
     The AV1 correction (fps.correct.*) is now off by default. The owner compared on
