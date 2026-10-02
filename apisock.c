@@ -8,6 +8,7 @@
  */
 
 #include "afrd.h"
+#include "hdrinfo.h"
 
 #include <strings.h>
 #include <errno.h>
@@ -124,7 +125,9 @@ static void apisock_cmd (char *cmd, int fd, struct sockaddr *src_addr, socklen_t
 			if (!*cmd)
 				afrd_frame_rate_hint ((fr * 256) / 1000);
 		} else if (apisock_is_cmd (&cmd, "status")) {
-			char status [200];
+			/* +5 строк на атрибуты дисплея (hdrinfo): буфера 200 байт мало */
+			char status [320];
+			const hdrinfo_t *hi = hdrinfo_get ();
 			int sl = snprintf (status, sizeof (status),
 				"stamp:%d\n"
 				"enabled:%d\n"
@@ -133,7 +136,12 @@ static void apisock_cmd (char *cmd, int fd, struct sockaddr *src_addr, socklen_t
 				"version:%d.%d.%d\n"
 				"build:%s\n"
 				"current hz:%d\n"
-				"original hz:%d\n",
+				"original hz:%d\n"
+				"hdr mode:%d\n"
+				"hdr policy:%d\n"
+				"hdr priority:%d\n"
+				"sdr mode:%d\n"
+				"force hdr mode:%d\n",
 				g_afrd_stats.crc32,
 				g_afrd_stats.enabled ? 1 : 0,
 				g_afrd_stats.switched ? 1 : 0,
@@ -141,7 +149,16 @@ static void apisock_cmd (char *cmd, int fd, struct sockaddr *src_addr, socklen_t
 				g_afrd_stats.ver_major, g_afrd_stats.ver_minor, g_afrd_stats.ver_micro,
 				g_afrd_stats.bdate,
 				g_afrd_stats.current_hz * 1000 / 256,
-				g_afrd_stats.original_hz * 1000 / 256);
+				g_afrd_stats.original_hz * 1000 / 256,
+				hi->valid ? hi->mode : -1,
+				hi->valid ? hi->policy : -1,
+				hi->valid ? hi->priority : -1,
+				hi->valid ? hi->sdr_mode : -1,
+				hi->valid ? hi->force_hdr : -1);
+			/* snprintf возвращает «сколько хотелось»: при усечении
+			 * sendto ушёл бы за буфер */
+			if (sl >= (int) sizeof (status))
+				sl = sizeof (status) - 1;
 			sendto (fd, status, sl, 0, src_addr, addrlen);
 		} else if (apisock_is_cmd (&cmd, "reconf")) {
 			afrd_reconf ();

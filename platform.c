@@ -65,6 +65,9 @@ platform_t platform_detect (void)
 		p.sink = SINK_SF_BACKDOOR;
 		p.hdmi_state = HDMI_STATE_NEW;
 		p.sf_backdoor = sf_backdoor_available ();
+		/* Вендорский клиент нужен и для цветового пространства, и для чтения
+		 * HDR/SDR-атрибутов (hdrinfo). */
+		p.vendor_cli = (access (CS_CLI, X_OK) == 0) ? CS_CLI : NULL;
 	}
 	else
 	{
@@ -87,7 +90,7 @@ platform_t platform_detect (void)
 	 * вендорский сервис — sysfs-узел attr пишется с ошибкой (проверено). */
 	if (p.kind == PLAT_ATV14)
 	{
-		if (access (CS_CLI, X_OK) == 0)
+		if (p.vendor_cli)
 			colorspace_set_apply_cmd (CS_CLI " -s \"HDMI Color ATTR\"");
 		else
 			trace (1, "нет %s — цветовое пространство не применяю\n", CS_CLI);

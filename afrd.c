@@ -19,6 +19,7 @@
 #include "fps_env.h"
 #include "cfgkeys.h"
 #include "reconf.h"
+#include "hdrinfo.h"
 
 #define __USE_GNU
 #include <math.h>
@@ -1747,6 +1748,11 @@ static int run_atv14 (const platform_t *plat)
 
 	trace (1, "предпочтительный режим ТВ: %d\n", preferred_id);
 
+	/* Атрибуты дисплея (HDR/SDR-режимы) — только чтение и показ: применяют их
+	 * система и плеер (см. README). Значения видны в журнале и в API `status`. */
+	hdrinfo_refresh (plat->vendor_cli);
+	hdrinfo_log ("атрибуты дисплея при старте");
+
 	/* страховка: снять «залипший» флаг прошлого запуска */
 	sink_release_backdoor (plat->sink);
 
@@ -2151,6 +2157,12 @@ static int run_atv14 (const platform_t *plat)
 						colorspace_apply (nm2);
 				}
 			}
+
+			/* Тот же момент, когда цвета уже устоялись, — перечитываем
+			 * HDR/SDR-атрибуты: система выставляет их асинхронно после смены
+			 * режима. В журнал идёт строка только при уровнях -v. */
+			hdrinfo_refresh (plat->vendor_cli);
+			hdrinfo_log ("атрибуты дисплея после переключения");
 
 			int pm = 0, am = 0;
 			int expect_ms = cadence_expect_ms;

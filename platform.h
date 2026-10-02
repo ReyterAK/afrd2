@@ -19,6 +19,7 @@ typedef struct
 	const char *sf_dump_cmd;	/* команда получения таблицы режимов (с фильтром: дамп SF больше буфера) */
 	const char *display_dump_cmd;	/* команда активного разрешения и предпочтения (dumpsys display, с фильтром) */
 	const char *activity_dump_cmd;	/* команда пакета приложения на переднем плане (dumpsys activity, с фильтром) */
+	const char *vendor_cli;		/* вендорский клиент SystemControl (/vendor/bin/meson_display_client) или NULL */
 	bool sf_backdoor;		/* доступна ли транзакция 1035 */
 } platform_t;
 

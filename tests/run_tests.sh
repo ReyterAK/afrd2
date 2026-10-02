@@ -19,4 +19,5 @@ run test_exec exec.c
 run test_sink sink.c exec.c tests/stub.c
 run test_vdec vdec.c fps_class.c
 run test_reconf reconf.c
+run test_hdrinfo hdrinfo.c exec.c tests/stub.c
 exit $status
