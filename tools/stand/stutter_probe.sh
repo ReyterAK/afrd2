@@ -76,6 +76,9 @@ while [ "$i" -lt "$SECS" ]; do
 		lay=$(dumpsys SurfaceFlinger --list 2>/dev/null | grep 'SurfaceView\[' | grep -i blast | head -1)
 		echo "LAT i=$i layer=$lay" >> "$LOG"
 		[ -n "$lay" ] && dumpsys SurfaceFlinger --latency "$lay" > "$LATP.$i" 2>&1
+		# состояние vsync-режима HWC на момент замера: последнее событие FRA/HWC
+		# (переключение режима 1035 его НЕ пересчитывает — проверено)
+		echo "HWC@i=$i: $(logcat -d -v time 2>/dev/null | grep 'adjustVsyncMode' | tail -1)" >> "$LOG"
 	fi
 	sleep 1; i=$((i + 1))
 done
@@ -105,6 +108,7 @@ echo "=== $L: маркер ошибки HWC (video-on / MixMode) ==="
 fra_on=$(grep -c 'frameRateDisplay 1,' "$LOG")
 mix=$(grep -c 'adjustVsyncMode to MixMode' "$LOG")
 hwm=$(grep -c 'adjustVsyncMode to HwMode' "$LOG")
+echo "  HWC на устойчивом замере: $(grep 'HWC@i=' "$LOG" | tail -1 | sed 's/.*adjustVsyncMode/adjustVsyncMode/')"
 if [ -n "$PIN" ]; then
 	echo "  PIN-прогон (id=$PIN): MixMode-маркер не показателен; смотрим удержания подачи"
 elif [ "$fra_on" -gt 0 ] && [ "$mix" -gt 0 ]; then
