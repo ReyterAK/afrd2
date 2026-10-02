@@ -45,6 +45,7 @@ static const struct
 	{ "fps.measure.retries",	CFGKEY_ATV14, NULL },
 	{ "fps.declared.crosscheck.pct", CFGKEY_ATV14, NULL },
 	{ "fps.recheck.delay.ms",	CFGKEY_ATV14, NULL },
+	{ "fps.cadence.fix.ms",		CFGKEY_ATV14, NULL },
 	{ "fps.prefer.api",		CFGKEY_ATV14, NULL },
 	{ "pause.keep",			CFGKEY_ATV14, NULL },
 	{ "switch.restore.on.stop",	CFGKEY_ATV14, NULL },

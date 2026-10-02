@@ -1371,6 +1371,44 @@ static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skip
 	return 0;
 }
 
+/* Проверка подачи видео после смены режима (журнал §21.9).
+ *
+ * Если режим переключить при живом видео, в ~40 % случаев подача слоя
+ * становится вдвое реже периода дисплея (интервалы ~2 периода, видео «как
+ * 13 fps») — HWC/SF не перенастроили vsync-путь, а переключение режима его не
+ * пересчитывает. Повторная выдача того же режима не помогает; помогает смена
+ * режима «туда-обратно» (проверено на стенде).
+ *
+ * Возврат true — подача вдвое реже периода; period_ms и avg_ms — для лога.
+ * Разбор делает awk на устройстве (`dumpsys SurfaceFlinger --latency`):
+ * первая строка — период дисплея в нс, дальше интервалы фактической подачи. */
+static bool atv14_cadence_halved (int *period_ms, int *avg_ms)
+{
+	*period_ms = *avg_ms = 0;
+
+	char out [4096];
+	const char *cmd =
+		"L=$(dumpsys SurfaceFlinger --list 2>/dev/null | grep 'SurfaceView\\[' | grep -i blast | head -1); "
+		"[ -z \"$L\" ] && exit 0; "
+		"dumpsys SurfaceFlinger --latency \"$L\" 2>/dev/null | awk '"
+		"NR==1 { p=$1/1e6; next } "
+		"NF==3 && $2+0>0 && $2+0<1e17 { n++; t[n]=$2+0 } "
+		"END { if (n<3) exit; m=0; s=0; "
+		"for (i=2;i<=n;i++) { d=(t[i]-t[i-1])/1e6; if (d>0) { m++; s+=d } } "
+		"if (m>0) printf \"%.2f %.2f\", p, s/m }'";
+
+	if (exec_capture (cmd, out, sizeof (out)) != 0)
+		return false;
+
+	double p = 0, a = 0;
+	if ((sscanf (out, "%lf %lf", &p, &a) != 2) || (a <= 0) || (p <= 0))
+		return false;
+
+	*period_ms = (int) (p + 0.5);
+	*avg_ms = (int) (a + 0.5);
+	return (a > 1.5 * p);
+}
+
 /* Отказ от удержания режима: частоту определить не удалось — вернуть исходный
  * режим, снять флаг backdoor и забыть состояние удержания. */
 static void atv14_give_up (const platform_t *plat,
@@ -1488,6 +1526,10 @@ static int run_atv14 (const platform_t *plat)
 	/* R56: одноразовая перепроверка замера после смены режима */
 	mstime_t recheck_timer = 0;
 	bool recheck_armed = false;
+	/* §21.9: проверка, что после смены режима кадры реально идут на подачу */
+	mstime_t cadence_timer = 0;
+	bool cadence_armed = false;
+	int cadence_fixes = 0;
 	int preferred_id;
 	/* поправка частоты для плеера текущего видео (fps.correct.list):
 	 * пакет определяется один раз на видео, при первом замере */
@@ -1586,6 +1628,8 @@ static int run_atv14 (const platform_t *plat)
 	 * смещено набором буфера — 60-фпс канал давал 50.3 fps и режим 50 Гц).
 	 * 0 — перепроверка выключена. Знание о плеерах не нужно. */
 	int recheck_ms = cfg_get_int ("fps.recheck.delay.ms", 8000);
+	/* §21.9: через сколько после переключения проверить подачу (0 — не проверять) */
+	int cadence_fix_ms = cfg_get_int ("fps.cadence.fix.ms", 2500);
 
 	/* Огибающая: горизонт наблюдения, предел расширения, подокно, прогрев
 	 * (см. fps_env.h и config/afrd2.ini). envelope.ms=0 — решение по первому
@@ -1778,6 +1822,9 @@ static int run_atv14 (const platform_t *plat)
 				retries = 0;
 				recheck_armed = false;	/* R56: перепроверка — на текущее видео */
 				mstime_disable (&recheck_timer);
+				cadence_armed = false;
+				mstime_disable (&cadence_timer);
+				cadence_fixes = 0;
 				/* плеер нового видео может быть другим — поправку
 				 * (fps.correct.list) берём заново */
 				pkg_probed = false;
@@ -1831,6 +1878,42 @@ static int run_atv14 (const platform_t *plat)
 			/* видео закончилось/пауза — наблюдение начинается заново */
 			fps_env_reset (&env);
 			env_growing = false;
+			cadence_armed = false;
+			mstime_disable (&cadence_timer);
+			cadence_fixes = 0;
+		}
+		else if (cadence_armed && mstime_expired (&cadence_timer))
+		{
+			/* §21.9: после смены режима подача иногда становится вдвое реже
+			 * периода дисплея (видео «как 13 fps»). Лечение — переключить
+			 * режим «туда-обратно»: повторная выдача того же режима не
+			 * помогает, а смена его пересобирает vsync-путь HWC/SF. */
+			cadence_armed = false;
+			int pm = 0, am = 0;
+			if (atv14_cadence_halved (&pm, &am))
+			{
+				int back = (orig_sf_id >= 0) ? orig_sf_id : preferred_id;
+				if ((cadence_fixes < 2) && (back >= 0) && (back != want_sf_id))
+				{
+					cadence_fixes++;
+					trace (0, "подача вдвое реже периода дисплея (%d мс при периоде %d мс) — переключаю режим туда-обратно (лечение %d)\n",
+					       am, pm, cadence_fixes);
+					if (atv14_apply_mode (plat, back, "лечение подачи: возврат") == 0)
+					{
+						msleep (200);
+						if (atv14_apply_mode (plat, want_sf_id, "лечение подачи: повтор") == 0)
+							cur_sf_id = want_sf_id;
+					}
+					mstime_update ();
+					mstime_arm (&cadence_timer, 2000);
+					cadence_armed = true;	/* проверить результат лечения */
+				}
+				else
+					trace (0, "подача вдвое реже периода дисплея (%d мс при периоде %d мс) — лечение не применяю\n",
+					       am, pm);
+			}
+			else if (am > 0)
+				trace (2, "подача в порядке: %d мс при периоде %d мс\n", am, pm);
 		}
 		else if (recheck_armed && mstime_expired (&recheck_timer))
 		{
@@ -2113,6 +2196,14 @@ static int run_atv14 (const platform_t *plat)
 					mstime_arm (&recheck_timer, (uint32_t)recheck_ms);
 					recheck_armed = true;
 					trace (1, "перепроверка замера через %d мс\n", recheck_ms);
+				}
+
+				/* §21.9: проверить, что кадры реально идут на подачу */
+				if (cadence_fix_ms > 0)
+				{
+					mstime_update ();
+					mstime_arm (&cadence_timer, (uint32_t)cadence_fix_ms);
+					cadence_armed = true;
 				}
 			}
 		}
