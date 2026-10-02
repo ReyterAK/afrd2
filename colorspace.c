@@ -6,7 +6,9 @@
  */
 
 #include "afrd.h"
+#include <string.h>
 #include "colorspace.h"
+#include "exec.h"
 #include <regex.h>
 #include <string.h>
 
@@ -95,6 +97,14 @@ static char *g_cs_default = 0;
 
 /* Override colorspace via API */
 static struct colorspace_t g_override_cs;
+
+/* Префикс команды вендорского сервиса (Android 10+); NULL — писать в sysfs. */
+static const char *g_cs_apply_cmd;
+
+void colorspace_set_apply_cmd (const char *cmd_prefix)
+{
+	g_cs_apply_cmd = (cmd_prefix && cmd_prefix [0]) ? cmd_prefix : NULL;
+}
 static bool g_override_cs_enabled = false;
 
 static bool parse_str (const char *str, int *val, struct parse_list *list)
@@ -294,6 +304,10 @@ bool colorspace_apply (const char *mode)
 	struct colorspace_t cur_cs = def_cs;
 	char *cur_cs_str = sysfs_read (g_cs_path);
 	colorspace_parse (cur_cs_str, &cur_cs, false);
+
+	/* копия текущего значения — пригодится для сравнения перед записью */
+	char cur_raw [64];
+	snprintf (cur_raw, sizeof (cur_raw), "%s", cur_cs_str ? cur_cs_str : "");
 	free (cur_cs_str);
 
 	/* colorspace override */
@@ -337,8 +351,44 @@ bool colorspace_apply (const char *mode)
 
 apply:
 	cs_attr = colorspace_str (&cur_cs);
+
+	/* Сравниваем семантически, а не по строке: представление в узле и у
+	 * вендорского сервиса различается (у сервиса диапазон "full" может
+	 * отбрасываться), из-за строкового сравнения писали зря — а запись
+	 * перенастраивает HDMI-линк. */
+	if (cur_raw [0])
+	{
+		struct colorspace_t now = def_cs;
+		colorspace_parse (cur_raw, &now, false);
+
+		if ((now.cs == cur_cs.cs) && (now.cd == cur_cs.cd) && (now.cr == cur_cs.cr))
+		{
+			trace (2, "Цветовое пространство уже %s — не меняю\n", cs_attr);
+			return true;
+		}
+	}
+
 	trace (1, "Setting color space to %s\n", cs_attr);
-	return sysfs_write (g_cs_path, cs_attr) == 0;
+
+	if (!g_cs_apply_cmd)
+		return sysfs_write (g_cs_path, cs_attr) == 0;
+
+	char cmd [256], out [512];
+	if (snprintf (cmd, sizeof (cmd), "%s '%s'", g_cs_apply_cmd, cs_attr) >= (int) sizeof (cmd))
+		return false;
+
+	if (exec_capture (cmd, out, sizeof (out)) != 0)
+		return false;
+
+	/* Вендорский клиент печатает "set <attr> to <value>, current value:<value>"
+	 * при успехе; на ошибке этого текста нет. */
+	if (!strstr (out, "current value:"))
+	{
+		trace (1, "цветовое пространство не применилось: %s\n", out);
+		return false;
+	}
+
+	return true;
 }
 
 void afrd_override_colorspace (char **cs)

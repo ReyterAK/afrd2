@@ -131,9 +131,9 @@
 ! mode - it is not possible to transmit an RGB stream at 4k resolution
 ! and >30hz refresh rates via HDMI 1.x.
 
-! On Android 10 and above this does not apply: colors are managed by the
-! system and the player (including HDR/Dolby Vision), the daemon does not
-! apply color space settings.
+! On Android 10 and above this works too: the daemon applies the selected
+! format after every mode switch (through the built-in service). The exception
+! is HDR/Dolby Vision: they are managed by the system and the player.
 
 ? My TV doesn't "like" certain refresh rates
 ? I use the "Prefer exact refresh rates" option but, still, I want to use

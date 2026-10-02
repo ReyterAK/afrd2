@@ -1382,6 +1382,27 @@ static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skip
 		return -2;
 	}
 
+	/* Цветовое пространство по правилам cs.select — как делал legacy-путь при
+	 * каждой смене режима (modes.c: switch_mode). Правила сопоставляются с
+	 * именем режима, поэтому читаем его из узла (на ATV14 это отражение
+	 * состояния, которое выставил фреймворк). */
+	char *cm = sysfs_read (g_mode_path);
+	if (cm)
+	{
+		char nm [64];
+		size_t i = 0;
+		while (((i + 1) < sizeof (nm)) && cm [i] && cm [i] != '\n' && cm [i] != '\r')
+		{
+			nm [i] = cm [i];
+			i++;
+		}
+		nm [i] = 0;
+		free (cm);
+
+		if (nm [0])
+			colorspace_apply (nm);
+	}
+
 	return 0;
 }
 
@@ -2032,6 +2053,32 @@ static int run_atv14 (const platform_t *plat)
 			 * режим «туда-обратно»: повторная выдача того же режима не
 			 * помогает, а смена его пересобирает vsync-путь HWC/SF. */
 			cadence_armed = false;
+
+			/* Цветовое пространство: применяем ещё раз, когда переключение
+			 * режима уже устоялось. Фреймворк переустанавливает цветовое
+			 * пространство сам — асинхронно после смены режима, и применение
+			 * «в момент» переключения им же и перебивалось (проверено
+			 * живьём: через пару секунд значение возвращалось к исходному). */
+			{
+				char *cm2 = sysfs_read (g_mode_path);
+				if (cm2)
+				{
+					char nm2 [64];
+					size_t i2 = 0;
+					while (((i2 + 1) < sizeof (nm2)) && cm2 [i2] &&
+					       cm2 [i2] != '\n' && cm2 [i2] != '\r')
+					{
+						nm2 [i2] = cm2 [i2];
+						i2++;
+					}
+					nm2 [i2] = 0;
+					free (cm2);
+
+					if (nm2 [0])
+						colorspace_apply (nm2);
+				}
+			}
+
 			int pm = 0, am = 0;
 			int expect_ms = cadence_expect_ms;
 			if (atv14_cadence_halved (expect_ms, &pm, &am))
