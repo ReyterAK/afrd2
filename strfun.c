@@ -91,6 +91,16 @@ void strlist_free (strlist_t *list)
 {
 	for (int i = 0; i < list->size; i++)
 		free (list->data [i]);
+
+	/* освобождается и сам массив указателей: strlist_load() перезаписывает
+	 * list->data, поэтому без этого каждая перезагрузка конфига теряла его
+	 * (находка ревью; не падение — просто утечка на каждом reconf) */
+	if (list->data)
+	{
+		free (list->data);
+		list->data = NULL;
+	}
+
 	list->size = 0;
 }
 
