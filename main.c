@@ -320,10 +320,10 @@ static void display_stats ()
 	if (!shmem_read ()) {
 		trace (0, "failed to read shared memory\n");
 	} else {
-		printf ("afrd version: %d.%d.%d built %s\n",
+		printf ("AFRd2 version: %d.%d.%d built %s\n",
 			g_afrd_stats.ver_major, g_afrd_stats.ver_minor, g_afrd_stats.ver_micro,
 			g_afrd_stats.bdate);
-		printf ("afrd is enabled: %s\n", g_afrd_stats.enabled ? "yes" : "no");
+		printf ("AFRd2 is enabled: %s\n", g_afrd_stats.enabled ? "yes" : "no");
 		printf ("Display refresh rate is switched: %s\n", g_afrd_stats.switched ? "yes" : "no");
 		printf ("Display is blackened: %s\n", g_afrd_stats.blackened ? "yes" : "no");
 		printf ("Current display refresh rate: %u.%02uHz\n",

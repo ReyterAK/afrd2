@@ -2554,7 +2554,7 @@ int afrd_init ()
 	if (log_file && log_enable)
 		trace_log (log_file);
 
-	trace (1, "afrd v%s%s built at %s is initializing\n", g_version, g_ver_sfx, g_bdate);
+	trace (1, "AFRd2 v%s%s built at %s is initializing\n", g_version, g_ver_sfx, g_bdate);
 
 	struct utsname un;
 	if (uname (&un) != 0)

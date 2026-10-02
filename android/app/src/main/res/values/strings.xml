@@ -37,7 +37,7 @@
         30fps movies
     </string>
     <string name="prefs_mode_use_fract">Fractional refresh rate policy</string>
-    <string name="prefsum_mode_use_fract">Tell AFRd to use fractional (23.976, 29.97, 59.94Hz) or
+    <string name="prefsum_mode_use_fract">Tell AFRd2 to use fractional (23.976, 29.97, 59.94Hz) or
         integer refresh rates, or both
     </string>
     <string name="prefs_mode_blacklist_rates">Blacklisted refresh rates</string>
@@ -73,8 +73,8 @@
         Set to 0 to disable this feature
     </string>
 
-    <string name="afrd_requires_su">AFRd requires Superuser privileges to run</string>
-    <string name="l_afrd_version">Auto Frame Rate daemon version</string>
+    <string name="afrd_requires_su">AFRd2 requires Superuser privileges to run</string>
+    <string name="l_afrd_version">AFRd2 daemon version</string>
     <string name="l_afrd_enabled">Daemon is enabled</string>
     <string name="l_off">Off</string>
     <string name="l_on">On</string>
@@ -90,10 +90,10 @@
     <string name="l_log_enable">Enable logging in daemon</string>
     <string name="error_opening_log">Failed to open log file; most likely it does not exist yet.
     </string>
-    <string name="channel_name" translatable="false">AFRd</string>
-    <string name="channel_description">Show and manage current AFRd status</string>
-    <string name="notif_enabled">AFRd is enabled</string>
-    <string name="notif_disabled">AFRd is disabled</string>
+    <string name="channel_name" translatable="false">AFRd2</string>
+    <string name="channel_description">Show and manage current AFRd2 status</string>
+    <string name="notif_enabled">AFRd2 is enabled</string>
+    <string name="notif_disabled">AFRd2 is disabled</string>
     <string name="notif_hz">Refresh rate: %s, original: %s</string>
     <string name="notif_stop_afrd">Disable AFR</string>
     <string name="notif_start_afrd">Enable AFR</string>
@@ -102,7 +102,7 @@
     <string name="prefs_group_correct">Per-player frame rate calibration</string>
     <string name="prefs_group_atv14">Settings for Android 10 and above</string>
     <string name="prefs_fps_prefer_api">Trust the player hint</string>
-    <string name="prefsum_fps_prefer_api">If the player reports the frame rate itself via the AFRd API
+    <string name="prefsum_fps_prefer_api">If the player reports the frame rate itself via the AFRd2 API
         (frame_rate_hint), prefer it over our own frame counter measurement.</string>
     <string name="prefs_fps_measure_envelope">Observation before switching, ms</string>
     <string name="prefsum_fps_measure_envelope">The daemon does not switch the mode until it has
@@ -193,17 +193,17 @@
     <string name="press_back_again">Press \'Back\' quickly again to quit application</string>
     <string name="prefs_reset">Reset user preferences</string>
     <string name="prefs_apply">Apply user preferences</string>
-    <string name="prefs_title">AFRd settings</string>
+    <string name="prefs_title">AFRd2 settings</string>
     <string name="log_clear">Clear log file</string>
-    <string name="status_title">AFRd status</string>
+    <string name="status_title">AFRd2 status</string>
     <string name="msg_reset_prefs_failed">Failed to reset user preferences</string>
     <string name="msg_apply_prefs_failed">Failed to apply user preferences</string>
     <string name="prefs_group_timings">Switch timings</string>
-    <string name="msg_reset_prefs_ok">AFRd settings were reset</string>
-    <string name="msg_apply_prefs_ok">AFRd settings changed</string>
+    <string name="msg_reset_prefs_ok">AFRd2 settings were reset</string>
+    <string name="msg_apply_prefs_ok">AFRd2 settings changed</string>
     <string name="log_title">Log file: %s %s</string>
     <string name="log_is_off">LOGGING IS DISABLED</string>
-    <string name="notif_channel">AFRd status notification</string>
+    <string name="notif_channel">AFRd2 status notification</string>
     <string name="about_history">Version history</string>
     <string name="about_authors">Program made by</string>
     <string name="about_me">Reyter / Reyter @ 4PDA + DeepSeek</string>

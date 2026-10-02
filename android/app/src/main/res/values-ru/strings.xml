@@ -12,7 +12,7 @@
     <string name="msg_title_critical_error">Критическая ошибка</string>
     <string name="l_off">Выкл</string>
     <string name="l_on">Вкл</string>
-    <string name="arch_not_supported">AFRd не скомпилирован для архитектуры \'%s\'
+    <string name="arch_not_supported">AFRd2 не скомпилирован для архитектуры \'%s\'
     </string>
     <string name="failed_copy_raw">Не удалось скопировать файл ресурсов в %s</string>
     <string name="prefs_enable">Включить Автоматический Подбор Частоты</string>
@@ -71,8 +71,8 @@
         видео. Задайте 0 чтобы экран не выключался
     </string>
 
-    <string name="afrd_requires_su">AFRd требует прав Администратора для работы</string>
-    <string name="l_afrd_version">Версия демона Автоматического Подбора Частоты</string>
+    <string name="afrd_requires_su">AFRd2 требует прав Администратора для работы</string>
+    <string name="l_afrd_version">Версия демона AFRd2</string>
     <string name="l_afrd_enabled">Демон включён</string>
     <string name="only_amlogic">Это приложение поддерживает только устройства на базе процессоров
         AmLogic, в то время, как Ваш процессор - \'%s\'.
@@ -93,7 +93,7 @@
     <string name="prefs_group_correct">Калибровка частоты по плееру</string>
     <string name="prefs_group_atv14">Настройки для Android 10 и выше</string>
     <string name="prefs_fps_prefer_api">Доверять подсказке плеера</string>
-    <string name="prefsum_fps_prefer_api">Если плеер сам сообщает частоту через API AFRd
+    <string name="prefsum_fps_prefer_api">Если плеер сам сообщает частоту через API AFRd2
         (frame_rate_hint), предпочитать её собственному замеру по счётчику кадров.</string>
     <string name="prefs_fps_measure_envelope">Наблюдение перед переключением, мс</string>
     <string name="prefsum_fps_measure_envelope">Демон не переключает режим, пока не наберёт столько
@@ -173,10 +173,10 @@
         (fps.correct.av1.pkg). Пусто — для любого плеера.</string>
     <string name="notif_start_afrd">Включить АПЧ</string>
     <string name="notif_stop_afrd">Отключить АПЧ</string>
-    <string name="notif_enabled">AFRd включён</string>
-    <string name="notif_disabled">AFRd отключён</string>
+    <string name="notif_enabled">AFRd2 включён</string>
+    <string name="notif_disabled">AFRd2 отключён</string>
     <string name="notif_hz">Частота развёртки: %s, исходная: %s</string>
-    <string name="channel_description">Управление текущим состоянием AFRd</string>
+    <string name="channel_description">Управление текущим состоянием AFRd2</string>
     <string name="error_opening_log">Не удалось открыть файл журнала; возможно, он ещё не
         существует.
     </string>
@@ -191,17 +191,17 @@
     <string name="press_back_again">Нажмите \'Назад\' ещё раз для выхода</string>
     <string name="prefs_reset">Сброс настроек пользователя</string>
     <string name="prefs_apply">Применить настройки</string>
-    <string name="prefs_title">Настройки AFRd</string>
+    <string name="prefs_title">Настройки AFRd2</string>
     <string name="log_clear">Очистить файл журнала</string>
-    <string name="status_title">Состояние AFRd</string>
+    <string name="status_title">Состояние AFRd2</string>
     <string name="msg_reset_prefs_failed">Не удалось сбросить настройки</string>
     <string name="msg_apply_prefs_failed">Не удалось применить настройки</string>
     <string name="prefs_group_timings">Задержки переключения</string>
-    <string name="msg_reset_prefs_ok">Настройки AFRd были сброшены</string>
-    <string name="msg_apply_prefs_ok">Настройки AFRd изменены</string>
+    <string name="msg_reset_prefs_ok">Настройки AFRd2 были сброшены</string>
+    <string name="msg_apply_prefs_ok">Настройки AFRd2 изменены</string>
     <string name="log_title">Файл журнала: %s %s</string>
     <string name="log_is_off">ЖУРНАЛ ВЫКЛЮЧЕН</string>
-    <string name="notif_channel">Состояние AFRd</string>
+    <string name="notif_channel">Состояние AFRd2</string>
     <string name="menu_about">О программе</string>
     <string name="about_history">История версий</string>
     <string name="about_authors">Разработчик программы</string>
