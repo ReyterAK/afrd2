@@ -48,5 +48,8 @@ public class ActionActivity extends Activity
 
         config.put ("enable", state);
         config.save (control.mIni);
+        /* см. MainActivity.applyPrefs: без этого демон не узнаёт о смене
+         * «включить/выключить» до перезапуска */
+        control.reload ();
     }
 }
