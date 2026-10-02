@@ -1536,6 +1536,8 @@ static int run_atv14 (const platform_t *plat)
 	mstime_t cadence_timer = 0;
 	bool cadence_armed = false;
 	int cadence_fixes = 0;
+	/* ожидаемый интервал подачи контента (мс) — из измеренной частоты */
+	int cadence_expect_ms = 0;
 	int preferred_id;
 	/* поправка частоты для плеера текущего видео (fps.correct.list):
 	 * пакет определяется один раз на видео, при первом замере */
@@ -1896,8 +1898,7 @@ static int run_atv14 (const platform_t *plat)
 			 * помогает, а смена его пересобирает vsync-путь HWC/SF. */
 			cadence_armed = false;
 			int pm = 0, am = 0;
-			int want_hz = sfmodes_current_hz (g_sf_modes, g_sf_modes_n, want_sf_id);
-			int expect_ms = (want_hz > 0) ? (256000 + want_hz / 2) / want_hz : 0;
+			int expect_ms = cadence_expect_ms;
 			if (atv14_cadence_halved (expect_ms, &pm, &am))
 			{
 				int back = (orig_sf_id >= 0) ? orig_sf_id : preferred_id;
@@ -2081,6 +2082,12 @@ static int run_atv14 (const platform_t *plat)
 					hz = exact;
 				}
 			}
+
+			/* ожидаемый интервал подачи контента (мс): период кадра по
+			 * измеренной частоте — именно с ним сравнивает проверка подачи
+			 * (период дисплея не годится: 24-фпс видео на 60 Гц даёт 2.5
+			 * периода, и это норма) */
+			cadence_expect_ms = (hz > 0) ? (256000 + hz / 2) / hz : 0;
 
 			/* текущий режим / исходный id */
 			if (g_sf_modes_n <= 0)
