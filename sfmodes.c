@@ -165,3 +165,22 @@ int sfmodes_current_hz (const sf_mode_t *modes, int n, int id)
 
 	return 0;
 }
+
+int sfmodes_restore_target (const sf_mode_t *modes, int n, int preferred_id, int cur_id)
+{
+	/* Проверить id по таблице нечем — возвращаем cur, он ближе к тому,
+	 * что сейчас на экране; при неизвестном cur остаётся preferred
+	 * (лучше он, чем ничего: atv14_apply_mode всё равно сверит id). */
+	if (!modes || n <= 0)
+		return (cur_id >= 0) ? cur_id : ((preferred_id >= 0) ? preferred_id : -1);
+
+	/* preferred_id приходит из другого пространства нумерации (DisplayManager),
+	 * поэтому в транзакцию 1035 уходит только при наличии в таблице SF. */
+	if ((preferred_id >= 0) && sfmodes_current_hz (modes, n, preferred_id))
+		return preferred_id;
+
+	if ((cur_id >= 0) && sfmodes_current_hz (modes, n, cur_id))
+		return cur_id;
+
+	return -1;
+}

@@ -2406,7 +2406,12 @@ static int run_atv14 (const platform_t *plat)
 			int expect_ms = cadence_expect_ms;
 			if (atv14_cadence_halved (expect_ms, &pm, &am))
 			{
-				int back = (orig_sf_id >= 0) ? orig_sf_id : preferred_id;
+				/* preferred_id — id из пространства DisplayManager: как
+				 * цель транзакции 1035 он годится, только если есть в
+				 * таблице SF (иначе «лечение» билось бы о пропуск). */
+				int back = (orig_sf_id >= 0) ? orig_sf_id
+				           : sfmodes_restore_target (g_sf_modes, g_sf_modes_n,
+				                                     preferred_id, -1);
 				if ((cadence_fixes < 2) && (back >= 0) && (back != want_sf_id))
 				{
 					cadence_fixes++;
@@ -2816,8 +2821,17 @@ static int run_atv14 (const platform_t *plat)
 
 		act = guard_decide (video_eff, want_sf_id, cur_sf_id, &orig_sf_id, &held);
 
-		if (act == GUARD_SWITCH && (preferred_id >= 0))
-			orig_sf_id = preferred_id;	/* возврат — в предпочтительный режим ТВ */
+		/* preferred_id приходит из dumpsys display (mUserPreferredModeId) —
+		 * это нумерация DisplayManager, а транзакция 1035 требует id из
+		 * таблицы SurfaceFlinger. На стенде ATV14 нумерации расходятся
+		 * (DM: preferred=1; SF: 30..43), и прямая подстановка давала id,
+		 * которого в таблице нет: возврат после видео молча пропускался
+		 * («id 1 отсутствует в текущей таблице режимов»). sfmodes_restore_target
+		 * берёт preferred, только если он есть в таблице SF, иначе cur_sf_id,
+		 * уже запомненный guard_decide в orig_sf_id. */
+		if (act == GUARD_SWITCH)
+			orig_sf_id = sfmodes_restore_target (g_sf_modes, g_sf_modes_n,
+			                                     preferred_id, orig_sf_id);
 
 		if (act == GUARD_SWITCH)
 		{

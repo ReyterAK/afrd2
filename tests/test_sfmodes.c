@@ -204,12 +204,48 @@ static void test_select_live (void)
 	assert (ch.id == 25 && ch.rate_n == 1);
 }
 
+/* Цель возврата режима после видео. preferred_id — из dumpsys display
+ * (mUserPreferredModeId, пространство DisplayManager), cur_id — id текущего
+ * режима из таблицы SurfaceFlinger. Таблица ниже повторяет стенд ATV14, где
+ * нумерации DM и SF расходятся: живой баг — preferred=1 при таблице 30..43
+ * и текущем режиме 30. */
+static void test_restore_target (void)
+{
+	static const sf_mode_t sf [4] = {
+		{ 30, 1920, 1080, 15345 },	/* 59.94 Гц */
+		{ 36, 1920, 1080,  6139 },	/* 23.98 Гц */
+		{ 37, 1920, 1080,  6144 },	/* 24.00 Гц */
+		{ 43, 1280,  720, 12800 },	/* 50.00 Гц */
+	};
+
+	/* (а) preferred есть в таблице SF — возвращаемся в него */
+	assert (sfmodes_restore_target (sf, 4, 37, 30) == 37);
+	/* preferred совпадает с текущим режимом — тоже он */
+	assert (sfmodes_restore_target (sf, 4, 30, 30) == 30);
+
+	/* (б) живой баг: preferred=1 из нумерации DisplayManager в таблице SF
+	 * отсутствует — возврат идёт в cur_id (30), а не пропускается */
+	assert (sfmodes_restore_target (sf, 4, 1, 30) == 30);
+
+	/* (в) ни preferred, ни cur нет в таблице — возвращать нечего */
+	assert (sfmodes_restore_target (sf, 4, 1, 2) == -1);
+	assert (sfmodes_restore_target (sf, 4, -1, -1) == -1);
+
+	/* (г) пустая таблица: проверить id нечем — берём cur, а если и он
+	 * неизвестен, остаётся preferred */
+	assert (sfmodes_restore_target (sf, 0, 1, 30) == 30);
+	assert (sfmodes_restore_target (NULL, 0, 1, 30) == 30);
+	assert (sfmodes_restore_target (sf, 0, 1, -1) == 1);
+	assert (sfmodes_restore_target (sf, 0, -1, -1) == -1);
+}
+
 int main (void)
 {
 	test_synthetic ();
 	test_live ();
 	test_select_synthetic ();
 	test_select_live ();
+	test_restore_target ();
 
 	printf ("sfmodes: OK\n");
 	return 0;
