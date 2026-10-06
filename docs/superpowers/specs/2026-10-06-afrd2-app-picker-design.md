@@ -19,6 +19,13 @@
 2. **Фильтр по умолчанию**: только приложения, умеющие открывать видео.
 3. Выборщик делается **общим** (переиспользуемым) — первым вторым потребителем становится
    `fps.correct.av1.pkg`.
+4. **Политика форка (2026-10-06): аддитивность с переносом.** Совместимость со старыми
+   Android сохраняется, и полезные возможности на них **переносятся**, если для них есть
+   входные данные и они там осмысленны. Поэтому `switch.skip.pkg` — ключ **обоих путей**
+   (`CFGKEY_BOTH`), а не ATV14-only: и «зажим» темпа плеером, и определение переднего пакета
+   применимы к Android 6–9 (проверено на стенде `.76`: `dumpsys activity` разбирается, см.
+   §3.9). ATV14-only остаются вещи, привязанные к SurfaceFlinger 10+ (backdoor, огибающая,
+   `fps.correct.av1.*` на этом классе железа).
 
 ### Критерии успеха
 
@@ -55,6 +62,8 @@
 | 6 | `minSdk 23`, `targetSdk 28` | ограничения видимости пакетов Android 11 не действуют; при будущем подъёме `targetSdk` ≥ 30 список молча урежется (нужен `<queries>`/`QUERY_ALL_PACKAGES`) — записать комментарием в коде |
 | 7 | Демон читает список по пробелам (`spaces = " \t\r\n"`) | храним и пишем значения как строку пакетов через **пробел**; никаких запятых |
 | 8 | `fps.correct.av1.pkg` — один пакет (`strcspn(package, " \t")`) | режим `SINGLE` пишет один пакет; лишние — отбрасываются на стороне демона, но GUI их и не даст выбрать |
+| 9 | Старый путь (Android 6–9) знает о переднем пакете **не больше, чем новый**: на стенде `.76` (Android 9, ядро 4.9.113) `dumpsys activity activities` разбирается, поле называется `ResumedActivity: ActivityRecord{...}`, внутренняя часть записи совпадает с ATV14 (`u0 <пакет>/<активити> t<N>`). Сегодня в демоне пакет ищет только ATV14-код (`topResumedActivity=`) | перенос `switch.skip.pkg` на legacy требует общего разбора обоих форматов — это отдельная задача (Task 1 плана) до GUI |
+| 10 | Ключ `switch.skip.pkg` уже читается всегда (`strlist_load` в `afrd_init`), но используется только внутри `run_atv14` | на legacy нужен гейт в точках решения: `framerate_switch()` и `delay_framerate_switch()` |
 
 ## 4. Архитектура
 
@@ -146,6 +155,13 @@ SettingsFragment                     AppsPickerActivity                 демо
 ### 4.5. Хранение и настройки
 
 * `Config.itemType`: добавить `switch.skip.pkg` → `TYPE_STR` (`fps.correct.av1.pkg` уже есть).
+* **Сеять новые ключи в настройках из профиля.** Для уже установленного приложения набор
+  `ini_options` не содержит новых ключей (ветка `conf.save(mOptions)` выполняется только при
+  первом запуске), поэтому строка показала бы пустое значение, а первая же правка настроек
+  записала бы пустое значение поверх профильного умолчания (`switch.skip.pkg` потерял бы
+  YouTube TV). В `MainActivity.updateConfig()` в ветке «настройки уже инициализированы»
+  отсутствующие в настройках ключи берутся из загруженного конфига и записываются в
+  `ini_options`.
 * `res/xml/preferences.xml`:
   * в группу «Настройки для Android 10 и выше» (`atv14`) добавить строку
     `ru.cobra.zap.xprefs.XAppsPreference` с ключом `switch_skip_pkg`;
@@ -154,13 +170,12 @@ SettingsFragment                     AppsPickerActivity                 демо
 * Формат значения: строка пакетов через пробел — ровно то, что читает `strlist_load()`.
   Пустое значение = функция выключена (для `switch.skip.pkg` — «никого не исключаем»).
 * Применение — существующим `applyPrefs()` (правки в демоне не нужны).
-* **Пометка «не действует» на legacy-пути.** Все ключи, которые демон объявляет как
-  `CFGKEY_ATV14` (`switch.skip.pkg`, `fps.correct.enable|list|av1.offset|av1.pkg`) на Android
-  6–9 не читаются, но в GUI остаются редактируемыми. Добавляем обратный к `kInactiveOnAtv14`
-  список `kInactiveOnLegacy` с этими пятью ключами и новую строку
-  `not_applicable_legacy` («не действует на Android 6–9»), затем помечаем их тем же приёмом
-  `markInapplicable()`. Это устраняет ложное ожидание «настройка есть — значит работает» и
-  не трогает ATV14-поведение.
+* **Пометка «не действует» на legacy-пути.** Список `kInactiveOnAtv14` остаётся как есть;
+  для ключей, которые демон объявляет `CFGKEY_ATV14` и которые при этом видны в GUI
+  (`fps.correct.enable|list|av1.offset|av1.pkg`), добавляется обратный список
+  `kInactiveOnLegacy` и строка `not_applicable_legacy` («не действует на Android 6–9»).
+  `switch.skip.pkg` в этот список **не входит** — по новой политике он действует на обоих
+  путях (§1, решение 4).
 
 ## 5. Поведение и краевые случаи
 
@@ -187,16 +202,24 @@ SettingsFragment                     AppsPickerActivity                 демо
 
 | Файл | Изменение |
 |---|---|
+| `pkgdet.h`, `pkgdet.c` | новый: общий разбор «пакета на переднем плане» для обоих форматов дампа (Android 6–14) |
+| `tests/test_pkgdet.c`, `tests/run_tests.sh` | новый host-тест разбора (фикстуры — реальные строки со стендов) |
+| `platform.c`, `platform.h` | одна команда дампа активности для **обоих** путей |
+| `afrd.c` | `pkg_probe()` вместо `atv14_top_package()`; кэш пакета для legacy; гейт `switch.skip.pkg` в `framerate_switch`/`delay_framerate_switch`; `mode.min.hz.list` на legacy (порог в выборе режима) |
+| `cfgkeys.c`, `tests/test_cfgkeys.c` | `switch.skip.pkg` и `mode.min.hz.list` → `CFGKEY_BOTH` |
+| `config/afrd-android7-.ini`, `config/afrd-android8+.ini`, `config/afrd-minix7-.ini` | закомментированный ключ с пояснением (значение по умолчанию — пусто, поведение не меняется) |
 | `android/app/src/main/java/ru/cobra/zap/xprefs/XAppsPreference.java` | новый: строка настройки |
+| `android/app/src/main/java/ru/cobra/zap/afrd/Apps.java` | новый: разбор/сборка значения, список приложений, имена пакетов |
 | `android/app/src/main/java/ru/cobra/zap/afrd/gui/AppsPickerActivity.java` | новый: экран выбора (загрузка, фильтр, список, результат) |
 | `android/app/src/main/res/layout/activity_apps_picker.xml`, `item_app.xml` | новые layout'ы |
 | `android/app/src/main/java/ru/cobra/zap/afrd/gui/SettingsFragment.java` | обработка нажатия `XAppsPreference`, карта «ключ → режим», `onActivityResult`, summary, список `kInactiveOnLegacy` |
-| `android/app/src/main/java/ru/cobra/zap/afrd/gui/MainActivity.java` | `limitDpi()` → общий помощник (вынос без изменения поведения) |
+| `android/app/src/main/java/ru/cobra/zap/afrd/gui/MainActivity.java` | вынос `limitDpi()` в утилиту; сев новых ключей в `ini_options` |
+| `android/app/src/main/java/ru/cobra/zap/afrd/jfun.java` | статический `limitDpi (Activity)` |
 | `android/app/src/main/java/ru/cobra/zap/afrd/Config.java` | `itemType`: `switch.skip.pkg` |
 | `android/app/src/main/res/xml/preferences.xml` | новая строка + перевод `fps_correct_av1_pkg` |
 | `android/app/src/main/AndroidManifest.xml` | `AppsPickerActivity` (`exported=false`, landscape) |
 | `android/app/src/main/res/values/strings.xml`, `.../values-ru/strings.xml` | новые строки (RU/EN), включая `not_applicable_legacy` |
-| `README.md`, `ChangeLog-ru.txt`, `ChangeLog-en.txt` | описание настройки и экрана |
+| `README.md`, `ChangeLog-ru.txt`, `ChangeLog-en.txt` | политика форка, действия `switch.skip.pkg`/`mode.min.hz.list` на обоих путях, описание экрана выбора |
 | `FAQ-ru.txt`, `FAQ-en.txt` | в пункт про АПЧ плеера дописать имя ключа/путь в настройках (по договорённости) |
 
 ## 7. Приёмка
@@ -234,11 +257,17 @@ SettingsFragment                     AppsPickerActivity                 демо
 
 **Регресс**
 
-11. Legacy-путь (ATV9, `.76`): приложение устанавливается и работает; строка `switch.skip.pkg`
-    и ключи `fps.correct.*` помечены «не действует на Android 6–9» и недоступны для правки,
-    остальные настройки и запуск демона не изменились; откат — переустановка прежнего APK.
-12. `afrd -s`, `status` и остальные пункты настроек не изменились; ни одна существующая
-    строка настроек не потеряла значение после первого открытия (проверка ini до/после).
+11. Legacy-путь (ATV9, `.76`), демон: с пустым `switch.skip.pkg` поведение прежнее (ни одного
+    `dumpsys` в логе, режимы переключаются как раньше); с пакетом плеера в списке — режим не
+    переключается, в логе строка о пропуске; при добавлении плеера в список во время
+    воспроизведения удержанный режим возвращается. Порядок доступа к чужому демону и откат —
+    по §27.1 журнала.
+12. Legacy-путь, приложение: строка «Плееры, которым AFR мешает» видна и работает (выбор из
+    списка, значение доезжает в ini); ключи `fps.correct.*` помечены «не действует на
+    Android 6–9» и недоступны для правки; остальные настройки и запуск демона не изменились.
+13. `afrd -s`, `status` и остальные пункты настроек не изменились; ни одна существующая
+    строка настроек не потеряла значение после первого открытия (проверка ini до/после) —
+    включая `switch.skip.pkg` у уже установленного приложения (сев из профиля, §4.5).
 
 ## 8. Риски
 
