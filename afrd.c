@@ -670,6 +670,10 @@ static int mode_min_hz_for (const char *pkg);
 static const char *pkg_name (void);
 static bool pkg_skip_active (void);
 
+/* Сброс кэша пакета на старте нового видео (определение ниже; нужен
+ * обработчику vdec-uevent, который идёт раньше). */
+static void pkg_cache_invalidate (void);
+
 /* Выбор режима из g_modes под частоту g_state.hz (правила старого пути).
  * floor — минимальная допустимая частота режима в формате 24.8
  * (mode.min.hz.list) или 0.
@@ -1035,9 +1039,13 @@ static void handle_uevent (char *msg, ssize_t size)
 
 	} else if (uevent_filter_matched (&g_filter_vdec)) {
 		/* got a vdec uevent */
-		if (action && (strcmp (action, "add") == 0))
+		if (action && (strcmp (action, "add") == 0)) {
+			/* Новое видео: сбрасываем кэш пакета, чтобы первое решение
+			 * по нему шло по плееру этого видео, а не по пакету
+			 * предыдущего приложения (кэш живёт 2 с). */
+			pkg_cache_invalidate ();
 			delay_framerate_switch (false, 0, modalias);
-		else if (action && (strcmp (action, "remove") == 0))
+		} else if (action && (strcmp (action, "remove") == 0))
 			delay_framerate_switch (true, 0, modalias);
 
 	} else if (uevent_filter_matched (&g_filter_hdmi) && g_switch_hdmi) {
@@ -1338,25 +1346,40 @@ static void pkg_probe_logged (const platform_t *plat)
  * ни одного вызова (у существующих пользователей Android 6-9 поведение
  * остаётся прежним). */
 #define PKG_CACHE_MS	2000
+
+/* Таймер кэша пакета: взведён, пока кэш свежий (см. pkg_name); сбрасывается
+ * на старте нового видео через pkg_cache_invalidate(). */
+static mstime_t g_pkg_cache_stamp;
+
 static const char *pkg_name (void)
 {
 	if (g_plat.kind == PLAT_ATV14)
 		return g_cur_pkg;
 
 	static char buf [64];
-	static mstime_t stamp;
 
 	if ((g_skip_pkgs.size == 0) && (g_mode_min_hz_count == 0))
 		return "";
 
-	if (!mstime_running (&stamp))
+	if (!mstime_running (&g_pkg_cache_stamp))
 	{
-		mstime_arm (&stamp, PKG_CACHE_MS);
+		mstime_arm (&g_pkg_cache_stamp, PKG_CACHE_MS);
 		if (pkg_probe (&g_plat, buf, sizeof (buf)) != 0)
 			buf [0] = 0;
 	}
 
 	return buf;
+}
+
+/* Сброс кэша пакета — зовётся на старте нового видео (ветка ACTION=add
+ * vdec-uevent). Кэш живёт PKG_CACHE_MS, и без сброса первое решение по новому
+ * видео ушло бы по пакету предыдущего приложения: например, вышли из плеера из
+ * switch.skip.pkg и тут же запустили другое видео — гейт сработал бы по
+ * устаревшему пакету и переключение для нового видео пропало бы. Ограничение
+ * скорости запросов (не чаще PKG_CACHE_MS) на время воспроизведения сохраняется. */
+static void pkg_cache_invalidate (void)
+{
+	mstime_disable (&g_pkg_cache_stamp);
 }
 
 /* true — текущему видео AFR мешать не надо (плеер в switch.skip.pkg). */
