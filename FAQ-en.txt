@@ -34,25 +34,66 @@
 ! get if refresh rate would be 30Hz.
 
 ? Should I disable "system" auto framerate when using AFRd?
-? Many video players (KODI/SPMC, ViMu, Smart Youtube etc) have a option
-? to adjust TV refresh rate according to video. Should I enable it?
 
-! First of all, on most AmLogic-based devices these option do nothing.
-! In most cases it is broken - either in kernel, or in Android itself.
-! In some cases this option requires special support in Android API,
-! which is non-existent in most cases on AmLogic devices (except on
-! some Beelink and Minix boxes, maybe some others).
+! First of all, whether it works at all depends on the box: on some
+! AmLogic-based devices it really does switch the mode, on others it is
+! broken - either in kernel, or in Android itself. But if you use AFRd,
+! it is still better to disable it: AFRd has many more settings (switch
+! delays, fractional rate policy, blacklists of rates and applications),
+! while the system AFR switches the mode its own way and ignores them.
 
-! Second, no matter if it works, you must disable it - especially
-! if it really works, like the "framerate switcher" addon for KODI/SPMC.
-! The reason is that two working AFRs will always conflict.
+! Second, when two mechanisms switch the rate at the same time, they
+! conflict. In the better case you'll get longer "black screens" during
+! refresh rate switches, and in worst case you can even get "black screen
+! forever" until reboot.
 
-! In the better case you'll get longer "black screens" during refresh
-! rate switches, and in worst case you can even get "black screen forever"
-! until reboot.
+! That's why I recommend disabling the system AFR when using AFRd:
+! "Match content frame rate" in Android TV settings, as well as vendor
+! frame rate switches in the box settings (on AmLogic it is usually
+! called "Frame rate switch" / "auto frame rate switching").
 
-! That's why I always insist on disabling all other AFR subsystems
-! if you're using AFRd.
+! Auto framerate built into a video player is a separate case, see the
+! next question.
+
+? Should I enable auto framerate (AFR) in video players that have it,
+? when using AFRd?
+
+! Yes, it is better to keep it enabled. A player switches the refresh rate
+! through the same system path as AFRd, and in practice this works
+! consistently.
+
+! For media files the player knows the frame rate from the metadata
+! before playback starts and switches the mode in advance, while AFRd
+! spends 10-20 seconds measuring it (see the question "Why does the mode
+! switch not immediately..."). For streaming video the player has declared
+! information about the frame rate (HLS/DASH manifest), which AFRd has no
+! access to. Note that a player reports the *declared* rate instead of
+! measuring it - a player's own estimate from the frame counter is not
+! more accurate than ours (on IPTV we saw it overestimated by 2-4%).
+
+! When both mechanisms are active, usually there is no conflict: if the
+! player has already switched the mode to the one AFRd considers correct,
+! AFRd does nothing. But if the targets differ (which is possible, for
+! example, at the 24/25 fps boundary), AFRd will switch the mode to its
+! own one 10-20 seconds later - you will see an extra "blink" in the
+! middle of playback.
+
+! So if you have made sure that the player handles AFR well on its own,
+! add it to the AFRd blacklist - then AFRd will not switch the mode for
+! that player and the extra "blink" will not happen.
+
+! How to check: first disable the player's own AFR and see how the player
+! behaves with AFRd alone, then enable the player's AFR and repeat. If the
+! player switches the mode correctly on its own, add it to the blacklist.
+! Signs that the player's AFR and AFRd get in each other's way: the mode
+! does not have time to settle, switches twice within one clip, or the
+! screen stays in a "foreign" mode after playback stops.
+
+! A caveat: only a player that really switches the rate itself should be
+! put in the blacklist. If the player has no AFR of its own, the blacklist
+! means that the system chooses the mode, so the system mode must not be
+! lower than the content frame rate (usually 60Hz) - otherwise some videos
+! will be "clamped" (see limitation 8 in README).
 
 ? I still see "judder" in videos. Why?
 ? Despite the fact that AFRd correctly switches refresh rate, I still
