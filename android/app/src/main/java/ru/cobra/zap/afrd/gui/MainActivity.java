@@ -229,7 +229,7 @@ public class MainActivity extends Activity
     /* Настройки, которых ещё нет в ini_options, берём из конфига профиля. */
     private void seedOptions (Config conf)
     {
-        final String [] seeded = { "switch.skip.pkg", "fps.correct.av1.pkg" };
+        final String [] seeded = { "switch.skip.pkg", "fps.correct.av1.pkg", "mode.min.hz.list" };
         SharedPreferences.Editor edit = null;
 
         for (String key : seeded)

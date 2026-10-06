@@ -8,27 +8,38 @@
 package ru.cobra.zap.afrd.gui;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.drawable.Drawable;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.TextWatcher;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.BaseAdapter;
+import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
+import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.ListView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
 import ru.cobra.zap.afrd.Apps;
+import ru.cobra.zap.afrd.PkgValues;
 import ru.cobra.zap.afrd.jfun;
 
 /**
@@ -37,7 +48,8 @@ import ru.cobra.zap.afrd.jfun;
  * Экран ничего не пишет в конфиг: он возвращает новое значение хост-фрагменту
  * (SettingsFragment), а тот применяет его обычным путём (applyPrefs). Поэтому
  * экран переиспользуется любым числом настроек — сейчас это switch.skip.pkg
- * (режим multi) и fps.correct.av1.pkg (режим single).
+ * (режим multi), fps.correct.av1.pkg (режим single) и mode.min.hz.list
+ * (режим pkg_value: у каждого выбранного плеера — своя частота-порог).
  */
 public class AppsPickerActivity extends Activity
 {
@@ -50,11 +62,15 @@ public class AppsPickerActivity extends Activity
 
     public static final String MODE_MULTI = "multi";
     public static final String MODE_SINGLE = "single";
+    /** «пакет=число»: отметка задаёт пакет, диалог строки — число. */
+    public static final String MODE_PKG_VALUE = "pkg_value";
 
     private String mKey;
     private String mMode = MODE_MULTI;
     private boolean mPlayersOnly = true;
     private final LinkedHashSet<String> mSelected = new LinkedHashSet<> ();
+    /* Значения «пакет → число» для режима pkg_value (только отмеченные пакеты). */
+    private final LinkedHashMap<String, String> mValues = new LinkedHashMap<> ();
     private final List<Apps.App> mApps = new ArrayList<> ();
     private AppsAdapter mAdapter;
     private AsyncTask<Void, Void, Void> mLoader;
@@ -75,10 +91,21 @@ public class AppsPickerActivity extends Activity
         Intent in = getIntent ();
         mKey = in.getStringExtra (EXTRA_KEY);
         String mode = in.getStringExtra (EXTRA_MODE);
-        if (MODE_SINGLE.equals (mode))
-            mMode = MODE_SINGLE;
+        if (MODE_SINGLE.equals (mode) || MODE_PKG_VALUE.equals (mode))
+            mMode = mode;
         mPlayersOnly = !"all".equals (in.getStringExtra (EXTRA_FILTER));
-        mSelected.addAll (Apps.split (in.getStringExtra (EXTRA_VALUE)));
+
+        String value = in.getStringExtra (EXTRA_VALUE);
+        if (MODE_PKG_VALUE.equals (mMode))
+        {
+            /* Разбор — теми же правилами, что у демона (PkgValues): то, что он
+             * игнорирует, в значение не сохраняем — иначе строка настроек
+             * показывала бы настройку, которой демон не видит. */
+            mValues.putAll (PkgValues.parse (value, PkgValues.MIN_HZ, PkgValues.MAX_HZ));
+            mSelected.addAll (mValues.keySet ());
+        }
+        else
+            mSelected.addAll (Apps.split (value));
 
         String title = in.getStringExtra (EXTRA_TITLE);
         ((TextView) findViewById (R.id.pickerTitle)).setText (title == null ? "" : title);
@@ -108,7 +135,8 @@ public class AppsPickerActivity extends Activity
         });
 
         ListView list = findViewById (R.id.pickerList);
-        mAdapter = new AppsAdapter (this, mApps, mSelected);
+        mAdapter = new AppsAdapter (this, mApps, mSelected, mValues,
+            MODE_PKG_VALUE.equals (mMode));
         list.setAdapter (mAdapter);
         list.setOnItemClickListener (new AdapterView.OnItemClickListener ()
         {
@@ -116,6 +144,15 @@ public class AppsPickerActivity extends Activity
             public void onItemClick (AdapterView<?> parent, View view, int position, long id)
             {
                 String pkg = mApps.get (position).pkg;
+                /* В режиме pkg_value отметка и число задаются одним диалогом:
+                 * на пульте клик — единственное доступное действие, а без
+                 * числа запись для демона бесполезна. */
+                if (MODE_PKG_VALUE.equals (mMode))
+                {
+                    editValue (pkg);
+                    return;
+                }
+
                 /* wasSelected нужен до clear(): в режиме single очистка набора обнулила бы
                  * признак, и выбранную строку нельзя было бы снять (пустое значение =
                  * «любой плеер»). В режиме multi снятие отметки — обычный путь. */
@@ -132,6 +169,105 @@ public class AppsPickerActivity extends Activity
         });
 
         load ();
+    }
+
+    /* Диалог числа для строки списка (режим pkg_value): имя пакета задаётся
+     * отметкой в списке, число вводится с пульта. Кнопка сохранения гаснет,
+     * пока число недопустимо (не число или вне диапазона, который примет
+     * демон), — иначе «Сохранить» молча теряло бы запись. */
+    private void editValue (final String pkg)
+    {
+        final boolean selected = mSelected.contains (pkg);
+        final EditText input = new EditText (this);
+        input.setInputType (InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        input.setText (mValues.containsKey (pkg) ? mValues.get (pkg) : "");
+        input.setHint (R.string.apps_value_hint);
+
+        float d = getResources ().getDisplayMetrics ().density;
+        int pad = (int) (16 * d);
+        /* setView с отступами есть не во всех compileSdk (в 27 — только
+         * setView(View)), поэтому поле оборачивается в контейнер с padding. */
+        FrameLayout box = new FrameLayout (this);
+        box.setPadding (pad, pad / 2, pad, pad / 2);
+        box.addView (input);
+
+        AlertDialog.Builder b = new AlertDialog.Builder (this)
+            .setTitle (getString (R.string.apps_value_title, Apps.label (this, pkg)))
+            .setView (box)
+            .setNegativeButton (android.R.string.cancel, null)
+            .setPositiveButton (R.string.apps_value_save, new DialogInterface.OnClickListener ()
+            {
+                @Override
+                public void onClick (DialogInterface dialog, int which)
+                {
+                    applyValue (pkg, selected, input.getText ().toString ().trim ());
+                }
+            });
+
+        if (selected)
+            b.setNeutralButton (R.string.apps_value_clear, new DialogInterface.OnClickListener ()
+            {
+                @Override
+                public void onClick (DialogInterface dialog, int which)
+                {
+                    mSelected.remove (pkg);
+                    mValues.remove (pkg);
+                    mAdapter.notifyDataSetChanged ();
+                }
+            });
+
+        final AlertDialog dialog = b.create ();
+        dialog.setOnShowListener (new DialogInterface.OnShowListener ()
+        {
+            @Override
+            public void onShow (DialogInterface d)
+            {
+                if (!(d instanceof AlertDialog))
+                    return;
+
+                final Button ok = ((AlertDialog) d).getButton (AlertDialog.BUTTON_POSITIVE);
+                ok.setEnabled (PkgValues.inRange (input.getText ().toString (),
+                    PkgValues.MIN_HZ, PkgValues.MAX_HZ));
+
+                input.addTextChangedListener (new TextWatcher ()
+                {
+                    @Override
+                    public void beforeTextChanged (CharSequence s, int a, int b, int c)
+                    {
+                    }
+
+                    @Override
+                    public void onTextChanged (CharSequence s, int a, int b, int c)
+                    {
+                    }
+
+                    @Override
+                    public void afterTextChanged (Editable s)
+                    {
+                        ok.setEnabled (PkgValues.inRange (s.toString (),
+                            PkgValues.MIN_HZ, PkgValues.MAX_HZ));
+                    }
+                });
+            }
+        });
+        dialog.show ();
+    }
+
+    /* Запись значения в набор: новую строку отмечаем, только если демон ещё
+     * примет запись (иначе он молча выбросит лишние — afrd.c:
+     * MODE_MIN_HZ_MAX, и настройка работала бы не так, как показано). */
+    private void applyValue (String pkg, boolean selected, String value)
+    {
+        if (!selected && (mValues.size () >= PkgValues.MAX_ENTRIES))
+        {
+            Toast.makeText (this, getString (R.string.apps_value_limit, PkgValues.MAX_ENTRIES),
+                Toast.LENGTH_LONG).show ();
+            return;
+        }
+
+        mValues.put (pkg, value);
+        mSelected.add (pkg);
+        mAdapter.notifyDataSetChanged ();
     }
 
     /* Загрузка списка — в фоне: на ATV это десятки-сотни пакетов, а запрос
@@ -201,6 +337,8 @@ public class AppsPickerActivity extends Activity
         out.putExtra (EXTRA_KEY, mKey);
         if (MODE_SINGLE.equals (mMode))
             out.putExtra (RESULT_VALUE, mSelected.isEmpty () ? "" : mSelected.iterator ().next ());
+        else if (MODE_PKG_VALUE.equals (mMode))
+            out.putExtra (RESULT_VALUE, PkgValues.format (mValues));
         else
             out.putExtra (RESULT_VALUE, Apps.join (new ArrayList<> (mSelected)));
 
@@ -213,13 +351,18 @@ public class AppsPickerActivity extends Activity
         private final Activity mCtx;
         private final List<Apps.App> mApps;
         private final LinkedHashSet<String> mSelected;
+        private final Map<String, String> mValues;
+        private final boolean mShowValues;
         private final Map<String, Drawable> mIcons = new HashMap<> ();
 
-        AppsAdapter (Activity ctx, List<Apps.App> apps, LinkedHashSet<String> selected)
+        AppsAdapter (Activity ctx, List<Apps.App> apps, LinkedHashSet<String> selected,
+                     Map<String, String> values, boolean showValues)
         {
             mCtx = ctx;
             mApps = apps;
             mSelected = selected;
+            mValues = values;
+            mShowValues = showValues;
         }
 
         @Override
@@ -253,6 +396,19 @@ public class AppsPickerActivity extends Activity
             ((TextView) v.findViewById (R.id.appPkg)).setText (app.installed ? app.pkg
                 : mCtx.getString (R.string.apps_not_installed, app.pkg));
             ((CheckBox) v.findViewById (R.id.appCheck)).setChecked (mSelected.contains (app.pkg));
+
+            /* В режиме pkg_value справа от пакета видно заданное число: иначе
+             * пустая рамка отметки не отличалась бы от отмеченной строки без
+             * значения. */
+            TextView val = v.findViewById (R.id.appValue);
+            String num = mValues.get (app.pkg);
+            if (mShowValues && (num != null) && !num.isEmpty ())
+            {
+                val.setVisibility (View.VISIBLE);
+                val.setText (mCtx.getString (R.string.apps_value_hz, num));
+            }
+            else
+                val.setVisibility (View.GONE);
 
             ImageView iv = v.findViewById (R.id.appIcon);
             Drawable icon = mIcons.get (app.pkg);

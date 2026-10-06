@@ -44,6 +44,7 @@ public class Config
         itemType.put ("mode.use.fract", TYPE_STR);
         itemType.put ("mode.blacklist.rates", TYPE_STR);
         itemType.put ("switch.skip.pkg", TYPE_STR);
+        itemType.put ("mode.min.hz.list", TYPE_STR);
         itemType.put ("mode.extra", TYPE_STR);
         itemType.put ("cs.select", TYPE_STR);
         itemType.put ("switch.delay.on", TYPE_INT);

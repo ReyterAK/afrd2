@@ -191,6 +191,16 @@
     <string name="apps_empty">No applications found — clear "Video players only" to see all</string>
     <string name="apps_not_installed">%s — not installed</string>
     <string name="apps_icon">Application icon</string>
+    <string name="prefs_mode_min_hz_list">Minimum display rate per player</string>
+    <string name="prefsum_mode_min_hz_list">For the selected applications the daemon avoids display
+        modes below the given rate (Hz): players that clamp their rendering pace when a clip starts
+        in a low mode then behave. Touch the row, tick applications and set the rate right there.</string>
+    <string name="apps_value_title">%s: minimum display rate, Hz</string>
+    <string name="apps_value_hint">1…1000</string>
+    <string name="apps_value_save">Save</string>
+    <string name="apps_value_clear">Clear selection</string>
+    <string name="apps_value_hz">%s Hz</string>
+    <string name="apps_value_limit">No more than %1$d applications: that is how many entries the daemon supports</string>
     <string name="mode_use_fract_auto">Auto (use best)</string>
     <string name="mode_use_fract_use">Only fractional</string>
     <string name="mode_use_fract_int">Only integer</string>
