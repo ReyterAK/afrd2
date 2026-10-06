@@ -29,6 +29,7 @@ import java.util.Vector;
 
 import ru.cobra.zap.afrd.Apps;
 import ru.cobra.zap.afrd.Control;
+import ru.cobra.zap.afrd.PkgValues;
 import ru.cobra.zap.xprefs.XAppsPreference;
 
 /**
@@ -46,11 +47,13 @@ public class SettingsFragment extends PreferenceFragment
      * нет, цвета/HDR ведёт вендорский стек, uevent-фильтры не нужны. Демон эти
      * ключи не читает (см. таблицу в cfgkeys.c) и сообщает о них в логе.
      * В GUI они остаются видимыми, но выключенными — чтобы не создавать
-     * впечатление работающей настройки. */
+     * впечатление работающей настройки.
+     * cs.select здесь нет: правила цветового пространства применяются и на
+     * ATV14 (через вендорский сервис, см. afrd.c: atv14_apply_mode).
+     * Согласованность списка с cfgkeys.c проверяет tests/test_inactive.c. */
     private static final String [] kInactiveOnAtv14 =
     {
         "mode_extra",
-        "cs_select",
         "switch_delay_on",
         "switch_delay_off",
         "switch_delay_retry",
@@ -143,6 +146,7 @@ public class SettingsFragment extends PreferenceFragment
     {
         { "switch_skip_pkg", AppsPickerActivity.MODE_MULTI },
         { "fps_correct_av1_pkg", AppsPickerActivity.MODE_SINGLE },
+        { "mode_min_hz_list", AppsPickerActivity.MODE_PKG_VALUE },
     };
 
     private static final int REQ_APPS = 1001;
@@ -195,12 +199,34 @@ public class SettingsFragment extends PreferenceFragment
 
     private void setAppsSummary (XAppsPreference pref)
     {
-        String names = Apps.names (getActivity (), pref.getApps ());
+        String value = pref.getApps ();
         CharSequence hint = mAppsHints.get (pref.getKey ());
+        String names = AppsPickerActivity.MODE_PKG_VALUE.equals (appsMode (pref.getKey ()))
+            ? valueSummary (value)
+            : Apps.names (getActivity (), value);
 
         /* Пустой список — состояние по умолчанию: возвращаем пояснение из XML,
          * иначе Preference скрывает summary вместе с ним (пустая строка). */
         pref.setSummary (names.isEmpty () ? hint : names);
+    }
+
+    /* Значение «пакет=число» в виде «VLC = 50 Гц, Just Player = 59.94 Гц»:
+     * имя пакета пользователю бесполезно, а Apps.names() на таком значении
+     * ищет метку для всей строки «пакет=число» и находит только её саму. */
+    private String valueSummary (String value)
+    {
+        StringBuilder sb = new StringBuilder ();
+        for (Map.Entry<String, String> e : PkgValues.parse (value,
+                PkgValues.MIN_HZ, PkgValues.MAX_HZ).entrySet ())
+        {
+            if (sb.length () > 0)
+                sb.append (", ");
+            sb.append (Apps.label (getActivity (), e.getKey ()));
+            if (!e.getValue ().isEmpty ())
+                sb.append (" = ").append (getString (R.string.apps_value_hz, e.getValue ()));
+        }
+
+        return sb.toString ();
     }
 
     @Override

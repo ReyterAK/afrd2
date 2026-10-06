@@ -13,6 +13,22 @@ AFRd2 — a fork of AFRd (original by Andrey Zabolotnyi, anpaza @ 4pda)
     the foreground app package is resolved by the common activity dump parser,
     the gate stands at both mode switching decision points.
 
+  * mode.min.hz.list is now set from the application: the "Minimum display rate
+    per player" row opens the application list, and the rate (Hz) is typed in
+    the same row — entering a package name with the remote is no longer needed.
+    The daemon validates exactly what it did before (range 1…1000, no more than
+    eight entries) and the application refuses to add a ninth one. The value is
+    kept in the application settings, so it survives an APK update, which
+    overwrites the profile from resources — while the commented example in the
+    profile and a hand-written value are preserved: a non-empty profile value is
+    imported into the application settings.
+
+  * The "Color space selection rules" row (cs.select) works on Android 10-14
+    again: it was marked as inactive in the GUI although cs.select rules are
+    applied there too (through the vendor service). GUI markings are now checked
+    against the daemon's key table by a host test, so such a drift can no longer
+    pass silently.
+
 0.3.3 Fri Oct 02 22:45:00 MSK 2026
 
     A caveat for switch.skip.pkg: for an excluded player the display mode is chosen

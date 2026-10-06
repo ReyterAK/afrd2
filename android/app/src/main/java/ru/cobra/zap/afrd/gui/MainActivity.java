@@ -229,7 +229,7 @@ public class MainActivity extends Activity
     /* Настройки, которых ещё нет в ini_options, берём из конфига профиля. */
     private void seedOptions (Config conf)
     {
-        final String [] seeded = { "switch.skip.pkg", "fps.correct.av1.pkg" };
+        final String [] seeded = { "switch.skip.pkg", "fps.correct.av1.pkg", "mode.min.hz.list" };
         SharedPreferences.Editor edit = null;
 
         for (String key : seeded)
@@ -238,9 +238,20 @@ public class MainActivity extends Activity
             if (mOptions.contains (pref))
                 continue;
 
+            String value = conf.getString (key, "");
+
+            /* Пустое значение профиля — не умолчание: посев пустоты превращает
+             * закомментированную строку профиля в активную пустую и затирает
+             * ручную правку ключа при следующем сохранении настроек (правка
+             * ключа в профиле — рабочий сценарий, см. README). Непустое
+             * значение, наоборот, переносим: иначе первая же правка настроек
+             * заменила бы его пустотой. */
+            if (value.isEmpty ())
+                continue;
+
             if (edit == null)
                 edit = mOptions.edit ();
-            edit.putString (pref, conf.getString (key, ""));
+            edit.putString (pref, value);
         }
 
         if (edit != null)

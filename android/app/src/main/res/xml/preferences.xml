@@ -22,6 +22,9 @@
     <ru.cobra.zap.xprefs.XAppsPreference android:key="switch_skip_pkg"
                       android:summary="@string/prefsum_switch_skip_pkg"
                       android:title="@string/prefs_switch_skip_pkg"/>
+    <ru.cobra.zap.xprefs.XAppsPreference android:key="mode_min_hz_list"
+                      android:summary="@string/prefsum_mode_min_hz_list"
+                      android:title="@string/prefs_mode_min_hz_list"/>
     <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"
                       android:key="timings" android:title="@string/prefs_group_timings">
         <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="300" android:key="switch_delay_on"

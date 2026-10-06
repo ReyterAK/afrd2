@@ -182,6 +182,17 @@
     <string name="apps_empty">Приложения не найдены — снимите «Только плееры», чтобы увидеть все</string>
     <string name="apps_not_installed">%s — не установлено</string>
     <string name="apps_icon">Значок приложения</string>
+    <string name="prefs_mode_min_hz_list">Минимальная частота режима для плееров</string>
+    <string name="prefsum_mode_min_hz_list">Для выбранных приложений демон не выбирает режимы
+        ниже указанной частоты (Гц): плееры, которые «зажимают» темп отрисовки, стартуя под
+        низким режимом, начинают работать нормально. Коснитесь строки, отметьте приложения и
+        задайте частоту в той же строке.</string>
+    <string name="apps_value_title">%s: минимальная частота, Гц</string>
+    <string name="apps_value_hint">1…1000</string>
+    <string name="apps_value_save">Сохранить</string>
+    <string name="apps_value_clear">Снять отметку</string>
+    <string name="apps_value_hz">%s Гц</string>
+    <string name="apps_value_limit">Не больше %1$d приложений: столько записей поддерживает демон</string>
     <string name="notif_start_afrd">Включить АПЧ</string>
     <string name="notif_stop_afrd">Отключить АПЧ</string>
     <string name="notif_enabled">AFRd2 включён</string>
