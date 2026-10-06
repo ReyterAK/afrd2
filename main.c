@@ -302,10 +302,26 @@ static void daemonize ()
 		exit (EXIT_SUCCESS);
 	}
 
-	/* continuing in child, close console */
-	close (0);
-	close (1);
-	close (2);
+	/* Continuing in child; leave the console.
+	 *
+	 * Закрывать дескрипторы нельзя: на Android 6-9 `dumpsys` и другие
+	 * системные утилиты — это обёртки над `app_process`, которым для
+	 * инициализации нужны рабочие стандартные дескрипторы. С закрытыми 0/1/2
+	 * такой процесс не соединяется с servicemanager и печатает
+	 * "Can't find service: activity" — на этих прошивках демон не мог
+	 * определить пакет приложения на переднем плане (проверено на ATV9,
+	 * стенд .76), из-за чего switch.skip.pkg молча не действовал.
+	 * Перенаправление в /dev/null — канонический демонизм. */
+	{
+		int dn = open ("/dev/null", O_RDWR);
+		if (dn >= 0) {
+			(void) dup2 (dn, 0);
+			(void) dup2 (dn, 1);
+			(void) dup2 (dn, 2);
+			if (dn > 2)
+				close (dn);
+		}
+	}
 
 	/* set priority a bit higher than normal -
 	   we're kind of time-critical process */
