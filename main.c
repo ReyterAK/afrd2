@@ -321,6 +321,13 @@ static void daemonize ()
 			if (dn > 2)
 				close (dn);
 		}
+		else {
+			/* /dev/null недоступен — ведём себя как раньше: закрываем,
+			 * чтобы не удерживать чужие pipe/tty */
+			close (0);
+			close (1);
+			close (2);
+		}
 	}
 
 	/* set priority a bit higher than normal -

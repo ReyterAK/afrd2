@@ -184,7 +184,8 @@
     <string name="prefs_switch_skip_pkg">Players that AFR gets in the way of</string>
     <string name="prefsum_switch_skip_pkg">For the selected applications AFRd2 measures the frame
         rate and writes everything to the log, but does not switch or hold the display mode. Tap
-        the row and pick applications from the list of installed players.</string>
+        the row and pick applications from the list of installed players. On Android 6-9 the mode
+        is simply not switched for the selected applications — there is no measurement.</string>
     <string name="apps_done">Done</string>
     <string name="apps_players_only">Video players only</string>
     <string name="apps_empty">No applications found — clear "Video players only" to see all</string>

@@ -62,10 +62,29 @@ public class SettingsFragment extends PreferenceFragment
     };
 
     /* Настройки, которые демон объявляет ключами нового пути (CFGKEY_ATV14) и
-     * потому на Android 6-9 не читает. switch.skip.pkg здесь нет: он действует
-     * на обоих путях (перенос 2026-10-06). */
+     * потому на Android 6-9 не читает. Список должен покрывать ВСЕ такие ключи,
+     * видимые в GUI: иначе пользователь старой прошивки видит рабочие на вид
+     * настройки, которых демон не касается.
+     * switch.skip.pkg здесь нет: он действует на обоих путях (перенос 2026-10-06). */
     private static final String [] kInactiveOnLegacy =
     {
+        /* триггер и окно замера */
+        "trigger_poll_ms",
+        "trigger_start_debounce_ms",
+        "trigger_stop_debounce_ms",
+        "fps_measure_envelope_ms",
+        "fps_measure_envelope_early_ms",
+        "fps_measure_envelope_max_ms",
+        "fps_measure_envelope_sub_ms",
+        "fps_measure_envelope_skip_ms",
+        "fps_measure_retries",
+        "fps_declared_crosscheck_pct",
+        "fps_recheck_delay_ms",
+        "fps_cadence_fix_ms",
+        "fps_prefer_api",
+        "pause_keep",
+        "switch_restore_on_stop",
+        /* калибровка по плееру */
         "fps_correct_enable",
         "fps_correct_list",
         "fps_correct_av1_offset",

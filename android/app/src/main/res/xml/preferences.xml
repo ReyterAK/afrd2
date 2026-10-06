@@ -17,6 +17,11 @@
                     android:entryValues="@array/mode_use_fract_value" android:key="mode_use_fract"
                     android:summary="@string/prefsum_mode_use_fract"
                     android:title="@string/prefs_mode_use_fract"/>
+    <!-- switch.skip.pkg — ключ обоих путей (CFGKEY_BOTH), поэтому строка на
+         верхнем уровне, а не в группе atv14. -->
+    <ru.cobra.zap.xprefs.XAppsPreference android:key="switch_skip_pkg"
+                      android:summary="@string/prefsum_switch_skip_pkg"
+                      android:title="@string/prefs_switch_skip_pkg"/>
     <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"
                       android:key="timings" android:title="@string/prefs_group_timings">
         <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="300" android:key="switch_delay_on"
@@ -50,9 +55,6 @@
     </PreferenceScreen>
     <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"
                       android:key="atv14" android:title="@string/prefs_group_atv14">
-        <ru.cobra.zap.xprefs.XAppsPreference android:key="switch_skip_pkg"
-                          android:summary="@string/prefsum_switch_skip_pkg"
-                          android:title="@string/prefs_switch_skip_pkg"/>
         <SwitchPreference android:defaultValue="1" android:key="fps_prefer_api"
                           android:summary="@string/prefsum_fps_prefer_api"
                           android:title="@string/prefs_fps_prefer_api"/>

@@ -58,6 +58,11 @@ public class AppsPickerActivity extends Activity
     private final List<Apps.App> mApps = new ArrayList<> ();
     private AppsAdapter mAdapter;
     private AsyncTask<Void, Void, Void> mLoader;
+    /* Счётчик поколений загрузки: быстрое переключение флажка фильтра отменяет
+     * предыдущий AsyncTask, но runOnUiThread отменённой задачи может выполниться
+     * последней — showList() отбрасывает устаревшее поколение, чтобы не показать
+     * список, не соответствующий текущему состоянию флажка. */
+    private int mLoadGen;
 
     @Override
     protected void onCreate (Bundle savedInstanceState)
@@ -136,6 +141,8 @@ public class AppsPickerActivity extends Activity
         if (mLoader != null)
             mLoader.cancel (true);
 
+        final int gen = ++mLoadGen;
+
         mLoader = new AsyncTask<Void, Void, Void> ()
         {
             @Override
@@ -150,7 +157,7 @@ public class AppsPickerActivity extends Activity
                     @Override
                     public void run ()
                     {
-                        showList (list);
+                        showList (gen, list);
                     }
                 });
                 return null;
@@ -158,9 +165,11 @@ public class AppsPickerActivity extends Activity
         }.execute ();
     }
 
-    private void showList (List<Apps.App> list)
+    private void showList (int gen, List<Apps.App> list)
     {
-        if (isFinishing ())
+        /* Устаревшее поколение (пользователь успел переключить фильтр) или
+         * закрывающийся экран — список не показываем. */
+        if (isFinishing () || (gen != mLoadGen))
             return;
 
         /* Уже выбранные пакеты показываем всегда, даже если фильтр их отсеял:

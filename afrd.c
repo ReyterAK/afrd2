@@ -2830,8 +2830,19 @@ static int run_atv14 (const platform_t *plat)
 		 * берёт preferred, только если он есть в таблице SF, иначе cur_sf_id,
 		 * уже запомненный guard_decide в orig_sf_id. */
 		if (act == GUARD_SWITCH)
-			orig_sf_id = sfmodes_restore_target (g_sf_modes, g_sf_modes_n,
-			                                     preferred_id, orig_sf_id);
+		{
+			int back = sfmodes_restore_target (g_sf_modes, g_sf_modes_n,
+			                                   preferred_id, orig_sf_id);
+			/* Ни preferred, и запомненный cur отсутствуют в таблице SF: когда
+			 * видео кончится, guard_decide() вернёт GUARD_NONE и удержание
+			 * снимется без строки «id N отсутствует в текущей таблице режимов»
+			 * (atv14_apply_mode при sf_id < 0 её не пишет) — фиксируем причину
+			 * здесь, состояние экрана от этого не меняется. */
+			if ((back < 0) && (preferred_id >= 0))
+				trace (1, "цель возврата (preferred id %d) отсутствует в таблице режимов — возврат невозможен\n",
+				       preferred_id);
+			orig_sf_id = back;
+		}
 
 		if (act == GUARD_SWITCH)
 		{

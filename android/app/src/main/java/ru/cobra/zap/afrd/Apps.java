@@ -13,6 +13,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
 
 import java.text.Collator;
 import java.util.ArrayList;
@@ -182,6 +183,24 @@ public class Apps
         return -1;
     }
 
+    /* Точка входа: обычная активность или Leanback-активность (на Android TV
+     * приложения часто объявляют только CATEGORY_LEANBACK_LAUNCHER, и
+     * getLaunchIntentForPackage() его не видит — такое приложение пропадало из
+     * списка выбора). Учитываем оба варианта. */
+    private static boolean launchable (PackageManager pm, String pkg)
+    {
+        if (pm.getLaunchIntentForPackage (pkg) != null)
+            return true;
+
+        /* getLeanbackLaunchIntentForPackage доступен с API 26, а minSdk проекта
+         * 23 — на Android 6-8 проверяем только обычную точку входа, как раньше */
+        if (Build.VERSION.SDK_INT < 26)
+            return false;
+
+        Intent leanback = pm.getLeanbackLaunchIntentForPackage (pkg);
+        return leanback != null;
+    }
+
     /* Отсеять не запускаемые приложения (на переднем плане такое оказаться не
      * может) и сам AFRd2, отсортировать по локализованному имени. Иконки здесь
      * не грузятся: их берёт адаптер лениво, только для видимых строк. */
@@ -193,7 +212,7 @@ public class Apps
 
         for (String pkg : pkgs)
         {
-            if (pkg.equals (self) || (pm.getLaunchIntentForPackage (pkg) == null))
+            if (pkg.equals (self) || !launchable (pm, pkg))
                 continue;
 
             try

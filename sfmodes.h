@@ -56,7 +56,13 @@ int sfmodes_current_hz (const sf_mode_t *modes, int n, int id);
  * на части прошивок DisplayManager и SurfaceFlinger нумеруют режимы по-разному, и
  * тогда preferred_id в таблице SF отсутствует. Возвращаем preferred_id, только если
  * он в таблице есть, иначе cur_id (id текущего режима из таблицы SF), а если и он
- * неизвестен — -1. */
+ * неизвестен — -1.
+ *
+ * Исключение — пустая таблица (modes == NULL или n == 0): проверить id по ней
+ * нечем, поэтому возвращается cur_id (если он >= 0), а при неизвестном cur_id —
+ * preferred_id БЕЗ проверки. Это заданное поведение, на него опирается вызов из
+ * ветки «лечения подачи» в afrd.c (таблица SF там ещё может быть не получена) —
+ * не «поправляйте» код под слово «только если» выше. */
 int sfmodes_restore_target (const sf_mode_t *modes, int n, int preferred_id, int cur_id);
 
 #endif
