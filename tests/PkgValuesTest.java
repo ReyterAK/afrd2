@@ -30,7 +30,7 @@ public class PkgValuesTest
 
     private static String roundPct (String value)
     {
-        return PkgValues.format (PkgValues.parse (value, PkgValues.MIN_PERCENT, PkgValues.MAX_PERCENT));
+        return PkgValues.format (PkgValues.parsePercent (value));
     }
 
     public static void main (String [] args)
@@ -132,23 +132,45 @@ public class PkgValuesTest
             System.exit (1);
         }
 
-        /* Проценты (fps.correct.list): демон принимает строго -50 < pct < 50 и не
-         * принимает 0, поэтому 0 в диалоге запрещён, а отрицательные разрешены. */
+        /* Проценты (fps.correct.list): демон принимает строго |pct| < 50 и не
+         * принимает 0 — правило одно и для разбора значения, и для диалога, иначе
+         * запись, которую демон применяет, GUI считал бы недопустимой и терял. */
         eq ("проценты", roundPct ("a=-2.5 b=5 c=0.1"), "a=-2.5 b=5 c=0.1");
-        eq ("проценты: границы", roundPct ("a=-49.9 b=49.9 c=-50 d=50 e=-60 f=60"), "a=-49.9 b=49.9");
-        if (PkgValues.inRange ("0", PkgValues.MIN_PERCENT, PkgValues.MAX_PERCENT, false))
+
+        /* ноль демон отбрасывает (fps_correct_load: pct != 0.0): запись не должна
+         * ни показываться, ни занимать слот лимита */
+        eq ("ноль", roundPct ("a=0 b=5"), "b=5");
+        if (PkgValues.filledCount (PkgValues.parsePercent ("a=0 b=5")) != 1)
         {
-            System.err.println ("PkgValues: ноль в процентах демон не принимает — диалог обязан его запрещать");
+            System.err.println ("PkgValues: запись с нулём не должна занимать слот");
             System.exit (1);
         }
-        if (!PkgValues.inRange ("0.1", PkgValues.MIN_PERCENT, PkgValues.MAX_PERCENT, false) ||
-            !PkgValues.inRange ("-0.1", PkgValues.MIN_PERCENT, PkgValues.MAX_PERCENT, false))
+
+        /* границы: 49.95 демон применяет, 50 и больше — нет */
+        eq ("границы процентов", roundPct ("a=49.95 b=-49.95 c=50 d=-50 e=0.1"), "a=49.95 b=-49.95 e=0.1");
+
+        /* повтор: применяется первая запись, у которой число принято, — поэтому
+         * запись без числа вытесняется более поздней с числом (как у демона) */
+        eq ("повтор без числа", roundPct ("a= a=5"), "a=5");
+        eq ("повтор с числами", roundPct ("a=5 a=10"), "a=5");
+        eq ("запись без числа сохраняется", roundPct ("a="), "a");
+
+        /* диалог: ноль и пустое не принимаются, значения около нуля — принимаются */
+        if (PkgValues.percentInRange ("0") || PkgValues.percentInRange ("") ||
+            PkgValues.percentInRange ("50") || PkgValues.percentInRange ("-50"))
         {
-            System.err.println ("PkgValues: проценты около нуля должны приниматься");
+            System.err.println ("PkgValues: 0, пустое и |pct| >= 50 демон не принимает");
             System.exit (1);
         }
-        /* ноль в герцах допустим (это разные единицы, и режим Гц нуля не боится) */
-        if (!PkgValues.inRange ("1", PkgValues.MIN_HZ, PkgValues.MAX_HZ, true))
+        if (!PkgValues.percentInRange ("0.1") || !PkgValues.percentInRange ("-0.1") ||
+            !PkgValues.percentInRange ("49.95"))
+        {
+            System.err.println ("PkgValues: допустимые проценты должны приниматься");
+            System.exit (1);
+        }
+
+        /* в герцах ноль — обычное значение (другой ключ, другой диапазон) */
+        if (!PkgValues.inRange ("1", PkgValues.MIN_HZ, PkgValues.MAX_HZ))
         {
             System.err.println ("PkgValues: герцы должны принимать значение в диапазоне");
             System.exit (1);

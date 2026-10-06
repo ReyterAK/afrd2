@@ -224,9 +224,9 @@ public class SettingsFragment extends PreferenceFragment
         int unitRes = pct ? R.string.apps_value_percent : R.string.apps_value_hz;
 
         StringBuilder sb = new StringBuilder ();
-        for (Map.Entry<String, String> e : PkgValues.parse (value,
-                pct ? PkgValues.MIN_PERCENT : PkgValues.MIN_HZ,
-                pct ? PkgValues.MAX_PERCENT : PkgValues.MAX_HZ).entrySet ())
+        Map<String, String> entries = pct ? PkgValues.parsePercent (value)
+                                          : PkgValues.parse (value, PkgValues.MIN_HZ, PkgValues.MAX_HZ);
+        for (Map.Entry<String, String> e : entries.entrySet ())
         {
             if (sb.length () > 0)
                 sb.append (", ");

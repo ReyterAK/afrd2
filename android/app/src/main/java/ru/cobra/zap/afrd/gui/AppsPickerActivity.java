@@ -104,7 +104,7 @@ public class AppsPickerActivity extends Activity
             /* Разбор — теми же правилами, что у демона (PkgValues): то, что он
              * игнорирует, в значение не сохраняем — иначе строка настроек
              * показывала бы настройку, которой демон не видит. */
-            mValues.putAll (PkgValues.parse (value, unitMin (), unitMax ()));
+            mValues.putAll (parseValue (value));
             mSelected.addAll (mValues.keySet ());
         }
         else
@@ -229,8 +229,7 @@ public class AppsPickerActivity extends Activity
                     return;
 
                 final Button ok = ((AlertDialog) d).getButton (AlertDialog.BUTTON_POSITIVE);
-                ok.setEnabled (PkgValues.inRange (input.getText ().toString (),
-                    unitMin (), unitMax (), allowZero ()));
+                ok.setEnabled (valueOk (input.getText ().toString ()));
 
                 input.addTextChangedListener (new TextWatcher ()
                 {
@@ -247,8 +246,7 @@ public class AppsPickerActivity extends Activity
                     @Override
                     public void afterTextChanged (Editable s)
                     {
-                        ok.setEnabled (PkgValues.inRange (s.toString (),
-                            unitMin (), unitMax (), allowZero ()));
+                        ok.setEnabled (valueOk (s.toString ()));
                     }
                 });
             }
@@ -270,19 +268,20 @@ public class AppsPickerActivity extends Activity
         return MODE_PKG_VALUE.equals (mMode) || isPercent ();
     }
 
-    private double unitMin ()
+    /* Разбор значения настройки по правилам демона для текущего режима: у
+     * процентов ноль и |pct| >= 50 он отбрасывает, у частот — значения вне
+     * 1…1000 Гц. */
+    private LinkedHashMap<String, String> parseValue (String value)
     {
-        return isPercent () ? PkgValues.MIN_PERCENT : PkgValues.MIN_HZ;
+        return isPercent () ? PkgValues.parsePercent (value)
+                            : PkgValues.parse (value, PkgValues.MIN_HZ, PkgValues.MAX_HZ);
     }
 
-    private double unitMax ()
+    /* Примет ли демон такое число в этой настройке (гасит «Сохранить»). */
+    private boolean valueOk (String text)
     {
-        return isPercent () ? PkgValues.MAX_PERCENT : PkgValues.MAX_HZ;
-    }
-
-    private boolean allowZero ()
-    {
-        return !isPercent ();
+        return isPercent () ? PkgValues.percentInRange (text)
+                            : PkgValues.inRange (text, PkgValues.MIN_HZ, PkgValues.MAX_HZ);
     }
 
     private int unitTextRes ()

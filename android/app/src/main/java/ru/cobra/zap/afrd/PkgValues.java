@@ -38,22 +38,60 @@ public class PkgValues
     public static final int MAX_PKG_LEN = 255;
 
     /**
-     * Границы поправки для fps.correct.list: демон принимает строго от -50 до 50
-     * процентов и не принимает 0 (afrd.c: fps_correct_load — pct > -50.0 &&
-     * pct < 50.0 && pct != 0.0). Границы в GUI чуть уже, чтобы «49.99» не
-     * выглядело принятым, а демоном отброшенным.
+     * Предел поправки для fps.correct.list: демон принимает строго |pct| < 50 и не
+     * принимает 0 (fps_class.c, fps_correct_load: pct > -50.0 && pct < 50.0 &&
+     * pct != 0.0). Правило одно и для разбора значения из конфига, и для ввода в
+     * диалоге: сузь мы его в диалоге — запись вида «49.95», которую демон
+     * применяет, GUI считал бы недопустимой и молча терял бы при сохранении.
      */
-    public static final double MIN_PERCENT = -49.9;
-    public static final double MAX_PERCENT = 49.9;
+    public static final double PERCENT_LIMIT = 50.0;
+
+    /** Правило допустимости числа: каноническая запись или null. */
+    private interface Rule
+    {
+        String apply (String text);
+    }
 
     /**
      * Разбор значения. Порядок записей сохраняется; повтор пакета оставляет
-     * первую запись (как mode_min_hz_for в демоне). Записи, которые демон
-     * игнорирует (числа нет, оно вне диапазона, пустое имя пакета),
-     * отбрасываются; запись без числа сохраняется с пустым значением — демон
-     * её тоже игнорирует, но GUI не должен молча удалять текст пользователя.
+     * первую запись с числом, которое демон принял (запись без числа он
+     * отбрасывает, поэтому «пакет= пакет=5» для него — это 5). Записи, которые
+     * демон игнорирует (числа нет, оно вне диапазона, пустое имя пакета),
+     * отбрасываются по значению; запись без числа сохраняется с пустым
+     * значением — демон её тоже игнорирует, но GUI не должен молча удалять
+     * текст пользователя.
      */
-    public static LinkedHashMap<String, String> parse (String value, double min, double max)
+    public static LinkedHashMap<String, String> parse (final String value, final double min, final double max)
+    {
+        return parseWith (value, new Rule ()
+        {
+            @Override
+            public String apply (String text)
+            {
+                return number (text, min, max);
+            }
+        });
+    }
+
+    /**
+     * Разбор значения fps.correct.list — по правилам демона (|pct| < 50, ноль
+     * не принимается). Отдельный разбор нужен потому, что ноль лежит внутри
+     * диапазона: parse (value, -50, 50) его бы сохранил, а демон такую запись
+     * отбрасывает, и GUI показывал бы поправку, которой нет.
+     */
+    public static LinkedHashMap<String, String> parsePercent (String value)
+    {
+        return parseWith (value, new Rule ()
+        {
+            @Override
+            public String apply (String text)
+            {
+                return percentNumber (text);
+            }
+        });
+    }
+
+    private static LinkedHashMap<String, String> parseWith (String value, Rule rule)
     {
         LinkedHashMap<String, String> out = new LinkedHashMap<> ();
         if (value == null)
@@ -67,21 +105,25 @@ public class PkgValues
             int eq = token.indexOf ('=');
             String pkg = (eq < 0) ? token : token.substring (0, eq);
             String num = (eq < 0) ? "" : token.substring (eq + 1);
-            if (pkg.isEmpty () || out.containsKey (pkg))
+            if (pkg.isEmpty ())
                 continue;
 
-            if (!num.isEmpty ())
-            {
-                String parsed = number (num, min, max);
-                if (parsed == null)
-                    continue;
+            String prev = out.get (pkg);
+            /* Уже есть запись с числом — она и применяется (первая по списку),
+             * как в демоне. */
+            if ((prev != null) && !prev.isEmpty ())
+                continue;
 
-                /* Форма приводится к канонической: «50d» демон читает как 50, и
-                 * строка настроек должна показывать то же самое число. */
-                num = parsed;
+            if (num.isEmpty ())
+            {
+                if (prev == null)
+                    out.put (pkg, "");
+                continue;
             }
 
-            out.put (pkg, num);
+            String canon = rule.apply (num);
+            if (canon != null)
+                out.put (pkg, canon);
         }
 
         return out;
@@ -150,17 +192,25 @@ public class PkgValues
         return number (text, min, max) != null;
     }
 
-    /**
-     * То же, но с запретом нуля: fps.correct.list значение 0 демон не принимает
-     * (afrd.c: pct != 0.0), поэтому диалог в режиме процентов его не пропускает.
-     */
-    public static boolean inRange (String text, double min, double max, boolean allowZero)
+    /** Есть ли в тексте поправка, которую демон примет (|pct| < 50, не ноль). */
+    public static boolean percentInRange (String text)
     {
-        String canonical = number (text, min, max);
-        if (canonical == null)
-            return false;
+        return percentNumber (text) != null;
+    }
 
-        return allowZero || (Double.parseDouble (canonical) != 0.0);
+    private static String percentNumber (String text)
+    {
+        /* Границы у демона строгие (pct > -50 && pct < 50), а number() проверяет
+         * диапазон включительно — поэтому предел здесь проверяется отдельно. */
+        String canonical = number (text, -PERCENT_LIMIT, PERCENT_LIMIT);
+        if (canonical == null)
+            return null;
+
+        double pct = Double.parseDouble (canonical);
+        if ((Math.abs (pct) >= PERCENT_LIMIT) || (pct == 0.0))
+            return null;
+
+        return canonical;
     }
 
     /**
