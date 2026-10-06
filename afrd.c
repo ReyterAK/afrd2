@@ -20,6 +20,7 @@
 #include "cfgkeys.h"
 #include "reconf.h"
 #include "hdrinfo.h"
+#include "pkgdet.h"
 
 #define __USE_GNU
 #include <math.h>
@@ -1239,58 +1240,14 @@ static int atv14_select_mode (int hz, int w, int h, int floor)
 	return ch.id;
 }
 
-/* Пакет приложения на переднем плане (плеера) — по нему выбирается поправка
- * частоты fps.correct.list. Разбор строки вида
- *   topResumedActivity=ActivityRecord{b4e422c u0 com.pkg/.Activity t611}
- * Возврат: true, если пакет разобран. */
-static bool parse_top_package (const char *dump, char *out, size_t out_sz)
-{
-	const char *p = strstr (dump, "topResumedActivity=ActivityRecord{");
-	if (!p)
-		return false;
-
-	p += strlen ("topResumedActivity=ActivityRecord{");
-	while (*p)
-	{
-		const char *sp = strchr (p, ' ');
-		if (!sp)
-			break;
-
-		/* после поля "u<uid> " сразу идёт компонент "<пакет>/<активити>" */
-		if ((sp [1] == 'u') && (sp [2] >= '0') && (sp [2] <= '9'))
-		{
-			const char *c = sp + 2;
-			while ((*c >= '0') && (*c <= '9'))
-				c++;
-			if (*c == ' ')
-				c++;
-
-			const char *slash = strchr (c, '/');
-			const char *end = slash ? slash : strpbrk (c, " }");
-			if (end && (end > c) && ((size_t)(end - c) < out_sz))
-			{
-				memcpy (out, c, (size_t)(end - c));
-				out [end - c] = 0;
-				return true;
-			}
-
-			return false;
-		}
-
-		p = sp + 1;
-	}
-
-	return false;
-}
-
 /* Пакет плеера текущего видео. Пустая строка — не удалось определить.
  * (Объявление — выше, в выборе режима: mode.min.hz.list.) */
 static char g_cur_pkg [64];
 
-/* Приложение на переднем плане.
+/* Приложение на переднем плане (общее для обоих путей работы демона).
  * Возврат: 0 — разобрано (*out заполнен), -1 — команда не удалась,
  * -2 — вывод не разобран. */
-static int atv14_top_package (const platform_t *plat, char *out, size_t out_sz)
+static int pkg_probe (const platform_t *plat, char *out, size_t out_sz)
 {
 	if (out && out_sz)
 		out [0] = 0;
@@ -1302,12 +1259,14 @@ static int atv14_top_package (const platform_t *plat, char *out, size_t out_sz)
 	if (exec_capture (plat->activity_dump_cmd, dump, sizeof (dump)) != 0)
 		return -1;
 
-	return parse_top_package (dump, out, out_sz) ? 0 : -2;
+	return pkgdet_parse (dump, out, out_sz) ? 0 : -2;
 }
 
-static void atv14_probe_package (const platform_t *plat)
+/* Пакет для fps.correct.list / mode.min.hz.list / switch.skip.pkg:
+ * разобрать и, если не вышло, сказать об этом в журнал. */
+static void pkg_probe_logged (const platform_t *plat)
 {
-	int rc = atv14_top_package (plat, g_cur_pkg, sizeof (g_cur_pkg));
+	int rc = pkg_probe (plat, g_cur_pkg, sizeof (g_cur_pkg));
 	if (rc == -1)
 		trace (1, "не удалось определить приложение на переднем плане\n");
 	else if (rc == -2)
@@ -2146,7 +2105,7 @@ static int run_atv14 (const platform_t *plat)
 					video_pkg [0] = 0;
 					pkg_mismatch = 0;
 					pkg_probe_us = 0;
-					if (atv14_top_package (plat, video_pkg, sizeof (video_pkg)) == 0)
+					if (pkg_probe (plat, video_pkg, sizeof (video_pkg)) == 0)
 						trace (2, "видео ведёт приложение %s\n", video_pkg);
 					else
 						video_pkg [0] = 0;
@@ -2206,7 +2165,7 @@ static int run_atv14 (const platform_t *plat)
 			{
 				char top [64] = { 0 };
 				pkg_probe_us = now_us ();
-				if (atv14_top_package (plat, top, sizeof (top)) == 0)
+				if (pkg_probe (plat, top, sizeof (top)) == 0)
 				{
 					if (top [0] && (strcmp (top, video_pkg) != 0))
 					{
@@ -2387,7 +2346,7 @@ static int run_atv14 (const platform_t *plat)
 				pkg_probed = true;
 				if (correct_enable || (g_mode_min_hz_count > 0) || (g_skip_pkgs.size > 0))
 				{
-					atv14_probe_package (plat);
+					pkg_probe_logged (plat);
 					video_corr = fps_correct_factor (g_cur_pkg);
 					if (video_corr != 1.0)
 					{

@@ -13,6 +13,13 @@
 /* Вендорский клиент SystemControl: через него на Android 10-14 применяется
  * цветовое пространство (sysfs-узел attr там только на чтение). */
 #define CS_CLI			"/vendor/bin/meson_display_client"
+/* Вывод `dumpsys activity activities` нужен только одной строкой: приложение на
+ * переднем плане. Поле называется по-разному — "topResumedActivity=..." (Android
+ * 10-14) и "ResumedActivity: ..." (Android 6-9), но подстрока "ResumedActivity"
+ * есть в обоих, а первое совпадение в дампе — нужная строка (на ATV14 первым
+ * идёт topResumedActivity). Фильтр на стороне команды обязателен: дамп activity —
+ * 18-26 КБ, буфер приёма в afrd.c — 4 КБ (как и у дампа SurfaceFlinger). */
+#define ACTIVITY_DUMP_CMD "dumpsys activity activities | grep -m1 ResumedActivity"
 
 static bool sf_backdoor_available (void)
 {
@@ -33,6 +40,8 @@ platform_t platform_detect (void)
 	memset (&p, 0, sizeof (p));
 
 	p.vdec_status = VDVC_STATUS;
+	/* Нужна обоим путям: по этому пакету работает switch.skip.pkg */
+	p.activity_dump_cmd = ACTIVITY_DUMP_CMD;
 	/* Дампы фильтруются на стороне команды: на ATV14 `dumpsys SurfaceFlinger`
 	 * отдаёт 126–150 КБ (зависит от того, что на экране), а буферы приёма
 	 * в afrd.c — 64 КБ (static). Усечённый дамп доходил до парсера без
@@ -47,10 +56,6 @@ platform_t platform_detect (void)
 	 * mBaseDisplayInfo содержит и то, и другое, но целиком длиннее буфера. */
 	p.display_dump_cmd = "dumpsys display | grep -o -E "
 	                     "'mUserPreferredModeId=-?[0-9]+|real [0-9]+ x [0-9]+'";
-	/* Пакет приложения на переднем плане — для поправки частоты конкретного
-	 * плеера (fps.correct.list). Дамп activity большой, поэтому режем на
-	 * стороне команды: нужна ровно одна строка topResumedActivity. */
-	p.activity_dump_cmd = "dumpsys activity activities | grep -m1 topResumedActivity";
 
 	bool have_vdec = (sysfs_exists (VDVC_STATUS) == 0);
 	/* Android 6/7: switch/hdmi/state; Android 8/9: switch/hdmi/cable.0/state.
