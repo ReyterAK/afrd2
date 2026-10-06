@@ -13,7 +13,6 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.drawable.Drawable;
-import android.os.Build;
 
 import java.text.Collator;
 import java.util.ArrayList;
@@ -192,11 +191,8 @@ public class Apps
         if (pm.getLaunchIntentForPackage (pkg) != null)
             return true;
 
-        /* getLeanbackLaunchIntentForPackage доступен с API 26, а minSdk проекта
-         * 23 — на Android 6-8 проверяем только обычную точку входа, как раньше */
-        if (Build.VERSION.SDK_INT < 26)
-            return false;
-
+        /* getLeanbackLaunchIntentForPackage доступен с API 21, а minSdk проекта
+         * 23 — проверка версии не нужна */
         Intent leanback = pm.getLeanbackLaunchIntentForPackage (pkg);
         return leanback != null;
     }
