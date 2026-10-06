@@ -208,6 +208,11 @@ public class MainActivity extends Activity
         // apply user preferences on top
         if (mOptions.contains ("enable"))
         {
+            /* Сначала убираем записи, оставшиеся от версии, где ключ не попадал
+             * в конфиг, — иначе наложение настроек сразу же подменит профильное
+             * значение старым умолчанием XML. */
+            resetInertKeys ();
+
             conf.load (mOptions);
 
             /* Ключи, появившиеся в GUI позже установки приложения, в настройках
@@ -225,6 +230,42 @@ public class MainActivity extends Activity
 
         // and save the modified file
         return conf.condSave (mControl.mIni);
+    }
+
+    /* Умолчания ключей, которые до этой версии не переносились в конфиг
+     * (их не было в Config.itemType): в настройках приложения у таких ключей
+     * осталось умолчание XML, которое ни на что не влияло, — демон читал
+     * профиль. Оставить его нельзя: став действующим, оно молча подменит
+     * проверенную профильную настройку (12000 вместо 14000 для окна раннего
+     * решения). Удаление записи возвращает строку к умолчанию XML (совпадает
+     * с профилем) и не мешает демону читать профильное значение. */
+    private static final String [][] kInertDefaults =
+    {
+        { "fps_measure_envelope_early_ms", "12000" },
+        { "fps_cadence_fix_ms", "2500" },
+    };
+
+    private void resetInertKeys ()
+    {
+        SharedPreferences.Editor edit = null;
+
+        for (String [] item : kInertDefaults)
+        {
+            if (!mOptions.contains (item [0]))
+                continue;
+
+            /* Правило — в Seed.shouldReset (проверяется tests/SeedTest.java):
+             * своё значение пользователя (не равное старому умолчанию) цело. */
+            if (!Seed.shouldReset (mOptions.getString (item [0], ""), item [1]))
+                continue;
+
+            if (edit == null)
+                edit = mOptions.edit ();
+            edit.remove (item [0]);
+        }
+
+        if (edit != null)
+            edit.apply ();
     }
 
     /* Настройки, которых ещё нет в ini_options, берём из конфига профиля. */
