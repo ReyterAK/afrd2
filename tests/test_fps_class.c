@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "../fps_class.h"
+#include "../pkgdet.h"	/* PKG_NAME_LEN — общий предел имени пакета */
 
 static void t_classify(void)
 {
@@ -251,11 +252,23 @@ static void t_correct_av1(void)
 	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "com.google.android.youtube.tv") == 1.05);
 	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "org.videolan.vlc") == 0.0);
 
-	/* имя пакета длиннее поля (64 байта): поправка отбрасывается целиком,
-	 * иначе пустой пакет расширил бы её на все плееры */
+	/* Имя пакета длиннее поля (PKG_NAME_LEN): поправка отбрасывается целиком,
+	 * иначе пустой пакет расширил бы её на все плееры. Предел — общий для
+	 * демона (pkgdet.h): 63 байт не хватало, система принимает имена заметно
+	 * длиннее, поэтому слишком длинным считается только то, что не влезает
+	 * в PKG_NAME_LEN. */
 	fps_correct_set_av1 (0.5, "com.google.android.youtube.tv.some.really.long.package.name.over.64.chars");
+	assert (strlen ("com.google.android.youtube.tv.some.really.long.package.name.over.64.chars")
+	        < PKG_NAME_LEN);
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "com.google.android.youtube.tv.some.really.long.package.name.over.64.chars") == 0.5);
 	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "короткий") == 0.0);
-	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "com.google.android.youtube.tv.some.really.long.package.name.over.64.chars") == 0.0);
+
+	char too_long [PKG_NAME_LEN + 16];
+	memset (too_long, 'x', sizeof (too_long) - 1);
+	too_long [sizeof (too_long) - 1] = 0;
+	fps_correct_set_av1 (0.5, too_long);
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", too_long) == 0.0);
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "org.videolan.vlc") == 0.0);
 
 	/* fps_correct_clear сбрасывает и её */
 	fps_correct_set_av1 (0.5, NULL);
