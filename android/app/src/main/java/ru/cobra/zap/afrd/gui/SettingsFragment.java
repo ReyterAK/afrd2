@@ -23,6 +23,8 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Vector;
 
 import ru.cobra.zap.afrd.Apps;
@@ -101,6 +103,10 @@ public class SettingsFragment extends PreferenceFragment
 
     private static final int REQ_APPS = 1001;
 
+    /* Пояснения строк из XML: при пустом значении настройки возвращаем их на
+     * место — Preference с пустой строкой скрывает summary вместе с пояснением. */
+    private final Map<String, CharSequence> mAppsHints = new HashMap<> ();
+
     private static String appsMode (String key)
     {
         for (String [] item : kAppsPrefs)
@@ -119,6 +125,7 @@ public class SettingsFragment extends PreferenceFragment
                 continue;
 
             final XAppsPreference pref = (XAppsPreference) p;
+            mAppsHints.put (p.getKey (), p.getSummary ());
             pref.setPickListener (new XAppsPreference.OnPickListener ()
             {
                 @Override
@@ -144,7 +151,12 @@ public class SettingsFragment extends PreferenceFragment
 
     private void setAppsSummary (XAppsPreference pref)
     {
-        pref.setSummary (Apps.names (getActivity (), pref.getApps ()));
+        String names = Apps.names (getActivity (), pref.getApps ());
+        CharSequence hint = mAppsHints.get (pref.getKey ());
+
+        /* Пустой список — состояние по умолчанию: возвращаем пояснение из XML,
+         * иначе Preference скрывает summary вместе с ним (пустая строка). */
+        pref.setSummary (names.isEmpty () ? hint : names);
     }
 
     @Override

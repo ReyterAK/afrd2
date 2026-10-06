@@ -111,14 +111,15 @@ public class AppsPickerActivity extends Activity
             public void onItemClick (AdapterView<?> parent, View view, int position, long id)
             {
                 String pkg = mApps.get (position).pkg;
-                /* wasSelected нужно снять до clear(): иначе в режиме single
-                 * remove() всегда возвращал бы false и выбранную строку
-                 * нельзя было бы снять (пустое значение = «любой плеер»). */
+                /* wasSelected нужен до clear(): в режиме single очистка набора обнулила бы
+                 * признак, и выбранную строку нельзя было бы снять (пустое значение =
+                 * «любой плеер»). В режиме multi снятие отметки — обычный путь. */
                 boolean wasSelected = mSelected.contains (pkg);
-                /* single: отметка ровно одна; повторное нажатие снимает выбор */
                 if (MODE_SINGLE.equals (mMode))
                     mSelected.clear ();
-                if (!wasSelected)
+                if (wasSelected)
+                    mSelected.remove (pkg);
+                else
                     mSelected.add (pkg);
 
                 mAdapter.notifyDataSetChanged ();
@@ -196,12 +197,6 @@ public class AppsPickerActivity extends Activity
 
         setResult (RESULT_OK, out);
         finish ();
-    }
-
-    /** Режим выбора для ключа настройки. */
-    public static String modeFor (String prefKey)
-    {
-        return "fps_correct_av1_pkg".equals (prefKey) ? MODE_SINGLE : MODE_MULTI;
     }
 
     private static class AppsAdapter extends BaseAdapter
