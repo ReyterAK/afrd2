@@ -20,6 +20,7 @@
 #include "cfgkeys.h"
 #include "reconf.h"
 #include "hdrinfo.h"
+#include "pkgdet.h"
 
 #define __USE_GNU
 #include <math.h>
@@ -85,11 +86,17 @@ static uevent_filter_t g_filter_hdcp;
 
 static strlist_t g_vdec_blacklist;
 static strlist_t g_frhint_vdec_blacklist;
-/* Пакеты из switch.skip.pkg: демон их мерит и пишет в журнал, но режим не
- * переключает и не удерживает — плеер сам выбирает темп отрисовки под текущий
- * режим экрана, а удержанный низкий режим «зажимал» бы следующий ролик
- * (проверено живьём на YouTube TV, см. README, ограничение 8). */
+/* Пакеты из switch.skip.pkg: на Android 10-14 демон их мерит и пишет в журнал,
+ * но режим не переключает и не удерживает — плеер сам выбирает темп отрисовки
+ * под текущий режим экрана, а удержанный низкий режим «зажимал» бы следующий
+ * ролик (проверено живьём на YouTube TV, см. README, ограничение 8). На
+ * Android 6-9 гейт стоит до запуска измерения: плеер не измеряется, в журнале
+ * только факт исключения. */
 static strlist_t g_skip_pkgs;
+
+/* Текущий путь работы (заполняется в afrd_run); нужен и старому пути — по нему
+ * pkg_name() понимает, откуда брать пакет переднего плана. */
+static platform_t g_plat;
 
 /**
  * The one-shot timer used to switch display mode.
@@ -656,6 +663,87 @@ static void framerate_restore (bool only_if_black)
 	update_stats ();
 }
 
+/* Минимальная частота режима (24.8) для пакета; 0 — ограничения нет
+ * (mode.min.hz.list, определение ниже). */
+static int mode_min_hz_for (const char *pkg);
+
+/* Пакет плеера текущего видео и решение по switch.skip.pkg (определения ниже:
+ * нужны framerate_switch/delay_framerate_switch, которые идут раньше). */
+static const char *pkg_name (void);
+static bool pkg_skip_active (void);
+
+/* Сброс кэша пакета на старте нового видео (определение ниже; нужен
+ * обработчику vdec-uevent, который идёт раньше). */
+static void pkg_cache_invalidate (void);
+
+/* Выбор режима из g_modes под частоту g_state.hz (правила старого пути).
+ * floor — минимальная допустимая частота режима в формате 24.8
+ * (mode.min.hz.list) или 0.
+ * Возврат: true — режим найден и записан в *best. */
+static bool select_mode (int floor, display_mode_t *best)
+{
+	/* Find the video mode that:
+	 * a) Has same width and height and interlace flag
+	 * b) Closely divides by the required framerate, error less
+	 *    than 4.1% (difference between 23.976 and 25 Hz)
+	 * c) Has the highest framerate (e.g. 50Hz display modes are
+	 *    better than 25Hz display modes for displaying 25Hz video)
+	 *    if g_mode_prefer_exact is 0, or
+	 * d) Has the closest framerate if g_mode_prefer_exact is 1.
+	 */
+	unsigned best_rating = 0;
+	best->name [0] = 0;
+	for (int i = 0; i < g_modes_n; i++) {
+		display_mode_t *mode = &g_modes [i];
+		if ((mode->width != g_current_mode.width) ||
+		    (mode->height != g_current_mode.height) ||
+		    (mode->interlaced != g_current_mode.interlaced))
+			continue;
+
+		/* mode.min.hz.list: для этого плеера режимы ниже порога не годятся
+		 * (плеер «зажимает» темп отрисовки по частоте экрана в момент старта
+		 * ролика — нужен режим не ниже частоты ролика). */
+		if (floor && (display_mode_hz (mode) < floor))
+			continue;
+
+		unsigned rate_n = 1;
+		unsigned rate = (mode->framerate << 16) / g_state.hz;
+		while (rate > 0x180) {
+			rate_n++;
+			rate = (mode->framerate << 16) / (g_state.hz * rate_n);
+		}
+
+		unsigned delta = abs ((int)(rate - 0x100));
+		if (delta > 11)
+			continue; // freq error > 4.3%
+
+		// rating is larger as delta is closer to 1.0 rate
+		int rating = (11 - delta) * 16;
+
+		unsigned n = (rate_n > 3) ? 3 : (rate_n - 1);
+		rating += 4 * (g_mode_prefer_exact ? (3 - n) : n);
+
+		if (rating > best_rating) {
+			display_mode_t tmp = *mode;
+			// decide if integer or fractional framerate is better
+			display_mode_set_hz (&tmp, g_state.hz);
+
+			// if framerate is blacklisted, try to invert fractional
+			if (rate_is_blacklisted (display_mode_hz (&tmp))) {
+				tmp.fractional = !tmp.fractional;
+				if (rate_is_blacklisted (display_mode_hz (&tmp)))
+					// no luck, both framerates are banned
+					continue;
+			}
+
+			best_rating = rating;
+			*best = tmp;
+		}
+	}
+
+	return best->name [0] != 0;
+}
+
 static void framerate_switch (bool force)
 {
 	g_state.delayed_switch = false;
@@ -670,6 +758,21 @@ static void framerate_switch (bool force)
 	if (!g_enable) {
 		trace (1, "User disabled AFR\n");
 		framerate_restore (true);
+		return;
+	}
+
+	/* switch.skip.pkg — вторая точка решения: сюда приходят и по таймеру,
+	 * и от API, минуя delay_framerate_switch. */
+	if (pkg_skip_active ())
+	{
+		trace (1, "плеер %s в switch.skip.pkg — режим не переключаю\n", pkg_name ());
+		if (g_state.orig_mode.name [0])
+			framerate_restore (false);
+		else
+		{
+			memset (&g_state, 0, sizeof (g_state));
+			update_stats ();
+		}
 		return;
 	}
 
@@ -712,59 +815,15 @@ giveup:			trace (1, "Timeout detecting movie frame rate, giving up\n");
 	trace (1, "Looking for display mode closest to %dx%d@"HZ_FMT"Hz\n",
 		g_current_mode.width, g_current_mode.height, HZ_ARGS (g_state.hz));
 
-	/* Find the video mode that:
-	 * a) Has same width and height and interlace flag
-	 * b) Closely divides by the required framerate, error less
-	 *    than 4.1% (difference between 23.976 and 25 Hz)
-	 * c) Has the highest framerate (e.g. 50Hz display modes are
-	 *    better than 25Hz display modes for displaying 25Hz video)
-	 *    if g_mode_prefer_exact is 0, or
-	 * d) Has the closest framerate if g_mode_prefer_exact is 1.
-	 */
+	/* Порог частоты для плеера текущего видео (mode.min.hz.list); если под
+	 * порогом не осталось ни одного режима, берём обычное правило. */
+	int floor = g_mode_min_hz_count ? mode_min_hz_for (pkg_name ()) : 0;
 	display_mode_t best_mode;
-	unsigned best_rating = 0;
-	int i;
-	best_mode.name [0] = 0;
-	for (i = 0; i < g_modes_n; i++) {
-		display_mode_t *mode = &g_modes [i];
-		if ((mode->width != g_current_mode.width) ||
-		    (mode->height != g_current_mode.height) ||
-		    (mode->interlaced != g_current_mode.interlaced))
-			continue;
-
-		unsigned rate_n = 1;
-		unsigned rate = (mode->framerate << 16) / g_state.hz;
-		while (rate > 0x180) {
-			rate_n++;
-			rate = (mode->framerate << 16) / (g_state.hz * rate_n);
-		}
-
-		unsigned delta = abs ((int)(rate - 0x100));
-		if (delta > 11)
-			continue; // freq error > 4.3%
-
-		// rating is larger as delta is closer to 1.0 rate
-		int rating = (11 - delta) * 16;
-
-		unsigned n = (rate_n > 3) ? 3 : (rate_n - 1);
-		rating += 4 * (g_mode_prefer_exact ? (3 - n) : n);
-
-		if (rating > best_rating) {
-			display_mode_t tmp = *mode;
-			// decide if integer or fractional framerate is better
-			display_mode_set_hz (&tmp, g_state.hz);
-
-			// if framerate is blacklisted, try to invert fractional
-			if (rate_is_blacklisted (display_mode_hz (&tmp))) {
-				tmp.fractional = !tmp.fractional;
-				if (rate_is_blacklisted (display_mode_hz (&tmp)))
-					// no luck, both framerates are banned
-					continue;
-			}
-
-			best_rating = rating;
-			best_mode = tmp;
-		}
+	if (!select_mode (floor, &best_mode) && floor)
+	{
+		trace (1, "нет режима не ниже " HZ_FMT " Гц (mode.min.hz.list) — "
+		       "выбираю обычным правилом\n", HZ_ARGS (floor));
+		select_mode (0, &best_mode);
 	}
 
 	if (!best_mode.name [0]) {
@@ -806,6 +865,18 @@ static void delay_framerate_switch (bool restore, int hz, const char *modalias)
 {
 	mstime_disable (&g_ost_blackout);
 	mstime_disable (&g_ost_switch);
+
+	/* switch.skip.pkg: этому плееру AFR мешает — режим не переключаем.
+	 * Если что-то уже удержано (плеер внесли в список на ходу), возвращаем
+	 * исходный режим. */
+	if (!restore && pkg_skip_active ())
+	{
+		trace (1, "плеер %s в switch.skip.pkg — режим не переключаю\n", pkg_name ());
+		if (g_state.orig_mode.name [0])
+			framerate_restore (false);
+		update_stats ();
+		return;
+	}
 
 	if (g_switch_ignore) {
 		if (restore)
@@ -970,9 +1041,13 @@ static void handle_uevent (char *msg, ssize_t size)
 
 	} else if (uevent_filter_matched (&g_filter_vdec)) {
 		/* got a vdec uevent */
-		if (action && (strcmp (action, "add") == 0))
+		if (action && (strcmp (action, "add") == 0)) {
+			/* Новое видео: сбрасываем кэш пакета, чтобы первое решение
+			 * по нему шло по плееру этого видео, а не по пакету
+			 * предыдущего приложения (кэш живёт 2 с). */
+			pkg_cache_invalidate ();
 			delay_framerate_switch (false, 0, modalias);
-		else if (action && (strcmp (action, "remove") == 0))
+		} else if (action && (strcmp (action, "remove") == 0))
 			delay_framerate_switch (true, 0, modalias);
 
 	} else if (uevent_filter_matched (&g_filter_hdmi) && g_switch_hdmi) {
@@ -1105,10 +1180,6 @@ static bool g_reconf_requested;
 static sf_mode_t g_sf_modes [SF_MODE_MAX];
 static int g_sf_modes_n = 0;
 
-/* Минимальная частота режима (24.8) для пакета; 0 — ограничения нет
- * (mode.min.hz.list, определение ниже). */
-static int mode_min_hz_for (const char *pkg);
-
 /* Фильтр частот для sfmodes_select: на ATV14-пути действует тот же
  * mode.blacklist.rates, что и в legacy-ветке (раньше ключ молча игнорировался). */
 static bool atv14_rate_allowed (int hz, void *ctx)
@@ -1239,58 +1310,14 @@ static int atv14_select_mode (int hz, int w, int h, int floor)
 	return ch.id;
 }
 
-/* Пакет приложения на переднем плане (плеера) — по нему выбирается поправка
- * частоты fps.correct.list. Разбор строки вида
- *   topResumedActivity=ActivityRecord{b4e422c u0 com.pkg/.Activity t611}
- * Возврат: true, если пакет разобран. */
-static bool parse_top_package (const char *dump, char *out, size_t out_sz)
-{
-	const char *p = strstr (dump, "topResumedActivity=ActivityRecord{");
-	if (!p)
-		return false;
-
-	p += strlen ("topResumedActivity=ActivityRecord{");
-	while (*p)
-	{
-		const char *sp = strchr (p, ' ');
-		if (!sp)
-			break;
-
-		/* после поля "u<uid> " сразу идёт компонент "<пакет>/<активити>" */
-		if ((sp [1] == 'u') && (sp [2] >= '0') && (sp [2] <= '9'))
-		{
-			const char *c = sp + 2;
-			while ((*c >= '0') && (*c <= '9'))
-				c++;
-			if (*c == ' ')
-				c++;
-
-			const char *slash = strchr (c, '/');
-			const char *end = slash ? slash : strpbrk (c, " }");
-			if (end && (end > c) && ((size_t)(end - c) < out_sz))
-			{
-				memcpy (out, c, (size_t)(end - c));
-				out [end - c] = 0;
-				return true;
-			}
-
-			return false;
-		}
-
-		p = sp + 1;
-	}
-
-	return false;
-}
-
 /* Пакет плеера текущего видео. Пустая строка — не удалось определить.
  * (Объявление — выше, в выборе режима: mode.min.hz.list.) */
 static char g_cur_pkg [64];
 
-/* Приложение на переднем плане.
+/* Приложение на переднем плане (общее для обоих путей работы демона).
  * Возврат: 0 — разобрано (*out заполнен), -1 — команда не удалась,
  * -2 — вывод не разобран. */
-static int atv14_top_package (const platform_t *plat, char *out, size_t out_sz)
+static int pkg_probe (const platform_t *plat, char *out, size_t out_sz)
 {
 	if (out && out_sz)
 		out [0] = 0;
@@ -1302,16 +1329,69 @@ static int atv14_top_package (const platform_t *plat, char *out, size_t out_sz)
 	if (exec_capture (plat->activity_dump_cmd, dump, sizeof (dump)) != 0)
 		return -1;
 
-	return parse_top_package (dump, out, out_sz) ? 0 : -2;
+	return pkgdet_parse (dump, out, out_sz) ? 0 : -2;
 }
 
-static void atv14_probe_package (const platform_t *plat)
+/* Пакет для fps.correct.list / mode.min.hz.list / switch.skip.pkg:
+ * разобрать и, если не вышло, сказать об этом в журнал. */
+static void pkg_probe_logged (const platform_t *plat)
 {
-	int rc = atv14_top_package (plat, g_cur_pkg, sizeof (g_cur_pkg));
+	int rc = pkg_probe (plat, g_cur_pkg, sizeof (g_cur_pkg));
 	if (rc == -1)
 		trace (1, "не удалось определить приложение на переднем плане\n");
 	else if (rc == -2)
 		trace (1, "приложение на переднем плане не разобрано\n");
+}
+
+/* Кэш пакета для старого пути: `dumpsys` — это fork/exec, поэтому не чаще
+ * раза в PKG_CACHE_MS. Пока ни одного из списков по пакетам нет, не делается
+ * ни одного вызова (у существующих пользователей Android 6-9 поведение
+ * остаётся прежним). */
+#define PKG_CACHE_MS	2000
+
+/* Таймер кэша пакета: взведён, пока кэш свежий (см. pkg_name); сбрасывается
+ * на старте нового видео через pkg_cache_invalidate(). */
+static mstime_t g_pkg_cache_stamp;
+
+static const char *pkg_name (void)
+{
+	if (g_plat.kind == PLAT_ATV14)
+		return g_cur_pkg;
+
+	static char buf [64];
+
+	if ((g_skip_pkgs.size == 0) && (g_mode_min_hz_count == 0))
+		return "";
+
+	if (!mstime_running (&g_pkg_cache_stamp))
+	{
+		mstime_arm (&g_pkg_cache_stamp, PKG_CACHE_MS);
+		if (pkg_probe (&g_plat, buf, sizeof (buf)) != 0)
+			buf [0] = 0;
+	}
+
+	return buf;
+}
+
+/* Сброс кэша пакета — зовётся на старте нового видео (ветка ACTION=add
+ * vdec-uevent). Кэш живёт PKG_CACHE_MS, и без сброса первое решение по новому
+ * видео ушло бы по пакету предыдущего приложения: например, вышли из плеера из
+ * switch.skip.pkg и тут же запустили другое видео — гейт сработал бы по
+ * устаревшему пакету и переключение для нового видео пропало бы. Ограничение
+ * скорости запросов (не чаще PKG_CACHE_MS) на время воспроизведения сохраняется. */
+static void pkg_cache_invalidate (void)
+{
+	mstime_disable (&g_pkg_cache_stamp);
+}
+
+/* true — текущему видео AFR мешать не надо (плеер в switch.skip.pkg). */
+static bool pkg_skip_active (void)
+{
+	if (g_skip_pkgs.size == 0)
+		return false;
+
+	const char *pkg = pkg_name ();
+	return (pkg [0] != 0) && strlist_contains (&g_skip_pkgs, pkg);
 }
 
 /* Сон с оглядкой на завершение: просыпаемся не реже, чем раз в 200 мс. */
@@ -2146,7 +2226,7 @@ static int run_atv14 (const platform_t *plat)
 					video_pkg [0] = 0;
 					pkg_mismatch = 0;
 					pkg_probe_us = 0;
-					if (atv14_top_package (plat, video_pkg, sizeof (video_pkg)) == 0)
+					if (pkg_probe (plat, video_pkg, sizeof (video_pkg)) == 0)
 						trace (2, "видео ведёт приложение %s\n", video_pkg);
 					else
 						video_pkg [0] = 0;
@@ -2206,7 +2286,7 @@ static int run_atv14 (const platform_t *plat)
 			{
 				char top [64] = { 0 };
 				pkg_probe_us = now_us ();
-				if (atv14_top_package (plat, top, sizeof (top)) == 0)
+				if (pkg_probe (plat, top, sizeof (top)) == 0)
 				{
 					if (top [0] && (strcmp (top, video_pkg) != 0))
 					{
@@ -2326,7 +2406,12 @@ static int run_atv14 (const platform_t *plat)
 			int expect_ms = cadence_expect_ms;
 			if (atv14_cadence_halved (expect_ms, &pm, &am))
 			{
-				int back = (orig_sf_id >= 0) ? orig_sf_id : preferred_id;
+				/* preferred_id — id из пространства DisplayManager: как
+				 * цель транзакции 1035 он годится, только если есть в
+				 * таблице SF (иначе «лечение» билось бы о пропуск). */
+				int back = (orig_sf_id >= 0) ? orig_sf_id
+				           : sfmodes_restore_target (g_sf_modes, g_sf_modes_n,
+				                                     preferred_id, -1);
 				if ((cadence_fixes < 2) && (back >= 0) && (back != want_sf_id))
 				{
 					cadence_fixes++;
@@ -2387,7 +2472,7 @@ static int run_atv14 (const platform_t *plat)
 				pkg_probed = true;
 				if (correct_enable || (g_mode_min_hz_count > 0) || (g_skip_pkgs.size > 0))
 				{
-					atv14_probe_package (plat);
+					pkg_probe_logged (plat);
 					video_corr = fps_correct_factor (g_cur_pkg);
 					if (video_corr != 1.0)
 					{
@@ -2736,8 +2821,28 @@ static int run_atv14 (const platform_t *plat)
 
 		act = guard_decide (video_eff, want_sf_id, cur_sf_id, &orig_sf_id, &held);
 
-		if (act == GUARD_SWITCH && (preferred_id >= 0))
-			orig_sf_id = preferred_id;	/* возврат — в предпочтительный режим ТВ */
+		/* preferred_id приходит из dumpsys display (mUserPreferredModeId) —
+		 * это нумерация DisplayManager, а транзакция 1035 требует id из
+		 * таблицы SurfaceFlinger. На стенде ATV14 нумерации расходятся
+		 * (DM: preferred=1; SF: 30..43), и прямая подстановка давала id,
+		 * которого в таблице нет: возврат после видео молча пропускался
+		 * («id 1 отсутствует в текущей таблице режимов»). sfmodes_restore_target
+		 * берёт preferred, только если он есть в таблице SF, иначе cur_sf_id,
+		 * уже запомненный guard_decide в orig_sf_id. */
+		if (act == GUARD_SWITCH)
+		{
+			int back = sfmodes_restore_target (g_sf_modes, g_sf_modes_n,
+			                                   preferred_id, orig_sf_id);
+			/* Ни preferred, и запомненный cur отсутствуют в таблице SF: когда
+			 * видео кончится, guard_decide() вернёт GUARD_NONE и удержание
+			 * снимется без строки «id N отсутствует в текущей таблице режимов»
+			 * (atv14_apply_mode при sf_id < 0 её не пишет) — фиксируем причину
+			 * здесь, состояние экрана от этого не меняется. */
+			if ((back < 0) && (preferred_id >= 0))
+				trace (1, "цель возврата (preferred id %d) отсутствует в таблице режимов — возврат невозможен\n",
+				       preferred_id);
+			orig_sf_id = back;
+		}
 
 		if (act == GUARD_SWITCH)
 		{
@@ -2829,8 +2934,6 @@ static int run_atv14 (const platform_t *plat)
 }
 
 /* --------- * --------- * --------- * --------- * --------- * --------- */
-
-static platform_t g_plat;
 
 /* Вывод предупреждений аудита ключей конфига — в лог демона. */
 static void cfg_audit_warn (const char *msg, void *ctx)

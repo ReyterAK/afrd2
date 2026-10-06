@@ -36,6 +36,10 @@
             </intent-filter>
         </activity>
 
+        <activity android:name="ru.cobra.zap.afrd.gui.AppsPickerActivity"
+                  android:configChanges="orientation" android:exported="false"
+                  android:screenOrientation="landscape"/>
+
         <receiver android:name="ru.cobra.zap.afrd.gui.BootCompleteReceiver" android:enabled="true" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>

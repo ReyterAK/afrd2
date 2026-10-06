@@ -90,6 +90,7 @@
     <string name="mode_use_fract_int">Предпочитать целые частоты</string>
     <string name="settings_advanced">Настройки для опытных пользователей</string>
     <string name="not_applicable_atv14">(не действует на Android 10-14)</string>
+    <string name="not_applicable_legacy">(не действует на Android 6-9)</string>
     <string name="prefs_group_correct">Калибровка частоты по плееру</string>
     <string name="prefs_group_atv14">Настройки для Android 10 и выше</string>
     <string name="prefs_fps_prefer_api">Доверять подсказке плеера</string>
@@ -171,6 +172,16 @@
     <string name="prefs_fps_correct_av1_pkg">Поправка AV1: только для пакета</string>
     <string name="prefsum_fps_correct_av1_pkg">Ограничить поправку AV1 одним пакетом плеера
         (fps.correct.av1.pkg). Пусто — для любого плеера.</string>
+    <string name="prefs_switch_skip_pkg">Плееры, которым AFR мешает</string>
+    <string name="prefsum_switch_skip_pkg">Для выбранных приложений AFRd2 измеряет частоту кадров
+        и пишет всё в журнал, но не переключает и не удерживает режим экрана. Коснитесь строки и
+        выберите приложения из списка установленных плееров. На Android 6-9 режим для выбранных
+        приложений просто не переключается — измерения нет.</string>
+    <string name="apps_done">Готово</string>
+    <string name="apps_players_only">Только плееры</string>
+    <string name="apps_empty">Приложения не найдены — снимите «Только плееры», чтобы увидеть все</string>
+    <string name="apps_not_installed">%s — не установлено</string>
+    <string name="apps_icon">Значок приложения</string>
     <string name="notif_start_afrd">Включить АПЧ</string>
     <string name="notif_stop_afrd">Отключить АПЧ</string>
     <string name="notif_enabled">AFRd2 включён</string>

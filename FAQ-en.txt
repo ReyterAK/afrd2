@@ -79,18 +79,19 @@
 ! middle of playback.
 
 ! So if you have made sure that the player handles AFR well on its own,
-! add it to the AFRd blacklist - then AFRd will not switch the mode for
-! that player and the extra "blink" will not happen.
+! add it to the "Players that AFR gets in the way of" list ("Settings" ->
+! "Settings for Android 10 and above") - then AFRd will not switch the mode
+! for that player and the extra "blink" will not happen.
 
 ! How to check: first disable the player's own AFR and see how the player
 ! behaves with AFRd alone, then enable the player's AFR and repeat. If the
-! player switches the mode correctly on its own, add it to the blacklist.
+! player switches the mode correctly on its own, add it to that list.
 ! Signs that the player's AFR and AFRd get in each other's way: the mode
 ! does not have time to settle, switches twice within one clip, or the
 ! screen stays in a "foreign" mode after playback stops.
 
 ! A caveat: only a player that really switches the rate itself should be
-! put in the blacklist. If the player has no AFR of its own, the blacklist
+! put in that list. If the player has no AFR of its own, being on the list
 ! means that the system chooses the mode, so the system mode must not be
 ! lower than the content frame rate (usually 60Hz) - otherwise some videos
 ! will be "clamped" (see limitation 8 in README).

@@ -24,7 +24,7 @@ import java.util.Arrays;
  * data types such as byte or C strings. This crippled class is meant to fill
  * some gaps in this horrible java world.
  */
-class jfun
+public class jfun
 {
     /**
      * Compare two C strings until first 0 is encountered in either of the strings.
@@ -127,5 +127,35 @@ class jfun
             logExc ("getProperty", e);
         }
         return "";
+    }
+
+    /**
+     * Не дать пользовательскому DPI/масштабу шрифта сделать интерфейс
+     * нечитаемым (телефонные значения на ТВ-боксе).
+     */
+    @SuppressWarnings( "deprecation" )
+    public static void limitDpi (android.app.Activity act)
+    {
+        android.content.res.Configuration configuration = act.getResources ().getConfiguration ();
+
+        if ((configuration.densityDpi <= 240) &&
+            (configuration.fontScale <= 1.30F))
+            return;
+
+        if (configuration.densityDpi > 340)
+            configuration.densityDpi = 340;
+        if (configuration.fontScale > 1.30F)
+            configuration.fontScale = 1.30F;
+
+        android.util.DisplayMetrics metrics = act.getResources ().getDisplayMetrics ();
+        android.view.WindowManager wm =
+            (android.view.WindowManager) act.getSystemService (android.content.Context.WINDOW_SERVICE);
+        if (wm == null)
+            return;
+
+        android.view.Display dpy = wm.getDefaultDisplay ();
+        dpy.getMetrics (metrics);
+        metrics.scaledDensity = configuration.fontScale * metrics.density;
+        act.getBaseContext ().getResources ().updateConfiguration (configuration, metrics);
     }
 }

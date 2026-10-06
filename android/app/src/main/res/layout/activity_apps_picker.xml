@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent" android:layout_height="match_parent"
+              android:orientation="vertical">
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="40sp"
+                  android:background="@color/colorMenuBackground" android:orientation="horizontal">
+        <TextView android:id="@+id/pickerTitle" android:layout_width="0dp"
+                  android:layout_height="match_parent" android:layout_weight="1"
+                  android:gravity="start|center_vertical" android:paddingStart="16dp"
+                  android:paddingEnd="16dp" android:textSize="18sp"/>
+        <CheckBox android:id="@+id/pickerPlayers" android:layout_width="wrap_content"
+                  android:layout_height="match_parent" android:layout_marginEnd="16dp"
+                  android:text="@string/apps_players_only"/>
+        <Button android:id="@+id/pickerDone" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:layout_marginEnd="16dp"
+                android:text="@string/apps_done"/>
+    </LinearLayout>
+
+    <FrameLayout android:layout_width="match_parent" android:layout_height="match_parent">
+        <ListView android:id="@+id/pickerList" android:layout_width="match_parent"
+                  android:layout_height="match_parent"/>
+        <TextView android:id="@+id/pickerEmpty" android:layout_width="match_parent"
+                  android:layout_height="wrap_content" android:gravity="center"
+                  android:paddingStart="16dp" android:paddingTop="24dp" android:paddingEnd="16dp"
+                  android:text="@string/apps_empty" android:textSize="18sp"
+                  android:visibility="gone"/>
+    </FrameLayout>
+
+</LinearLayout>

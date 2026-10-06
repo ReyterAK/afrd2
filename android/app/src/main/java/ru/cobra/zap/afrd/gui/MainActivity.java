@@ -18,7 +18,6 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
-import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -28,10 +27,7 @@ import android.preference.PreferenceFragment;
 import android.preference.PreferenceManager;
 import android.preference.PreferenceScreen;
 import android.util.ArrayMap;
-import android.util.DisplayMetrics;
-import android.view.Display;
 import android.view.View;
-import android.view.WindowManager;
 import android.widget.AdapterView;
 import android.widget.ListView;
 import android.widget.SimpleAdapter;
@@ -47,6 +43,7 @@ import java.util.Vector;
 import ru.cobra.zap.afrd.RootShell;
 import ru.cobra.zap.afrd.Config;
 import ru.cobra.zap.afrd.Control;
+import ru.cobra.zap.afrd.jfun;
 
 public class MainActivity extends Activity
     implements PreferenceFragment.OnPreferenceStartFragmentCallback
@@ -64,7 +61,7 @@ public class MainActivity extends Activity
     {
         super.onCreate (savedInstanceState);
 
-        limitDpi ();
+        jfun.limitDpi (this);
         ActionBar ab = getActionBar ();
         if (ab != null)
             ab.hide ();
@@ -165,32 +162,6 @@ public class MainActivity extends Activity
 
     }
 
-    @SuppressWarnings( "deprecation" )
-    public void limitDpi ()
-    {
-        Configuration configuration = getResources ().getConfiguration ();
-
-        if ((configuration.densityDpi <= 240) &&
-            (configuration.fontScale <= 1.30F))
-            return;
-
-        // Don't allow too large fonts otherwise it's all unusable & unreadable
-        if (configuration.densityDpi > 340)
-            configuration.densityDpi = 340;
-        if (configuration.fontScale > 1.30F)
-            configuration.fontScale = 1.30F;
-
-        DisplayMetrics metrics = getResources ().getDisplayMetrics ();
-        WindowManager wm = (WindowManager) getSystemService (WINDOW_SERVICE);
-        if (wm == null)
-            return;
-
-        Display dpy = wm.getDefaultDisplay ();
-        dpy.getMetrics (metrics);
-        metrics.scaledDensity = configuration.fontScale * metrics.density;
-        getBaseContext ().getResources ().updateConfiguration (configuration, metrics);
-    }
-
     private boolean prepareConfig ()
     {
         SharedPreferences prefs = getSharedPreferences ("requisites", 0);
@@ -235,7 +206,16 @@ public class MainActivity extends Activity
 
         // apply user preferences on top
         if (mOptions.contains ("enable"))
+        {
             conf.load (mOptions);
+
+            /* Ключи, появившиеся в GUI позже установки приложения, в настройках
+             * отсутствуют: без этого строка показала бы пустое значение, а
+             * первая же правка настроек записала бы пустое значение поверх
+             * профильного умолчания (switch.skip.pkg потерял бы исключение
+             * для YouTube TV). */
+            seedOptions (conf);
+        }
         else
         {
             PreferenceManager.setDefaultValues (this, "ini_options", 0, R.xml.preferences, true);
@@ -244,6 +224,27 @@ public class MainActivity extends Activity
 
         // and save the modified file
         return conf.condSave (mControl.mIni);
+    }
+
+    /* Настройки, которых ещё нет в ini_options, берём из конфига профиля. */
+    private void seedOptions (Config conf)
+    {
+        final String [] seeded = { "switch.skip.pkg", "fps.correct.av1.pkg" };
+        SharedPreferences.Editor edit = null;
+
+        for (String key : seeded)
+        {
+            String pref = key.replace ('.', '_');
+            if (mOptions.contains (pref))
+                continue;
+
+            if (edit == null)
+                edit = mOptions.edit ();
+            edit.putString (pref, conf.getString (key, ""));
+        }
+
+        if (edit != null)
+            edit.apply ();
     }
 
     private void prepareDaemon ()
