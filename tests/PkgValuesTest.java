@@ -102,6 +102,31 @@ public class PkgValuesTest
         eq ("обрезка в ноль", PkgValues.format (PkgValues.trim (
             PkgValues.parse ("a=1 z", MIN, MAX), 0)), "z");
 
+        /* Предел длины имени пакета: Java-константа обязана совпадать с
+         * PKG_NAME_LEN в pkgdet.h — иначе GUI пропустит имя, которое демон
+         * обрежет (или отбросит), и порог для такого плеера молча не сработает. */
+        if (PkgValues.MAX_PKG_LEN != 255)
+        {
+            System.err.println ("PkgValues: MAX_PKG_LEN ожидалось 255, получено " + PkgValues.MAX_PKG_LEN);
+            System.exit (1);
+        }
+
+        try
+        {
+            String hdr = new String (java.nio.file.Files.readAllBytes (
+                java.nio.file.Paths.get ("pkgdet.h")), java.nio.charset.StandardCharsets.UTF_8);
+            if (!hdr.contains ("PKG_NAME_LEN\t256"))
+            {
+                System.err.println ("PkgValues: в pkgdet.h нет «PKG_NAME_LEN 256» — сверь MAX_PKG_LEN");
+                System.exit (1);
+            }
+        }
+        catch (java.io.IOException exc)
+        {
+            System.err.println ("PkgValues: pkgdet.h не читается: " + exc);
+            System.exit (1);
+        }
+
         System.out.println ("PkgValues: OK");
     }
 }

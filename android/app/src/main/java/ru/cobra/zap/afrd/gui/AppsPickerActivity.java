@@ -259,6 +259,16 @@ public class AppsPickerActivity extends Activity
      * заполненные записи: запись без числа демон не хранит, слот она не занимает. */
     private void applyValue (String pkg, boolean selected, String value)
     {
+        /* Имя длиннее предела демона он не применит (усечёт или отбросит):
+         * не сохраняем такую запись и говорим об этом, иначе настройка
+         * выглядела бы рабочей, а порога для плеера не было. */
+        if (pkg.length () > PkgValues.MAX_PKG_LEN)
+        {
+            Toast.makeText (this, getString (R.string.apps_value_pkg_too_long, PkgValues.MAX_PKG_LEN),
+                Toast.LENGTH_LONG).show ();
+            return;
+        }
+
         if (!selected && (PkgValues.filledCount (mValues) >= PkgValues.MAX_ENTRIES))
         {
             Toast.makeText (this, getString (R.string.apps_value_limit, PkgValues.MAX_ENTRIES),

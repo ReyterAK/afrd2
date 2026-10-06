@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "fps_class.h"
+#include "pkgdet.h"	/* PKG_NAME_LEN: буферы имён пакетов */
 
 static const struct { const char *name; double fps; } k_rates [FPS_RATE_COUNT] =
 {
@@ -108,7 +109,7 @@ int fps_rate_exact_member (int hz)
 
 static struct
 {
-	char pkg [64];
+	char pkg [PKG_NAME_LEN];
 	double factor;	/* 1 + pct/100 */
 } k_correct [FPS_CORRECT_MAX];
 
@@ -169,7 +170,7 @@ double fps_correct_factor (const char *package)
 static struct
 {
 	double	offset;
-	char	pkg [64];
+	char	pkg [PKG_NAME_LEN];
 } k_av1;
 
 void fps_correct_clear_av1 (void)
