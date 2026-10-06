@@ -211,7 +211,7 @@ public class MainActivity extends Activity
             /* Сначала убираем записи, оставшиеся от версии, где ключ не попадал
              * в конфиг, — иначе наложение настроек сразу же подменит профильное
              * значение старым умолчанием XML. */
-            resetInertKeys ();
+            resetInertKeys (conf);
 
             conf.load (mOptions);
 
@@ -237,16 +237,24 @@ public class MainActivity extends Activity
      * осталось умолчание XML, которое ни на что не влияло, — демон читал
      * профиль. Оставить его нельзя: став действующим, оно молча подменит
      * проверенную профильную настройку (12000 вместо 14000 для окна раннего
-     * решения). Удаление записи возвращает строку к умолчанию XML (совпадает
-     * с профилем) и не мешает демону читать профильное значение. */
+     * решения). Поэтому один раз при первом запуске новой версии убираем такую
+     * запись и записываем в конфиг новое умолчание — строка настроек и демон
+     * после этого показывают одно и то же. Своё значение пользователя
+     * (не равное старому умолчанию) не трогаем, а сделанную после обновления
+     * правку не трогаем никогда — перенос одноразовый (флаг в requisites). */
     private static final String [][] kInertDefaults =
     {
-        { "fps_measure_envelope_early_ms", "12000" },
-        { "fps_cadence_fix_ms", "2500" },
+        /* настройка (префы) | ключ ini | старое умолчание XML | новое */
+        { "fps_measure_envelope_early_ms", "fps.measure.envelope.early.ms", "12000", "14000" },
+        { "fps_cadence_fix_ms", "fps.cadence.fix.ms", "2500", "2500" },
     };
 
-    private void resetInertKeys ()
+    private void resetInertKeys (Config conf)
     {
+        SharedPreferences req = getSharedPreferences ("requisites", 0);
+        if (req.getBoolean ("inert_defaults_reset", false))
+            return;
+
         SharedPreferences.Editor edit = null;
 
         for (String [] item : kInertDefaults)
@@ -254,18 +262,23 @@ public class MainActivity extends Activity
             if (!mOptions.contains (item [0]))
                 continue;
 
-            /* Правило — в Seed.shouldReset (проверяется tests/SeedTest.java):
-             * своё значение пользователя (не равное старому умолчанию) цело. */
-            if (!Seed.shouldReset (mOptions.getString (item [0], ""), item [1]))
+            /* Правило — в Seed.shouldReset (проверяется tests/SeedTest.java). */
+            if (!Seed.shouldReset (mOptions.getString (item [0], ""), item [2]))
                 continue;
 
             if (edit == null)
                 edit = mOptions.edit ();
             edit.remove (item [0]);
+
+            /* Настройка и демон должны показывать одно и то же: в конфиге
+             * оставляем новое умолчание, а не то, что записал старый APK. */
+            conf.put (item [1], item [3]);
         }
 
         if (edit != null)
             edit.apply ();
+
+        req.edit ().putBoolean ("inert_defaults_reset", true).apply ();
     }
 
     /* Настройки, которых ещё нет в ini_options, берём из конфига профиля. */

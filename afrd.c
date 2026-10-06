@@ -1358,7 +1358,7 @@ static const char *pkg_name (void)
 	if (g_plat.kind == PLAT_ATV14)
 		return g_cur_pkg;
 
-	static char buf [64];
+	static char pkg_buf [PKG_NAME_LEN];
 
 	if ((g_skip_pkgs.size == 0) && (g_mode_min_hz_count == 0))
 		return "";
@@ -1366,11 +1366,11 @@ static const char *pkg_name (void)
 	if (!mstime_running (&g_pkg_cache_stamp))
 	{
 		mstime_arm (&g_pkg_cache_stamp, PKG_CACHE_MS);
-		if (pkg_probe (&g_plat, buf, sizeof (buf)) != 0)
-			buf [0] = 0;
+		if (pkg_probe (&g_plat, pkg_buf, sizeof (pkg_buf)) != 0)
+			pkg_buf [0] = 0;
 	}
 
-	return buf;
+	return pkg_buf;
 }
 
 /* Сброс кэша пакета — зовётся на старте нового видео (ветка ACTION=add

@@ -101,65 +101,128 @@ static void test_long_name (void)
 
 /* Наши буферы имён пакетов в демоне обязаны вмещать любое имя, которое примет
  * система (PKG_NAME_LEN). Проверить это «в рантайме» нечем: буфера статические
- * (g_cur_pkg, video_pkg, списки mode.min.hz.list и fps.correct.*), а усечение
- * видно только на стенде. Поэтому контракт пинится разбором исходников: любое
- * объявление вида `pkg [<число>]` с числом меньше PKG_NAME_LEN — регресс,
- * из-за которого настройки для плеера с длинным именем молча не работают. */
-static int check_pkg_buffers (const char *path)
+ * и живут в разных местах, а усечение видно только на стенде. Поэтому контракт
+ * пинится разбором исходников — от мест вызова, а не по имени буфера: имя может
+ * быть любым (на этом уже обожглись: буфер pkg_name() звался buf [64], и
+ * проверка «в имени есть pkg» его не увидела). Для каждого вызова
+ * pkg_probe()/pkgdet_parse() находим буфер-аргумент и его объявление и требуем
+ * размер не меньше PKG_NAME_LEN. */
+static char *read_all (const char *path)
 {
-	FILE *f = fopen (path, "r");
+	FILE *f = fopen (path, "rb");
 	if (!f)
 	{
 		fprintf (stderr, "test_pkgdet: %s не открывается\n", path);
-		return -1;
+		return NULL;
 	}
 
-	char line [512];
-	int bad = 0;
-	while (fgets (line, sizeof (line), f))
+	fseek (f, 0, SEEK_END);
+	long n = ftell (f);
+	fseek (f, 0, SEEK_SET);
+	char *buf = malloc ((size_t) n + 1);
+	if (!buf || (fread (buf, 1, (size_t) n, f) != (size_t) n))
 	{
-		/* размер, заданный своим #define, обязан выводиться из PKG_NAME_LEN */
-		if (strstr (line, "#define") && strstr (line, "PKG_LEN") && !strstr (line, "PKG_NAME_LEN"))
+		free (buf);
+		fclose (f);
+		return NULL;
+	}
+
+	buf [n] = 0;
+	fclose (f);
+	return buf;
+}
+
+/* Идентификатор второго аргумента вызова: "pkg_probe (plat, g_cur_pkg, sizeof (...))"
+ * -> "g_cur_pkg"; для параметра-указателя объявления в файле нет — пропускаем. */
+static int arg_identifier (const char *open_paren, char *out, size_t out_sz)
+{
+	const char *comma = strchr (open_paren, ',');
+	if (!comma)
+		return -1;
+
+	const char *p = comma + 1;
+	while ((*p == ' ') || (*p == '\t'))
+		p++;
+
+	size_t i = 0;
+	while (isalnum ((unsigned char) *p) || (*p == '_'))
+	{
+		if (i + 1 >= out_sz)
+			return -1;
+		out [i++] = *p++;
+	}
+
+	out [i] = 0;
+	return i ? 0 : -1;
+}
+
+static int check_call_buffers (const char *path)
+{
+	char *src = read_all (path);
+	if (!src)
+		return -1;
+
+	int bad = 0;
+	const char *calls [] = { "pkg_probe (", "pkgdet_parse (" };
+
+	for (unsigned c = 0; c < 2; c++)
+	{
+		const char *p = src;
+		while ((p = strstr (p, calls [c])) != NULL)
 		{
-			fprintf (stderr, "test_pkgdet: %s: размер не выведен из PKG_NAME_LEN: %s", path, line);
-			bad++;
+			char id [64];
+			if (arg_identifier (p + strlen (calls [c]) - 1, id, sizeof (id)) != 0)
+			{
+				p += strlen (calls [c]);
+				continue;
+			}
+
+			/* Объявление буфера в этом же файле: "char <id> [<N>]" */
+			char decl [128];
+			snprintf (decl, sizeof (decl), "char %s [", id);
+			const char *d = src;
+			while ((d = strstr (d, decl)) != NULL)
+			{
+				int n = atoi (d + strlen (decl));
+				if ((n > 0) && (n < PKG_NAME_LEN))
+				{
+					fprintf (stderr, "test_pkgdet: %s: буфер %s в вызове %s меньше PKG_NAME_LEN (%d): %d\n",
+					         path, id, calls [c], PKG_NAME_LEN, n);
+					bad++;
+				}
+
+				d += strlen (decl);
+			}
+
+			p += strlen (calls [c]);
 		}
+	}
 
-		const char *p = line;
-		while ((p = strstr (p, "pkg")) != NULL)
+	/* размер, заданный своим #define, обязан выводиться из PKG_NAME_LEN */
+	const char *p = src;
+	while ((p = strstr (p, "#define")) != NULL)
+	{
+		const char *eol = strchr (p, '\n');
+		if (!eol)
+			break;
+
+		size_t len = (size_t)(eol - p);
+		if ((len < sizeof (char) * 512))
 		{
-			/* имя целиком: после «pkg» не буква/цифра/подчёркивание
-			 * (отсекает pkgdet_*), а слева границы нет намеренно: буфера
-			 * зовутся g_cur_pkg, video_pkg, MODE_MIN_HZ_PKG_LEN */
-			char after = p [3];
-			if (isalnum ((unsigned char) after) || (after == '_'))
+			char line [512];
+			memcpy (line, p, len);
+			line [len] = 0;
+			if (strstr (line, "PKG_LEN") && !strstr (line, "PKG_NAME_LEN"))
 			{
-				p += 3;
-				continue;
-			}
-
-			const char *br = p + 3;
-			while (*br == ' ')
-				br++;
-			if (*br != '[')
-			{
-				p += 3;
-				continue;
-			}
-
-			int n = atoi (br + 1);
-			if ((n > 0) && (n < PKG_NAME_LEN))
-			{
-				fprintf (stderr, "test_pkgdet: %s: буфер имени пакета %d < %d: %s",
-				         path, n, PKG_NAME_LEN, line);
+				fprintf (stderr, "test_pkgdet: %s: размер не выведен из PKG_NAME_LEN: %s\n", path, line);
 				bad++;
 			}
-
-			p = br;
 		}
+
+		p = eol;
 	}
 
-	fclose (f);
+	free (src);
 	return bad;
 }
 
@@ -170,8 +233,8 @@ int main (void)
 	test_garbage ();
 	test_short_buffer ();
 	test_long_name ();
-	assert (check_pkg_buffers ("afrd.c") == 0);
-	assert (check_pkg_buffers ("fps_class.c") == 0);
+	assert (check_call_buffers ("afrd.c") == 0);
+	assert (check_call_buffers ("fps_class.c") == 0);
 	printf ("test_pkgdet: OK\n");
 	return 0;
 }
