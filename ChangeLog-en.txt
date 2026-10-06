@@ -1,5 +1,9 @@
 AFRd2 — a fork of AFRd (original by Andrey Zabolotnyi, anpaza @ 4pda)
 
+  * switch.skip.pkg and mode.min.hz.list also act on the old path (Android 6-9):
+    the foreground app package is resolved by the common activity dump parser,
+    the gate stands at both mode switching decision points.
+
 0.3.3 Fri Oct 02 22:45:00 MSK 2026
 
     A caveat for switch.skip.pkg: for an excluded player the display mode is chosen

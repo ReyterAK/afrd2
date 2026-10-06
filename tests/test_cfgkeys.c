@@ -22,6 +22,13 @@ static void test_notes (void)
 	assert (cfgkeys_note ("mode.blacklist.rates", CFGKEY_ATV14) == NULL);
 	assert (cfgkeys_note ("mode.blacklist.rates", CFGKEY_LEGACY) == NULL);
 
+	/* Перенесены на оба пути (политика аддитивности с переносом): «зажим»
+	 * темпа плеером и определение переднего пакета есть и на Android 6-9. */
+	assert (cfgkeys_note ("switch.skip.pkg", CFGKEY_ATV14) == NULL);
+	assert (cfgkeys_note ("switch.skip.pkg", CFGKEY_LEGACY) == NULL);
+	assert (cfgkeys_note ("mode.min.hz.list", CFGKEY_ATV14) == NULL);
+	assert (cfgkeys_note ("mode.min.hz.list", CFGKEY_LEGACY) == NULL);
+
 	/* ключи нового пути */
 	assert (cfgkeys_note ("trigger.poll.ms", CFGKEY_ATV14) == NULL);
 	assert (cfgkeys_note ("trigger.poll.ms", CFGKEY_LEGACY) != NULL);

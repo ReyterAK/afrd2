@@ -92,6 +92,10 @@ static strlist_t g_frhint_vdec_blacklist;
  * (проверено живьём на YouTube TV, см. README, ограничение 8). */
 static strlist_t g_skip_pkgs;
 
+/* Текущий путь работы (заполняется в afrd_run); нужен и старому пути — по нему
+ * pkg_name() понимает, откуда брать пакет переднего плана. */
+static platform_t g_plat;
+
 /**
  * The one-shot timer used to switch display mode.
  * If we switch display mode instantly after we receive an uevent,
@@ -657,6 +661,83 @@ static void framerate_restore (bool only_if_black)
 	update_stats ();
 }
 
+/* Минимальная частота режима (24.8) для пакета; 0 — ограничения нет
+ * (mode.min.hz.list, определение ниже). */
+static int mode_min_hz_for (const char *pkg);
+
+/* Пакет плеера текущего видео и решение по switch.skip.pkg (определения ниже:
+ * нужны framerate_switch/delay_framerate_switch, которые идут раньше). */
+static const char *pkg_name (void);
+static bool pkg_skip_active (void);
+
+/* Выбор режима из g_modes под частоту g_state.hz (правила старого пути).
+ * floor — минимальная допустимая частота режима в формате 24.8
+ * (mode.min.hz.list) или 0.
+ * Возврат: true — режим найден и записан в *best. */
+static bool select_mode (int floor, display_mode_t *best)
+{
+	/* Find the video mode that:
+	 * a) Has same width and height and interlace flag
+	 * b) Closely divides by the required framerate, error less
+	 *    than 4.1% (difference between 23.976 and 25 Hz)
+	 * c) Has the highest framerate (e.g. 50Hz display modes are
+	 *    better than 25Hz display modes for displaying 25Hz video)
+	 *    if g_mode_prefer_exact is 0, or
+	 * d) Has the closest framerate if g_mode_prefer_exact is 1.
+	 */
+	unsigned best_rating = 0;
+	best->name [0] = 0;
+	for (int i = 0; i < g_modes_n; i++) {
+		display_mode_t *mode = &g_modes [i];
+		if ((mode->width != g_current_mode.width) ||
+		    (mode->height != g_current_mode.height) ||
+		    (mode->interlaced != g_current_mode.interlaced))
+			continue;
+
+		/* mode.min.hz.list: для этого плеера режимы ниже порога не годятся
+		 * (плеер «зажимает» темп отрисовки по частоте экрана в момент старта
+		 * ролика — нужен режим не ниже частоты ролика). */
+		if (floor && (display_mode_hz (mode) < floor))
+			continue;
+
+		unsigned rate_n = 1;
+		unsigned rate = (mode->framerate << 16) / g_state.hz;
+		while (rate > 0x180) {
+			rate_n++;
+			rate = (mode->framerate << 16) / (g_state.hz * rate_n);
+		}
+
+		unsigned delta = abs ((int)(rate - 0x100));
+		if (delta > 11)
+			continue; // freq error > 4.3%
+
+		// rating is larger as delta is closer to 1.0 rate
+		int rating = (11 - delta) * 16;
+
+		unsigned n = (rate_n > 3) ? 3 : (rate_n - 1);
+		rating += 4 * (g_mode_prefer_exact ? (3 - n) : n);
+
+		if (rating > best_rating) {
+			display_mode_t tmp = *mode;
+			// decide if integer or fractional framerate is better
+			display_mode_set_hz (&tmp, g_state.hz);
+
+			// if framerate is blacklisted, try to invert fractional
+			if (rate_is_blacklisted (display_mode_hz (&tmp))) {
+				tmp.fractional = !tmp.fractional;
+				if (rate_is_blacklisted (display_mode_hz (&tmp)))
+					// no luck, both framerates are banned
+					continue;
+			}
+
+			best_rating = rating;
+			*best = tmp;
+		}
+	}
+
+	return best->name [0] != 0;
+}
+
 static void framerate_switch (bool force)
 {
 	g_state.delayed_switch = false;
@@ -671,6 +752,21 @@ static void framerate_switch (bool force)
 	if (!g_enable) {
 		trace (1, "User disabled AFR\n");
 		framerate_restore (true);
+		return;
+	}
+
+	/* switch.skip.pkg — вторая точка решения: сюда приходят и по таймеру,
+	 * и от API, минуя delay_framerate_switch. */
+	if (pkg_skip_active ())
+	{
+		trace (1, "плеер %s в switch.skip.pkg — режим не переключаю\n", pkg_name ());
+		if (g_state.orig_mode.name [0])
+			framerate_restore (false);
+		else
+		{
+			memset (&g_state, 0, sizeof (g_state));
+			update_stats ();
+		}
 		return;
 	}
 
@@ -713,59 +809,15 @@ giveup:			trace (1, "Timeout detecting movie frame rate, giving up\n");
 	trace (1, "Looking for display mode closest to %dx%d@"HZ_FMT"Hz\n",
 		g_current_mode.width, g_current_mode.height, HZ_ARGS (g_state.hz));
 
-	/* Find the video mode that:
-	 * a) Has same width and height and interlace flag
-	 * b) Closely divides by the required framerate, error less
-	 *    than 4.1% (difference between 23.976 and 25 Hz)
-	 * c) Has the highest framerate (e.g. 50Hz display modes are
-	 *    better than 25Hz display modes for displaying 25Hz video)
-	 *    if g_mode_prefer_exact is 0, or
-	 * d) Has the closest framerate if g_mode_prefer_exact is 1.
-	 */
+	/* Порог частоты для плеера текущего видео (mode.min.hz.list); если под
+	 * порогом не осталось ни одного режима, берём обычное правило. */
+	int floor = g_mode_min_hz_count ? mode_min_hz_for (pkg_name ()) : 0;
 	display_mode_t best_mode;
-	unsigned best_rating = 0;
-	int i;
-	best_mode.name [0] = 0;
-	for (i = 0; i < g_modes_n; i++) {
-		display_mode_t *mode = &g_modes [i];
-		if ((mode->width != g_current_mode.width) ||
-		    (mode->height != g_current_mode.height) ||
-		    (mode->interlaced != g_current_mode.interlaced))
-			continue;
-
-		unsigned rate_n = 1;
-		unsigned rate = (mode->framerate << 16) / g_state.hz;
-		while (rate > 0x180) {
-			rate_n++;
-			rate = (mode->framerate << 16) / (g_state.hz * rate_n);
-		}
-
-		unsigned delta = abs ((int)(rate - 0x100));
-		if (delta > 11)
-			continue; // freq error > 4.3%
-
-		// rating is larger as delta is closer to 1.0 rate
-		int rating = (11 - delta) * 16;
-
-		unsigned n = (rate_n > 3) ? 3 : (rate_n - 1);
-		rating += 4 * (g_mode_prefer_exact ? (3 - n) : n);
-
-		if (rating > best_rating) {
-			display_mode_t tmp = *mode;
-			// decide if integer or fractional framerate is better
-			display_mode_set_hz (&tmp, g_state.hz);
-
-			// if framerate is blacklisted, try to invert fractional
-			if (rate_is_blacklisted (display_mode_hz (&tmp))) {
-				tmp.fractional = !tmp.fractional;
-				if (rate_is_blacklisted (display_mode_hz (&tmp)))
-					// no luck, both framerates are banned
-					continue;
-			}
-
-			best_rating = rating;
-			best_mode = tmp;
-		}
+	if (!select_mode (floor, &best_mode) && floor)
+	{
+		trace (1, "нет режима не ниже " HZ_FMT " Гц (mode.min.hz.list) — "
+		       "выбираю обычным правилом\n", HZ_ARGS (floor));
+		select_mode (0, &best_mode);
 	}
 
 	if (!best_mode.name [0]) {
@@ -807,6 +859,18 @@ static void delay_framerate_switch (bool restore, int hz, const char *modalias)
 {
 	mstime_disable (&g_ost_blackout);
 	mstime_disable (&g_ost_switch);
+
+	/* switch.skip.pkg: этому плееру AFR мешает — режим не переключаем.
+	 * Если что-то уже удержано (плеер внесли в список на ходу), возвращаем
+	 * исходный режим. */
+	if (!restore && pkg_skip_active ())
+	{
+		trace (1, "плеер %s в switch.skip.pkg — режим не переключаю\n", pkg_name ());
+		if (g_state.orig_mode.name [0])
+			framerate_restore (false);
+		update_stats ();
+		return;
+	}
 
 	if (g_switch_ignore) {
 		if (restore)
@@ -1106,10 +1170,6 @@ static bool g_reconf_requested;
 static sf_mode_t g_sf_modes [SF_MODE_MAX];
 static int g_sf_modes_n = 0;
 
-/* Минимальная частота режима (24.8) для пакета; 0 — ограничения нет
- * (mode.min.hz.list, определение ниже). */
-static int mode_min_hz_for (const char *pkg);
-
 /* Фильтр частот для sfmodes_select: на ATV14-пути действует тот же
  * mode.blacklist.rates, что и в legacy-ветке (раньше ключ молча игнорировался). */
 static bool atv14_rate_allowed (int hz, void *ctx)
@@ -1271,6 +1331,42 @@ static void pkg_probe_logged (const platform_t *plat)
 		trace (1, "не удалось определить приложение на переднем плане\n");
 	else if (rc == -2)
 		trace (1, "приложение на переднем плане не разобрано\n");
+}
+
+/* Кэш пакета для старого пути: `dumpsys` — это fork/exec, поэтому не чаще
+ * раза в PKG_CACHE_MS. Пока ни одного из списков по пакетам нет, не делается
+ * ни одного вызова (у существующих пользователей Android 6-9 поведение
+ * остаётся прежним). */
+#define PKG_CACHE_MS	2000
+static const char *pkg_name (void)
+{
+	if (g_plat.kind == PLAT_ATV14)
+		return g_cur_pkg;
+
+	static char buf [64];
+	static mstime_t stamp;
+
+	if ((g_skip_pkgs.size == 0) && (g_mode_min_hz_count == 0))
+		return "";
+
+	if (!mstime_running (&stamp))
+	{
+		mstime_arm (&stamp, PKG_CACHE_MS);
+		if (pkg_probe (&g_plat, buf, sizeof (buf)) != 0)
+			buf [0] = 0;
+	}
+
+	return buf;
+}
+
+/* true — текущему видео AFR мешать не надо (плеер в switch.skip.pkg). */
+static bool pkg_skip_active (void)
+{
+	if (g_skip_pkgs.size == 0)
+		return false;
+
+	const char *pkg = pkg_name ();
+	return (pkg [0] != 0) && strlist_contains (&g_skip_pkgs, pkg);
 }
 
 /* Сон с оглядкой на завершение: просыпаемся не реже, чем раз в 200 мс. */
@@ -2788,8 +2884,6 @@ static int run_atv14 (const platform_t *plat)
 }
 
 /* --------- * --------- * --------- * --------- * --------- * --------- */
-
-static platform_t g_plat;
 
 /* Вывод предупреждений аудита ключей конфига — в лог демона. */
 static void cfg_audit_warn (const char *msg, void *ctx)
