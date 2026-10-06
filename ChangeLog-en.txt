@@ -29,6 +29,24 @@ AFRd2 — a fork of AFRd (original by Andrey Zabolotnyi, anpaza @ 4pda)
     against the daemon's key table by a host test, so such a drift can no longer
     pass silently.
 
+  * Dormant settings rows now work: fps.measure.envelope.early.ms and
+    fps.cadence.fix.ms were present in the GUI but the application never copied
+    them into the config, so editing those fields did nothing (the "Early
+    decision, ms" row showed 12000 while the daemon read the profile's 14000).
+    The "GUI row ↔ application key set" drift is now checked by a host test, the
+    same way the "does not work" markers are.
+
+  * Excess mode.min.hz.list entries are trimmed with a message: the daemon keeps
+    at most eight entries, and when a value has more (for instance after a manual
+    profile edit) the extra ones are dropped with a warning instead of silently.
+
+  * Package names longer than 63 bytes are no longer truncated: the daemon's
+    buffers were 64 bytes while the system accepts much longer names (verified by
+    installing a package with a 171-character name), so settings for a player
+    with a long name (mode.min.hz.list, fps.correct.*, the player blacklist)
+    silently did nothing. The size is now the shared PKG_NAME_LEN; a name longer
+    than the limit cannot be added in the application.
+
 0.3.3 Fri Oct 02 22:45:00 MSK 2026
 
     A caveat for switch.skip.pkg: for an excluded player the display mode is chosen
