@@ -180,6 +180,15 @@
     <string name="prefs_fps_correct_av1_pkg">AV1 correction: package only</string>
     <string name="prefsum_fps_correct_av1_pkg">Limit the AV1 correction to one player package
         (fps.correct.av1.pkg). Empty — any player.</string>
+    <string name="prefs_switch_skip_pkg">Players that AFR gets in the way of</string>
+    <string name="prefsum_switch_skip_pkg">For the selected applications AFRd2 measures the frame
+        rate and writes everything to the log, but does not switch or hold the display mode. Tap
+        the row and pick applications from the list of installed players.</string>
+    <string name="apps_done">Done</string>
+    <string name="apps_players_only">Video players only</string>
+    <string name="apps_empty">No applications found — clear "Video players only" to see all</string>
+    <string name="apps_not_installed">%s — not installed</string>
+    <string name="apps_icon">Application icon</string>
     <string name="mode_use_fract_auto">Auto (use best)</string>
     <string name="mode_use_fract_use">Only fractional</string>
     <string name="mode_use_fract_int">Only integer</string>

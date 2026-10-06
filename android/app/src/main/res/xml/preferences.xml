@@ -50,6 +50,9 @@
     </PreferenceScreen>
     <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"
                       android:key="atv14" android:title="@string/prefs_group_atv14">
+        <ru.cobra.zap.xprefs.XAppsPreference android:key="switch_skip_pkg"
+                          android:summary="@string/prefsum_switch_skip_pkg"
+                          android:title="@string/prefs_switch_skip_pkg"/>
         <SwitchPreference android:defaultValue="1" android:key="fps_prefer_api"
                           android:summary="@string/prefsum_fps_prefer_api"
                           android:title="@string/prefs_fps_prefer_api"/>

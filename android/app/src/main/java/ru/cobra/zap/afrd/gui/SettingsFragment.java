@@ -7,7 +7,9 @@
 
 package ru.cobra.zap.afrd.gui;
 
+import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.preference.EditTextPreference;
@@ -23,7 +25,9 @@ import android.view.ViewGroup;
 
 import java.util.Vector;
 
+import ru.cobra.zap.afrd.Apps;
 import ru.cobra.zap.afrd.Control;
+import ru.cobra.zap.xprefs.XAppsPreference;
 
 /**
  * This fragment implements a editor for AFRd settings.
@@ -86,6 +90,88 @@ public class SettingsFragment extends PreferenceFragment
         }
     }
 
+    /* Настройки-списки приложений: ключ настройки → режим выбора. Значение
+     * таких ключей — имена пакетов, их задают выбором из списка установленных
+     * приложений, а не вводом с пульта. Вторая строка (fps_correct_av1_pkg)
+     * добавляется, когда эта настройка переводится на выборщик. */
+    private static final String [][] kAppsPrefs =
+    {
+        { "switch_skip_pkg", AppsPickerActivity.MODE_MULTI },
+    };
+
+    private static final int REQ_APPS = 1001;
+
+    private static String appsMode (String key)
+    {
+        for (String [] item : kAppsPrefs)
+            if (item [0].equals (key))
+                return item [1];
+
+        return AppsPickerActivity.MODE_MULTI;
+    }
+
+    private void setupAppsPrefs ()
+    {
+        for (String [] item : kAppsPrefs)
+        {
+            Preference p = findPreference (item [0]);
+            if (!(p instanceof XAppsPreference))
+                continue;
+
+            final XAppsPreference pref = (XAppsPreference) p;
+            pref.setPickListener (new XAppsPreference.OnPickListener ()
+            {
+                @Override
+                public void onPickApps (XAppsPreference p)
+                {
+                    Intent in = new Intent (getActivity (), AppsPickerActivity.class);
+                    in.putExtra (AppsPickerActivity.EXTRA_KEY, p.getKey ());
+                    /* getTitle() — CharSequence, а extra объявлен строкой:
+                     * нормализуем здесь, чтобы getStringExtra не зависел от
+                     * того, вернёт ли ресурс String или Spanned. */
+                    CharSequence title = p.getTitle ();
+                    in.putExtra (AppsPickerActivity.EXTRA_TITLE,
+                        title == null ? null : title.toString ());
+                    in.putExtra (AppsPickerActivity.EXTRA_MODE, appsMode (p.getKey ()));
+                    in.putExtra (AppsPickerActivity.EXTRA_VALUE, p.getApps ());
+                    startActivityForResult (in, REQ_APPS);
+                }
+            });
+
+            setAppsSummary (pref);
+        }
+    }
+
+    private void setAppsSummary (XAppsPreference pref)
+    {
+        pref.setSummary (Apps.names (getActivity (), pref.getApps ()));
+    }
+
+    @Override
+    public void onActivityResult (int requestCode, int resultCode, Intent data)
+    {
+        super.onActivityResult (requestCode, resultCode, data);
+
+        if ((requestCode != REQ_APPS) || (resultCode != Activity.RESULT_OK) || (data == null))
+            return;
+
+        Preference p = findPreference (data.getStringExtra (AppsPickerActivity.EXTRA_KEY));
+        if (!(p instanceof XAppsPreference))
+            return;
+
+        XAppsPreference pref = (XAppsPreference) p;
+        /* notifyChanged() у Preference — protected, поэтому обновление вида
+         * заказываем через setApps(..., true); setSummary() ниже уведомит
+         * повторно, если текст строки изменился. */
+        pref.setApps (data.getStringExtra (AppsPickerActivity.RESULT_VALUE), true);
+        setAppsSummary (pref);
+
+        /* Настройки применяются сразу (как у остальных строк) — демон
+         * перечитывает конфиг по изменению файла. */
+        if (mMain != null)
+            mMain.applyPrefs ();
+    }
+
     static SettingsFragment create ()
     {
         return new SettingsFragment ();
@@ -104,6 +190,7 @@ public class SettingsFragment extends PreferenceFragment
             {
                 addPreferencesFromResource (R.xml.preferences);
                 markInapplicable (getPreferenceScreen ());
+                setupAppsPrefs ();
                 break;
             }
             catch (Exception ignored)
