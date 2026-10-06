@@ -46,11 +46,13 @@ public class SettingsFragment extends PreferenceFragment
      * нет, цвета/HDR ведёт вендорский стек, uevent-фильтры не нужны. Демон эти
      * ключи не читает (см. таблицу в cfgkeys.c) и сообщает о них в логе.
      * В GUI они остаются видимыми, но выключенными — чтобы не создавать
-     * впечатление работающей настройки. */
+     * впечатление работающей настройки.
+     * cs.select здесь нет: правила цветового пространства применяются и на
+     * ATV14 (через вендорский сервис, см. afrd.c: atv14_apply_mode).
+     * Согласованность списка с cfgkeys.c проверяет tests/test_inactive.c. */
     private static final String [] kInactiveOnAtv14 =
     {
         "mode_extra",
-        "cs_select",
         "switch_delay_on",
         "switch_delay_off",
         "switch_delay_retry",

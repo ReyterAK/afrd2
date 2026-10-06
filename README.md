@@ -117,9 +117,9 @@ adb -s $D shell 'echo status | timeout 2 nc -u -w1 127.0.0.1 50505'   # стат
 
 | ключ | ATV14 (Android 10-14) | legacy (Android 6-9) |
 |---|---|---|
-| `enable`, `log.file`, `log.enable`, `mode.prefer.exact`, `mode.use.fract`, `mode.blacklist.rates`, `switch.timeout`, `switch.skip.pkg`, `mode.min.hz.list` | действует | действует |
+| `enable`, `log.file`, `log.enable`, `mode.prefer.exact`, `mode.use.fract`, `mode.blacklist.rates`, `switch.timeout`, `switch.skip.pkg`, `mode.min.hz.list`, `cs.select` | действует | действует |
 | `trigger.poll.ms`, `trigger.start.debounce.ms`, `trigger.stop.debounce.ms`, `fps.*`, `pause.keep`, `switch.restore.on.stop` | действует | — |
-| `mode.extra`, `mode.path`, `vdec.sysfs`, `vdec.blacklist`, `frhint.vdec.blacklist`, `hdmi.sysfs`, `hdmi.state`, `switch.delay.on/off/retry`, `switch.blackout`, `switch.ignore`, `switch.hdmi`, `cs.select`, `cs.list.path`, `cs.path`, `uevent.filter.*` | — (в логе: «не действует на новом пути») | действует |
+| `mode.extra`, `mode.path`, `vdec.sysfs`, `vdec.blacklist`, `frhint.vdec.blacklist`, `hdmi.sysfs`, `hdmi.state`, `switch.delay.on/off/retry`, `switch.blackout`, `switch.ignore`, `switch.hdmi`, `cs.list.path`, `cs.path`, `uevent.filter.*` | — (в логе: «не действует на новом пути») | действует |
 | `toast.hz` | — (настройка приложения, демон её не читает) | — |
 
 Пути sysfs на новой ветке определяются автодетектом (`platform_detect()`), а не конфигом.
