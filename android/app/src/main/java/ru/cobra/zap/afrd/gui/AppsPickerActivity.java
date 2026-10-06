@@ -64,6 +64,8 @@ public class AppsPickerActivity extends Activity
     public static final String MODE_SINGLE = "single";
     /** «пакет=число»: отметка задаёт пакет, диалог строки — число. */
     public static final String MODE_PKG_VALUE = "pkg_value";
+    /** То же, но число — проценты поправки (fps.correct.list), а не Гц. */
+    public static final String MODE_PKG_PERCENT = "pkg_percent";
 
     private String mKey;
     private String mMode = MODE_MULTI;
@@ -91,17 +93,18 @@ public class AppsPickerActivity extends Activity
         Intent in = getIntent ();
         mKey = in.getStringExtra (EXTRA_KEY);
         String mode = in.getStringExtra (EXTRA_MODE);
-        if (MODE_SINGLE.equals (mode) || MODE_PKG_VALUE.equals (mode))
+        if (MODE_SINGLE.equals (mode) || MODE_PKG_VALUE.equals (mode) ||
+            MODE_PKG_PERCENT.equals (mode))
             mMode = mode;
         mPlayersOnly = !"all".equals (in.getStringExtra (EXTRA_FILTER));
 
         String value = in.getStringExtra (EXTRA_VALUE);
-        if (MODE_PKG_VALUE.equals (mMode))
+        if (isPkgValue ())
         {
             /* Разбор — теми же правилами, что у демона (PkgValues): то, что он
              * игнорирует, в значение не сохраняем — иначе строка настроек
              * показывала бы настройку, которой демон не видит. */
-            mValues.putAll (PkgValues.parse (value, PkgValues.MIN_HZ, PkgValues.MAX_HZ));
+            mValues.putAll (parseValue (value));
             mSelected.addAll (mValues.keySet ());
         }
         else
@@ -135,8 +138,7 @@ public class AppsPickerActivity extends Activity
         });
 
         ListView list = findViewById (R.id.pickerList);
-        mAdapter = new AppsAdapter (this, mApps, mSelected, mValues,
-            MODE_PKG_VALUE.equals (mMode));
+        mAdapter = new AppsAdapter (this, mApps, mSelected, mValues, isPkgValue (), unitTextRes ());
         list.setAdapter (mAdapter);
         list.setOnItemClickListener (new AdapterView.OnItemClickListener ()
         {
@@ -147,7 +149,7 @@ public class AppsPickerActivity extends Activity
                 /* В режиме pkg_value отметка и число задаются одним диалогом:
                  * на пульте клик — единственное доступное действие, а без
                  * числа запись для демона бесполезна. */
-                if (MODE_PKG_VALUE.equals (mMode))
+                if (isPkgValue ())
                 {
                     editValue (pkg);
                     return;
@@ -179,9 +181,10 @@ public class AppsPickerActivity extends Activity
     {
         final boolean selected = mSelected.contains (pkg);
         final EditText input = new EditText (this);
-        input.setInputType (InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        input.setInputType (InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL |
+            (isPercent () ? InputType.TYPE_NUMBER_FLAG_SIGNED : 0));
         input.setText (mValues.containsKey (pkg) ? mValues.get (pkg) : "");
-        input.setHint (R.string.apps_value_hint);
+        input.setHint (hintRes ());
 
         float d = getResources ().getDisplayMetrics ().density;
         int pad = (int) (16 * d);
@@ -192,7 +195,7 @@ public class AppsPickerActivity extends Activity
         box.addView (input);
 
         AlertDialog.Builder b = new AlertDialog.Builder (this)
-            .setTitle (getString (R.string.apps_value_title, Apps.label (this, pkg)))
+            .setTitle (getString (titleRes (), Apps.label (this, pkg)))
             .setView (box)
             .setNegativeButton (android.R.string.cancel, null)
             .setPositiveButton (R.string.apps_value_save, new DialogInterface.OnClickListener ()
@@ -226,8 +229,7 @@ public class AppsPickerActivity extends Activity
                     return;
 
                 final Button ok = ((AlertDialog) d).getButton (AlertDialog.BUTTON_POSITIVE);
-                ok.setEnabled (PkgValues.inRange (input.getText ().toString (),
-                    PkgValues.MIN_HZ, PkgValues.MAX_HZ));
+                ok.setEnabled (valueOk (input.getText ().toString ()));
 
                 input.addTextChangedListener (new TextWatcher ()
                 {
@@ -244,13 +246,57 @@ public class AppsPickerActivity extends Activity
                     @Override
                     public void afterTextChanged (Editable s)
                     {
-                        ok.setEnabled (PkgValues.inRange (s.toString (),
-                            PkgValues.MIN_HZ, PkgValues.MAX_HZ));
+                        ok.setEnabled (valueOk (s.toString ()));
                     }
                 });
             }
         });
         dialog.show ();
+    }
+
+    /* Единицы значения: у mode.min.hz.list это герцы (порог частоты режима),
+     * у fps.correct.list — проценты поправки. Различия собраны здесь, чтобы
+     * диалог и строка списка не разъезжались. Границы и запрет нуля взяты из
+     * демона (afrd.c: hz 1…1000; fps_correct_load: -50 < pct < 50, pct != 0). */
+    private boolean isPercent ()
+    {
+        return MODE_PKG_PERCENT.equals (mMode);
+    }
+
+    private boolean isPkgValue ()
+    {
+        return MODE_PKG_VALUE.equals (mMode) || isPercent ();
+    }
+
+    /* Разбор значения настройки по правилам демона для текущего режима: у
+     * процентов ноль и |pct| >= 50 он отбрасывает, у частот — значения вне
+     * 1…1000 Гц. */
+    private LinkedHashMap<String, String> parseValue (String value)
+    {
+        return isPercent () ? PkgValues.parsePercent (value)
+                            : PkgValues.parse (value, PkgValues.MIN_HZ, PkgValues.MAX_HZ);
+    }
+
+    /* Примет ли демон такое число в этой настройке (гасит «Сохранить»). */
+    private boolean valueOk (String text)
+    {
+        return isPercent () ? PkgValues.percentInRange (text)
+                            : PkgValues.inRange (text, PkgValues.MIN_HZ, PkgValues.MAX_HZ);
+    }
+
+    private int unitTextRes ()
+    {
+        return isPercent () ? R.string.apps_value_percent : R.string.apps_value_hz;
+    }
+
+    private int titleRes ()
+    {
+        return isPercent () ? R.string.apps_value_title_pct : R.string.apps_value_title;
+    }
+
+    private int hintRes ()
+    {
+        return isPercent () ? R.string.apps_value_hint_pct : R.string.apps_value_hint;
     }
 
     /* Запись значения в набор: новую строку отмечаем, только если демон ещё
@@ -348,11 +394,12 @@ public class AppsPickerActivity extends Activity
         out.putExtra (EXTRA_KEY, mKey);
         if (MODE_SINGLE.equals (mMode))
             out.putExtra (RESULT_VALUE, mSelected.isEmpty () ? "" : mSelected.iterator ().next ());
-        else if (MODE_PKG_VALUE.equals (mMode))
+        else if (isPkgValue ())
         {
-            /* Демон хранит не больше MODE_MIN_HZ_MAX записей: избыток, который
-             * мог остаться от ручной правки конфига, обрезаем здесь — и говорим
-             * об этом, иначе настройка молча работает не так, как выглядит.
+            /* Демон хранит не больше восьми записей (MODE_MIN_HZ_MAX и
+             * FPS_CORRECT_MAX — у обоих 8): избыток, который мог остаться от
+             * ручной правки конфига, обрезаем здесь — и говорим об этом, иначе
+             * настройка молча работает не так, как выглядит.
              * Toast живёт своей системной панелью и переживает finish(). */
             LinkedHashMap<String, String> kept = PkgValues.trim (mValues, PkgValues.MAX_ENTRIES);
             int dropped = PkgValues.filledCount (mValues) - PkgValues.filledCount (kept);
@@ -376,16 +423,18 @@ public class AppsPickerActivity extends Activity
         private final LinkedHashSet<String> mSelected;
         private final Map<String, String> mValues;
         private final boolean mShowValues;
+        private final int mUnitRes;
         private final Map<String, Drawable> mIcons = new HashMap<> ();
 
         AppsAdapter (Activity ctx, List<Apps.App> apps, LinkedHashSet<String> selected,
-                     Map<String, String> values, boolean showValues)
+                     Map<String, String> values, boolean showValues, int unitRes)
         {
             mCtx = ctx;
             mApps = apps;
             mSelected = selected;
             mValues = values;
             mShowValues = showValues;
+            mUnitRes = unitRes;
         }
 
         @Override
@@ -428,7 +477,7 @@ public class AppsPickerActivity extends Activity
             if (mShowValues && (num != null) && !num.isEmpty ())
             {
                 val.setVisibility (View.VISIBLE);
-                val.setText (mCtx.getString (R.string.apps_value_hz, num));
+                val.setText (mCtx.getString (mUnitRes, num));
             }
             else
                 val.setVisibility (View.GONE);

@@ -47,6 +47,11 @@ AFRd2 — a fork of AFRd (original by Andrey Zabolotnyi, anpaza @ 4pda)
     silently did nothing. The size is now the shared PKG_NAME_LEN; a name longer
     than the limit cannot be added in the application.
 
+  * fps.correct.list is set by picking applications: the "Corrections (package=percent)"
+    row opens the list of players, and the correction is typed in the row's dialog
+    (negative means the player under-reports the rate). Zero is rejected, the range
+    matches the daemon, and the package name is no longer typed with the remote.
+
 0.3.3 Fri Oct 02 22:45:00 MSK 2026
 
     A caveat for switch.skip.pkg: for an excluded player the display mode is chosen
