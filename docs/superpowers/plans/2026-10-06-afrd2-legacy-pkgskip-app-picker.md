@@ -63,6 +63,7 @@ S905X5M) и `.76` (ATV9, UGOOS AM6).
 - Modify: `tests/run_tests.sh` (добавить набор)
 - Modify: `platform.c` (одна команда дампа для обоих путей)
 - Modify: `afrd.c` (замена `parse_top_package`/`atv14_top_package` на `pkgdet_parse`/`pkg_probe`)
+- Modify: `GNUmakefile`, `jni/Android.mk` (новый файл `pkgdet.c` в списке исходников — без этого демон не линкуется)
 
 **Interfaces:**
 - Produces: `bool pkgdet_parse (const char *dump, char *out, size_t out_sz)` — чистая функция, знает
@@ -287,8 +288,9 @@ Run: `sh tests/run_tests.sh`
  * переднем плане. Поле называется по-разному — "topResumedActivity=..." (Android
  * 10-14) и "ResumedActivity: ..." (Android 6-9), но подстрока "ResumedActivity"
  * есть в обоих, а первое совпадение в дампе — нужная строка (на ATV14 первым
- * идёт topResumedActivity). Фильтр на стороне команды обязателен: дамп activity —
- * 18-26 КБ, буфер приёма в afrd.c — 4 КБ (как и у дампа SurfaceFlinger). */
+ * идёт topResumedActivity; проверено на стенде .50 и .76). Фильтр на стороне
+ * команды обязателен, как и для дампа SurfaceFlinger: дамп activity — 18-26 КБ,
+ * а буфер приёма в afrd.c под него — 4 КБ. */
 #define ACTIVITY_DUMP_CMD "dumpsys activity activities | grep -m1 ResumedActivity"
 ```
 
@@ -412,13 +414,26 @@ Run: `sh tests/run_tests.sh`
 
 - [ ] **Step 3: Кэш пакета и проверка списка в `afrd.c`**
 
-Рядом с существующим объявлением `pkg_min...`-вперёд (`afrd.c:1109-1110`) добавить ещё одно
-объявление, чтобы гейт ниже по файлу видел функцию:
+**Сначала поднять объявление `g_plat`.** Сейчас `static platform_t g_plat;` объявлен в `afrd.c:2833`,
+глубже точки, где нужен (`pkg_name()` — около строки 1300, `framerate_switch()` — около 660).
+Удалить строку 2833 и добавить объявление рядом с остальными статиками, после `static strlist_t g_skip_pkgs;`
+(строка ~92):
 
 ```c
-/* Пакет плеера текущего видео (определение ниже). На старом пути состояние
- * пакета не хранит, поэтому спрашиваем систему с кэшем. */
+/* Текущий путь работы (заполняется в afrd_run); нужен и старому пути — по нему
+ * pkg_name() понимает, откуда брать пакет переднего плана. */
+static platform_t g_plat;
+```
+
+Проверить, что дубликата не осталось: `grep -c "^static platform_t g_plat;" afrd.c` → `1`.
+
+Рядом с существующим объявлением вперёд `mode_min_hz_for` (`afrd.c:1109-1110`) добавить:
+
+```c
+/* Пакет плеера текущего видео и решение по switch.skip.pkg (определения ниже:
+ * нужны framerate_switch/delay_framerate_switch, которые идут раньше). */
 static const char *pkg_name (void);
+static bool pkg_skip_active (void);
 ```
 
 После `pkg_probe_logged()` (Task 1, шаг 6) добавить:
@@ -1050,6 +1065,7 @@ import java.util.List;
 import java.util.Map;
 
 import ru.cobra.zap.afrd.Apps;
+import ru.cobra.zap.afrd.jfun;
 
 /**
  * Полноэкранный выбор приложений для настроек-списков пакетов.
@@ -1390,11 +1406,11 @@ public class AppsPickerActivity extends Activity
 ```java
     /* Настройки-списки приложений: ключ настройки → режим выбора. Значение
      * таких ключей — имена пакетов, их задают выбором из списка установленных
-     * приложений, а не вводом с пульта. */
+     * приложений, а не вводом с пульта. Вторая строка (fps_correct_av1_pkg)
+     * добавляется, когда эта настройка переводится на выборщик. */
     private static final String [][] kAppsPrefs =
     {
         { "switch_skip_pkg", AppsPickerActivity.MODE_MULTI },
-        { "fps_correct_av1_pkg", AppsPickerActivity.MODE_SINGLE },
     };
 
     private static final int REQ_APPS = 1001;
@@ -1549,6 +1565,16 @@ git commit -m "feat(app): экран выбора приложений; switch.s
         <ru.cobra.zap.xprefs.XAppsPreference android:key="fps_correct_av1_pkg"
                           android:summary="@string/prefsum_fps_correct_av1_pkg"
                           android:title="@string/prefs_fps_correct_av1_pkg"/>
+```
+
+В `SettingsFragment.java` добавить вторую строку в `kAppsPrefs`:
+
+```java
+    private static final String [][] kAppsPrefs =
+    {
+        { "switch_skip_pkg", AppsPickerActivity.MODE_MULTI },
+        { "fps_correct_av1_pkg", AppsPickerActivity.MODE_SINGLE },
+    };
 ```
 
 - [ ] **Step 2: Пометка недействующих на legacy ключей**
