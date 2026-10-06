@@ -58,6 +58,48 @@ static char *read_file (const char *path)
 	return buf;
 }
 
+/* Убрать XML-комментарии: в них ключи упоминаются как пояснения, и считать их
+ * строками GUI нельзя — иначе тест даёт ложную зелень на удалённой настройке и
+ * ложное красное на закомментированной. */
+static void strip_xml_comments (char *s)
+{
+	char *p;
+	while ((p = strstr (s, "<!--")) != NULL)
+	{
+		char *e = strstr (p, "-->");
+		if (!e)
+			break;	/* незакрытый комментарий — оставляем: разбор упадёт заметно */
+
+		memmove (p, e + 3, strlen (e + 3) + 1);
+	}
+}
+
+/* То же для Java-исходника: в комментариях массивы цитируются примерами. */
+static void strip_java_comments (char *s)
+{
+	char *p;
+	while ((p = strstr (s, "/*")) != NULL)
+	{
+		char *e = strstr (p, "*/");
+		if (!e)
+			break;
+
+		memmove (p, e + 2, strlen (e + 2) + 1);
+	}
+
+	while ((p = strstr (s, "//")) != NULL)
+	{
+		char *e = strchr (p, '\n');
+		if (!e)
+		{
+			*p = 0;
+			break;
+		}
+
+		memmove (p, e, strlen (e) + 1);
+	}
+}
+
 static void add_key (char out [][KEY_LEN], int *count, const char *text, size_t len)
 {
 	if ((len == 0) || (len >= KEY_LEN) || (*count >= MAX_KEYS))
@@ -167,6 +209,9 @@ int main (void)
 {
 	char *xml = read_file (k_prefs);
 	char *java = read_file (k_fragment);
+
+	strip_xml_comments (xml);
+	strip_java_comments (java);
 
 	parse_gui (xml);
 	g_atv14_n = parse_array (java, "kInactiveOnAtv14", g_atv14);

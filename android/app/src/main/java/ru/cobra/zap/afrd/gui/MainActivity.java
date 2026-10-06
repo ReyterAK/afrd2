@@ -238,9 +238,20 @@ public class MainActivity extends Activity
             if (mOptions.contains (pref))
                 continue;
 
+            String value = conf.getString (key, "");
+
+            /* Пустое значение профиля — не умолчание: посев пустоты превращает
+             * закомментированную строку профиля в активную пустую и затирает
+             * ручную правку ключа при следующем сохранении настроек (правка
+             * ключа в профиле — рабочий сценарий, см. README). Непустое
+             * значение, наоборот, переносим: иначе первая же правка настроек
+             * заменила бы его пустотой. */
+            if (value.isEmpty ())
+                continue;
+
             if (edit == null)
                 edit = mOptions.edit ();
-            edit.putString (pref, conf.getString (key, ""));
+            edit.putString (pref, value);
         }
 
         if (edit != null)

@@ -255,10 +255,11 @@ public class AppsPickerActivity extends Activity
 
     /* Запись значения в набор: новую строку отмечаем, только если демон ещё
      * примет запись (иначе он молча выбросит лишние — afrd.c:
-     * MODE_MIN_HZ_MAX, и настройка работала бы не так, как показано). */
+     * MODE_MIN_HZ_MAX, и настройка работала бы не так, как показано). Считаем
+     * заполненные записи: запись без числа демон не хранит, слот она не занимает. */
     private void applyValue (String pkg, boolean selected, String value)
     {
-        if (!selected && (mValues.size () >= PkgValues.MAX_ENTRIES))
+        if (!selected && (PkgValues.filledCount (mValues) >= PkgValues.MAX_ENTRIES))
         {
             Toast.makeText (this, getString (R.string.apps_value_limit, PkgValues.MAX_ENTRIES),
                 Toast.LENGTH_LONG).show ();
