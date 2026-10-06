@@ -43,6 +43,7 @@ import java.util.Vector;
 import ru.cobra.zap.afrd.RootShell;
 import ru.cobra.zap.afrd.Config;
 import ru.cobra.zap.afrd.Control;
+import ru.cobra.zap.afrd.Seed;
 import ru.cobra.zap.afrd.jfun;
 
 public class MainActivity extends Activity
@@ -207,6 +208,11 @@ public class MainActivity extends Activity
         // apply user preferences on top
         if (mOptions.contains ("enable"))
         {
+            /* Сначала убираем записи, оставшиеся от версии, где ключ не попадал
+             * в конфиг, — иначе наложение настроек сразу же подменит профильное
+             * значение старым умолчанием XML. */
+            resetInertKeys (conf);
+
             conf.load (mOptions);
 
             /* Ключи, появившиеся в GUI позже установки приложения, в настройках
@@ -226,6 +232,55 @@ public class MainActivity extends Activity
         return conf.condSave (mControl.mIni);
     }
 
+    /* Умолчания ключей, которые до этой версии не переносились в конфиг
+     * (их не было в Config.itemType): в настройках приложения у таких ключей
+     * осталось умолчание XML, которое ни на что не влияло, — демон читал
+     * профиль. Оставить его нельзя: став действующим, оно молча подменит
+     * проверенную профильную настройку (12000 вместо 14000 для окна раннего
+     * решения). Поэтому один раз при первом запуске новой версии убираем такую
+     * запись и записываем в конфиг новое умолчание — строка настроек и демон
+     * после этого показывают одно и то же. Своё значение пользователя
+     * (не равное старому умолчанию) не трогаем, а сделанную после обновления
+     * правку не трогаем никогда — перенос одноразовый (флаг в requisites). */
+    private static final String [][] kInertDefaults =
+    {
+        /* настройка (префы) | ключ ini | старое умолчание XML | новое */
+        { "fps_measure_envelope_early_ms", "fps.measure.envelope.early.ms", "12000", "14000" },
+        { "fps_cadence_fix_ms", "fps.cadence.fix.ms", "2500", "2500" },
+    };
+
+    private void resetInertKeys (Config conf)
+    {
+        SharedPreferences req = getSharedPreferences ("requisites", 0);
+        if (req.getBoolean ("inert_defaults_reset", false))
+            return;
+
+        SharedPreferences.Editor edit = null;
+
+        for (String [] item : kInertDefaults)
+        {
+            if (!mOptions.contains (item [0]))
+                continue;
+
+            /* Правило — в Seed.shouldReset (проверяется tests/SeedTest.java). */
+            if (!Seed.shouldReset (mOptions.getString (item [0], ""), item [2]))
+                continue;
+
+            if (edit == null)
+                edit = mOptions.edit ();
+            edit.remove (item [0]);
+
+            /* Настройка и демон должны показывать одно и то же: в конфиге
+             * оставляем новое умолчание, а не то, что записал старый APK. */
+            conf.put (item [1], item [3]);
+        }
+
+        if (edit != null)
+            edit.apply ();
+
+        req.edit ().putBoolean ("inert_defaults_reset", true).apply ();
+    }
+
     /* Настройки, которых ещё нет в ini_options, берём из конфига профиля. */
     private void seedOptions (Config conf)
     {
@@ -235,23 +290,21 @@ public class MainActivity extends Activity
         for (String key : seeded)
         {
             String pref = key.replace ('.', '_');
-            if (mOptions.contains (pref))
-                continue;
-
             String value = conf.getString (key, "");
 
-            /* Пустое значение профиля — не умолчание: посев пустоты превращает
-             * закомментированную строку профиля в активную пустую и затирает
-             * ручную правку ключа при следующем сохранении настроек (правка
-             * ключа в профиле — рабочий сценарий, см. README). Непустое
-             * значение, наоборот, переносим: иначе первая же правка настроек
-             * заменила бы его пустотой. */
-            if (value.isEmpty ())
+            /* Правило «пустое значение профиля не сеем, непустое сеем, уже
+             * заданное не перетираем» — в Seed (проверяется tests/SeedTest.java).
+             * Пустое значение — не умолчание: посев пустоты превратил бы
+             * закомментированную строку профиля в активную пустую и затёр
+             * ручную правку ключа при следующем сохранении настроек. Непустое,
+             * наоборот, переносим: иначе первая же правка настроек заменила бы
+             * его пустотой (switch.skip.pkg потерял бы исключение для YouTube). */
+            if (!Seed.shouldSeed (value, mOptions.contains (pref)))
                 continue;
 
             if (edit == null)
                 edit = mOptions.edit ();
-            edit.putString (pref, value);
+            edit.putString (pref, Seed.value (value));
         }
 
         if (edit != null)

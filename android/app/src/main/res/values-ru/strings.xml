@@ -193,6 +193,8 @@
     <string name="apps_value_clear">Снять отметку</string>
     <string name="apps_value_hz">%s Гц</string>
     <string name="apps_value_limit">Не больше %1$d приложений: столько записей поддерживает демон</string>
+    <string name="apps_value_truncated">Демон хранит только %2$d записей: %1$d не поместилось и убрано из настройки</string>
+    <string name="apps_value_pkg_too_long">Имя пакета длиннее %1$d символов — демон такое имя не применит</string>
     <string name="notif_start_afrd">Включить АПЧ</string>
     <string name="notif_stop_afrd">Отключить АПЧ</string>
     <string name="notif_enabled">AFRd2 включён</string>

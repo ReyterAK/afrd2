@@ -31,6 +31,13 @@ public class PkgValues
     public static final int MAX_ENTRIES = 8;
 
     /**
+     * Предел длины имени пакета в настройке — согласован с PKG_NAME_LEN в
+     * pkgdet.h (256 с завершающим нулём): имя длиннее демон не применит,
+     * поэтому GUI его не пропускает, а не сохраняет «в никуда».
+     */
+    public static final int MAX_PKG_LEN = 255;
+
+    /**
      * Разбор значения. Порядок записей сохраняется; повтор пакета оставляет
      * первую запись (как mode_min_hz_for в демоне). Записи, которые демон
      * игнорирует (числа нет, оно вне диапазона, пустое имя пакета),
@@ -83,6 +90,33 @@ public class PkgValues
                 n++;
 
         return n;
+    }
+
+    /**
+     * Обрезка до предела записей, которые демон хранит: лишние (сверх max
+     * заполненных) отбрасываются, порядок сохраняется, записи без числа
+     * остаются — слотов у демона они не занимают.
+     */
+    public static LinkedHashMap<String, String> trim (Map<String, String> values, int max)
+    {
+        LinkedHashMap<String, String> out = new LinkedHashMap<> ();
+        int filled = 0;
+
+        for (Map.Entry<String, String> e : values.entrySet ())
+        {
+            boolean hasValue = (e.getValue () != null) && !e.getValue ().isEmpty ();
+            if (hasValue)
+            {
+                if (filled >= max)
+                    continue;
+
+                filled++;
+            }
+
+            out.put (e.getKey (), e.getValue ());
+        }
+
+        return out;
     }
 
     /** Сборка значения: записи через пробел, порядок сохраняется. */

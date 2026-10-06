@@ -201,6 +201,8 @@
     <string name="apps_value_clear">Clear selection</string>
     <string name="apps_value_hz">%s Hz</string>
     <string name="apps_value_limit">No more than %1$d applications: that is how many entries the daemon supports</string>
+    <string name="apps_value_truncated">The daemon keeps only %2$d entries: %1$d did not fit and were dropped</string>
+    <string name="apps_value_pkg_too_long">Package name is longer than %1$d characters — the daemon would not apply it</string>
     <string name="mode_use_fract_auto">Auto (use best)</string>
     <string name="mode_use_fract_use">Only fractional</string>
     <string name="mode_use_fract_int">Only integer</string>

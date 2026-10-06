@@ -70,6 +70,11 @@ public class Config
         itemType.put ("fps.measure.retries", TYPE_INT);
         itemType.put ("fps.declared.crosscheck.pct", TYPE_INT);
         itemType.put ("fps.recheck.delay.ms", TYPE_INT);
+        /* Эти два ключа были в GUI и в cfgkeys.c, но не здесь: правка строк
+         * молча не доезжала до afrd.ini, а строка показывала умолчание XML.
+         * Проверяет tests/test_inactive.c. */
+        itemType.put ("fps.measure.envelope.early.ms", TYPE_INT);
+        itemType.put ("fps.cadence.fix.ms", TYPE_INT);
         itemType.put ("fps.prefer.api", TYPE_BOOL);
         itemType.put ("fps.correct.enable", TYPE_BOOL);
         itemType.put ("fps.correct.list", TYPE_STR);

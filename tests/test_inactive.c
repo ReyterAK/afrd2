@@ -205,13 +205,39 @@ static int is_unknown (const char *note)
 	return note && strstr (note, "неизвестный");
 }
 
+static const char *k_config = "android/app/src/main/java/ru/cobra/zap/afrd/Config.java";
+
+/* Ключи, правка которых обязана доезжать до ini: Config.load (SharedPreferences)
+ * переносит только то, что объявлено в Config.itemType. Строка GUI, которой там
+ * нет, показывает умолчание из XML и молча не влияет на демон — так жили
+ * fps.measure.envelope.early.ms и fps.cadence.fix.ms. */
+static void check_item_type (const char *cfg)
+{
+	for (int i = 0; i < g_gui_n; i++)
+	{
+		/* toast.hz — настройка приложения: демон её не читает, в ini ей нечего делать */
+		if (strcmp (g_gui [i], "toast_hz") == 0)
+			continue;
+
+		char ini [KEY_LEN];
+		key_to_ini (g_gui [i], ini);
+
+		char needle [KEY_LEN + 32];
+		snprintf (needle, sizeof (needle), "itemType.put (\"%s\"", ini);
+		if (!strstr (cfg, needle))
+			fail ("строки GUI нет в Config.itemType — правка не доедет до ini: %s", g_gui [i]);
+	}
+}
+
 int main (void)
 {
 	char *xml = read_file (k_prefs);
 	char *java = read_file (k_fragment);
+	char *cfg = read_file (k_config);
 
 	strip_xml_comments (xml);
 	strip_java_comments (java);
+	strip_java_comments (cfg);
 
 	parse_gui (xml);
 	g_atv14_n = parse_array (java, "kInactiveOnAtv14", g_atv14);
@@ -265,8 +291,13 @@ int main (void)
 		if (in_list (g_legacy, g_legacy_n, g_atv14 [i]))
 			fail ("ключ помечен недействующим на обоих путях: %s", g_atv14 [i]);
 
+	/* Ключ, которого нет в Config.itemType, до ini не доедет: правка строки
+	 * в GUI будет молча проигнорирована демоном. */
+	check_item_type (cfg);
+
 	free (xml);
 	free (java);
+	free (cfg);
 
 	printf ("inactive: OK (%d строк GUI, %d на ATV14, %d на legacy)\n",
 	        g_gui_n, g_atv14_n, g_legacy_n);

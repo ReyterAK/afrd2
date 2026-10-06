@@ -90,6 +90,43 @@ public class PkgValuesTest
             System.exit (1);
         }
 
+        /* Обрезка до предела демона: порядок сохраняется, лишние отбрасываются,
+         * записи без числа (слотов не занимают) остаются. */
+        eq ("обрезка", PkgValues.format (PkgValues.trim (
+            PkgValues.parse ("a=1 b=2 c=3 d=4 e=5 f=6 g=7 h=8 i=9 j=10", MIN, MAX),
+            PkgValues.MAX_ENTRIES)), "a=1 b=2 c=3 d=4 e=5 f=6 g=7 h=8");
+        eq ("обрезка с пустой", PkgValues.format (PkgValues.trim (
+            PkgValues.parse ("z a=1 b=2 c=3", MIN, MAX), 2)), "z a=1 b=2");
+        eq ("обрезка не нужна", PkgValues.format (PkgValues.trim (
+            PkgValues.parse ("a=1 b=2", MIN, MAX), PkgValues.MAX_ENTRIES)), "a=1 b=2");
+        eq ("обрезка в ноль", PkgValues.format (PkgValues.trim (
+            PkgValues.parse ("a=1 z", MIN, MAX), 0)), "z");
+
+        /* Предел длины имени пакета: Java-константа обязана совпадать с
+         * PKG_NAME_LEN в pkgdet.h — иначе GUI пропустит имя, которое демон
+         * обрежет (или отбросит), и порог для такого плеера молча не сработает. */
+        if (PkgValues.MAX_PKG_LEN != 255)
+        {
+            System.err.println ("PkgValues: MAX_PKG_LEN ожидалось 255, получено " + PkgValues.MAX_PKG_LEN);
+            System.exit (1);
+        }
+
+        try
+        {
+            String hdr = new String (java.nio.file.Files.readAllBytes (
+                java.nio.file.Paths.get ("pkgdet.h")), java.nio.charset.StandardCharsets.UTF_8);
+            if (!hdr.contains ("PKG_NAME_LEN\t256"))
+            {
+                System.err.println ("PkgValues: в pkgdet.h нет «PKG_NAME_LEN 256» — сверь MAX_PKG_LEN");
+                System.exit (1);
+            }
+        }
+        catch (java.io.IOException exc)
+        {
+            System.err.println ("PkgValues: pkgdet.h не читается: " + exc);
+            System.exit (1);
+        }
+
         System.out.println ("PkgValues: OK");
     }
 }

@@ -259,6 +259,16 @@ public class AppsPickerActivity extends Activity
      * заполненные записи: запись без числа демон не хранит, слот она не занимает. */
     private void applyValue (String pkg, boolean selected, String value)
     {
+        /* Имя длиннее предела демона он не применит (усечёт или отбросит):
+         * не сохраняем такую запись и говорим об этом, иначе настройка
+         * выглядела бы рабочей, а порога для плеера не было. */
+        if (pkg.length () > PkgValues.MAX_PKG_LEN)
+        {
+            Toast.makeText (this, getString (R.string.apps_value_pkg_too_long, PkgValues.MAX_PKG_LEN),
+                Toast.LENGTH_LONG).show ();
+            return;
+        }
+
         if (!selected && (PkgValues.filledCount (mValues) >= PkgValues.MAX_ENTRIES))
         {
             Toast.makeText (this, getString (R.string.apps_value_limit, PkgValues.MAX_ENTRIES),
@@ -339,7 +349,19 @@ public class AppsPickerActivity extends Activity
         if (MODE_SINGLE.equals (mMode))
             out.putExtra (RESULT_VALUE, mSelected.isEmpty () ? "" : mSelected.iterator ().next ());
         else if (MODE_PKG_VALUE.equals (mMode))
-            out.putExtra (RESULT_VALUE, PkgValues.format (mValues));
+        {
+            /* Демон хранит не больше MODE_MIN_HZ_MAX записей: избыток, который
+             * мог остаться от ручной правки конфига, обрезаем здесь — и говорим
+             * об этом, иначе настройка молча работает не так, как выглядит.
+             * Toast живёт своей системной панелью и переживает finish(). */
+            LinkedHashMap<String, String> kept = PkgValues.trim (mValues, PkgValues.MAX_ENTRIES);
+            int dropped = PkgValues.filledCount (mValues) - PkgValues.filledCount (kept);
+            if (dropped > 0)
+                Toast.makeText (this, getString (R.string.apps_value_truncated, dropped,
+                    PkgValues.MAX_ENTRIES), Toast.LENGTH_LONG).show ();
+
+            out.putExtra (RESULT_VALUE, PkgValues.format (kept));
+        }
         else
             out.putExtra (RESULT_VALUE, Apps.join (new ArrayList<> (mSelected)));
 

@@ -68,7 +68,7 @@ static int g_mode_blacklist_rates_count;
  * режиму экрана и потом его не поднимают, поэтому для них низкие режимы не
  * выбираем (проверено живьём на YouTube TV, см. README, ограничение 8). */
 #define MODE_MIN_HZ_MAX		8
-#define MODE_MIN_HZ_PKG_LEN	64
+#define MODE_MIN_HZ_PKG_LEN	PKG_NAME_LEN
 typedef struct
 {
 	char pkg [MODE_MIN_HZ_PKG_LEN];
@@ -1194,7 +1194,7 @@ static bool atv14_rate_allowed (int hz, void *ctx)
 }
 
 /* Пакет на переднем плане (определение ниже, нужно для mode.min.hz.list). */
-static char g_cur_pkg [64];
+static char g_cur_pkg [PKG_NAME_LEN];
 
 /* Самый быстрый режим с нужной геометрией и частотой не ниже floor; -1 — нет.
  * Нужен для плееров с mode.min.hz.list: если ровного кратного для частоты
@@ -1312,7 +1312,7 @@ static int atv14_select_mode (int hz, int w, int h, int floor)
 
 /* Пакет плеера текущего видео. Пустая строка — не удалось определить.
  * (Объявление — выше, в выборе режима: mode.min.hz.list.) */
-static char g_cur_pkg [64];
+static char g_cur_pkg [PKG_NAME_LEN];
 
 /* Приложение на переднем плане (общее для обоих путей работы демона).
  * Возврат: 0 — разобрано (*out заполнен), -1 — команда не удалась,
@@ -1358,7 +1358,7 @@ static const char *pkg_name (void)
 	if (g_plat.kind == PLAT_ATV14)
 		return g_cur_pkg;
 
-	static char buf [64];
+	static char pkg_buf [PKG_NAME_LEN];
 
 	if ((g_skip_pkgs.size == 0) && (g_mode_min_hz_count == 0))
 		return "";
@@ -1366,11 +1366,11 @@ static const char *pkg_name (void)
 	if (!mstime_running (&g_pkg_cache_stamp))
 	{
 		mstime_arm (&g_pkg_cache_stamp, PKG_CACHE_MS);
-		if (pkg_probe (&g_plat, buf, sizeof (buf)) != 0)
-			buf [0] = 0;
+		if (pkg_probe (&g_plat, pkg_buf, sizeof (pkg_buf)) != 0)
+			pkg_buf [0] = 0;
 	}
 
-	return buf;
+	return pkg_buf;
 }
 
 /* Сброс кэша пакета — зовётся на старте нового видео (ветка ACTION=add
@@ -1872,7 +1872,7 @@ static int run_atv14 (const platform_t *plat)
 	bool recheck_armed = false;
 	/* Залипший канал: плеер, который вёл текущее видео, и число подряд
 	 * идущих проверок, где он уже не на переднем плане */
-	char video_pkg [64] = { 0 };
+	char video_pkg [PKG_NAME_LEN] = { 0 };
 	/* признак «пакет в списке switch.skip.pkg» — считается на каждой итерации
 	 * и логируется один раз на видео */
 	bool skip_pkg = false;
@@ -2284,17 +2284,17 @@ static int run_atv14 (const platform_t *plat)
 			if (paused && held && video_pkg [0] &&
 			    (now_us () - pkg_probe_us) > 5000000ULL)
 			{
-				char top [64] = { 0 };
+				char top_pkg [PKG_NAME_LEN] = { 0 };
 				pkg_probe_us = now_us ();
-				if (pkg_probe (plat, top, sizeof (top)) == 0)
+				if (pkg_probe (plat, top_pkg, sizeof (top_pkg)) == 0)
 				{
-					if (top [0] && (strcmp (top, video_pkg) != 0))
+					if (top_pkg [0] && (strcmp (top_pkg, video_pkg) != 0))
 					{
 						if (++pkg_mismatch >= 2)
 						{
 							trace (0, "плеер %s ушёл с переднего плана (сейчас %s), "
 							       "а счётчик кадров стоит — снимаю удержание режима\n",
-							       video_pkg, top);
+							       video_pkg, top_pkg);
 							atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
 							video = false;
 							want_sf_id = -1;
