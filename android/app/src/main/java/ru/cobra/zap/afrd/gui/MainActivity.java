@@ -43,6 +43,7 @@ import java.util.Vector;
 import ru.cobra.zap.afrd.RootShell;
 import ru.cobra.zap.afrd.Config;
 import ru.cobra.zap.afrd.Control;
+import ru.cobra.zap.afrd.Seed;
 import ru.cobra.zap.afrd.jfun;
 
 public class MainActivity extends Activity
@@ -235,23 +236,21 @@ public class MainActivity extends Activity
         for (String key : seeded)
         {
             String pref = key.replace ('.', '_');
-            if (mOptions.contains (pref))
-                continue;
-
             String value = conf.getString (key, "");
 
-            /* Пустое значение профиля — не умолчание: посев пустоты превращает
-             * закомментированную строку профиля в активную пустую и затирает
-             * ручную правку ключа при следующем сохранении настроек (правка
-             * ключа в профиле — рабочий сценарий, см. README). Непустое
-             * значение, наоборот, переносим: иначе первая же правка настроек
-             * заменила бы его пустотой. */
-            if (value.isEmpty ())
+            /* Правило «пустое значение профиля не сеем, непустое сеем, уже
+             * заданное не перетираем» — в Seed (проверяется tests/SeedTest.java).
+             * Пустое значение — не умолчание: посев пустоты превратил бы
+             * закомментированную строку профиля в активную пустую и затёр
+             * ручную правку ключа при следующем сохранении настроек. Непустое,
+             * наоборот, переносим: иначе первая же правка настроек заменила бы
+             * его пустотой (switch.skip.pkg потерял бы исключение для YouTube). */
+            if (!Seed.shouldSeed (value, mOptions.contains (pref)))
                 continue;
 
             if (edit == null)
                 edit = mOptions.edit ();
-            edit.putString (pref, value);
+            edit.putString (pref, Seed.value (value));
         }
 
         if (edit != null)

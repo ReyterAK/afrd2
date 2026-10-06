@@ -23,13 +23,17 @@ run test_vdec vdec.c fps_class.c
 run test_reconf reconf.c
 run test_hdrinfo hdrinfo.c exec.c tests/stub.c
 
-# Java-логика без Android-зависимостей (значения «пакет=число»): тот же
-# исходник, что идёт в APK, компилируется javac и запускается на JVM.
+# Java-логика без Android-зависимостей (значения «пакет=число», правило посева
+# настроек): те же исходники, что идут в APK, компилируются javac и работают на JVM.
 JAVAC=${JAVAC:-javac}
 JAVA=${JAVA:-java}
 mkdir -p out/host-tests/java
 "$JAVAC" -d out/host-tests/java \
 	android/app/src/main/java/ru/cobra/zap/afrd/PkgValues.java \
-	tests/PkgValuesTest.java && "$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.PkgValuesTest || status=1
+	android/app/src/main/java/ru/cobra/zap/afrd/Seed.java \
+	tests/PkgValuesTest.java tests/SeedTest.java && {
+	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.PkgValuesTest &&
+	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.SeedTest
+} || status=1
 
 exit $status
