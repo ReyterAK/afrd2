@@ -165,11 +165,11 @@
         The correction is applied to the measurement before the mode is chosen. On by default:
         the AV1 correction below is active, the per-player list is empty.</string>
     <string name="prefs_fps_correct_list">Corrections (package=percent)</string>
-    <string name="prefsum_fps_correct_list">Space separated list, e.g.
-        com.google.android.youtube.tv=5.0. Percent is how much the player over-reports the rate.
-        Measure it from the daemon log line &quot;плеер &lt;пакет&gt;: поправка замера ±P %
-        (fps.correct.list)&quot;; the decision is shown by &quot;видео: &lt;HZ&gt; Гц по огибающей
-        (N с наблюдения, горизонт M мс), ищу режим&quot;. Compare with the nominal rate of the video.</string>
+    <string name="prefsum_fps_correct_list">Percent is how much the player over-reports the
+        rate (the same correction the daemon prints as &quot;плеер &lt;пакет&gt;: поправка замера
+        ±P %&quot;). Touch the row and pick the players: the package name is not typed with the
+        remote. Compare with the nominal rate of the video; players the daemon measures correctly
+        need no entry.</string>
     <string name="prefs_fps_correct_av1_offset">AV1 correction (frames/s)</string>
     <string name="prefsum_fps_correct_av1_offset">Additive correction for the AV1 decoder path
         over-reporting the frame counter. Measured: AV1 gives +0.5 frames/s versus H.264 on the same
@@ -200,6 +200,9 @@
     <string name="apps_value_save">Save</string>
     <string name="apps_value_clear">Clear selection</string>
     <string name="apps_value_hz">%s Hz</string>
+    <string name="apps_value_percent">%s %%</string>
+    <string name="apps_value_title_pct">%s: rate correction, percent</string>
+    <string name="apps_value_hint_pct">−49.9…49.9, 0 excluded</string>
     <string name="apps_value_limit">No more than %1$d applications: that is how many entries the daemon supports</string>
     <string name="apps_value_truncated">The daemon keeps only %2$d entries: %1$d did not fit and were dropped</string>
     <string name="apps_value_pkg_too_long">Package name is longer than %1$d characters — the daemon would not apply it</string>

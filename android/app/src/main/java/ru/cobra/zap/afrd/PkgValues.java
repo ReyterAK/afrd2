@@ -38,6 +38,15 @@ public class PkgValues
     public static final int MAX_PKG_LEN = 255;
 
     /**
+     * Границы поправки для fps.correct.list: демон принимает строго от -50 до 50
+     * процентов и не принимает 0 (afrd.c: fps_correct_load — pct > -50.0 &&
+     * pct < 50.0 && pct != 0.0). Границы в GUI чуть уже, чтобы «49.99» не
+     * выглядело принятым, а демоном отброшенным.
+     */
+    public static final double MIN_PERCENT = -49.9;
+    public static final double MAX_PERCENT = 49.9;
+
+    /**
      * Разбор значения. Порядок записей сохраняется; повтор пакета оставляет
      * первую запись (как mode_min_hz_for в демоне). Записи, которые демон
      * игнорирует (числа нет, оно вне диапазона, пустое имя пакета),
@@ -139,6 +148,19 @@ public class PkgValues
     public static boolean inRange (String text, double min, double max)
     {
         return number (text, min, max) != null;
+    }
+
+    /**
+     * То же, но с запретом нуля: fps.correct.list значение 0 демон не принимает
+     * (afrd.c: pct != 0.0), поэтому диалог в режиме процентов его не пропускает.
+     */
+    public static boolean inRange (String text, double min, double max, boolean allowZero)
+    {
+        String canonical = number (text, min, max);
+        if (canonical == null)
+            return false;
+
+        return allowZero || (Double.parseDouble (canonical) != 0.0);
     }
 
     /**

@@ -121,8 +121,7 @@
         <SwitchPreference android:defaultValue="1" android:key="fps_correct_enable"
                           android:summary="@string/prefsum_fps_correct_enable"
                           android:title="@string/prefs_fps_correct_enable"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:key="fps_correct_list"
-                          android:selectAllOnFocus="false" android:singleLine="true"
+        <ru.cobra.zap.xprefs.XAppsPreference android:key="fps_correct_list"
                           android:summary="@string/prefsum_fps_correct_list"
                           android:title="@string/prefs_fps_correct_list"/>
         <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="0.1" android:key="fps_correct_av1_offset"

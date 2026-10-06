@@ -147,6 +147,7 @@ public class SettingsFragment extends PreferenceFragment
         { "switch_skip_pkg", AppsPickerActivity.MODE_MULTI },
         { "fps_correct_av1_pkg", AppsPickerActivity.MODE_SINGLE },
         { "mode_min_hz_list", AppsPickerActivity.MODE_PKG_VALUE },
+        { "fps_correct_list", AppsPickerActivity.MODE_PKG_PERCENT },
     };
 
     private static final int REQ_APPS = 1001;
@@ -201,8 +202,10 @@ public class SettingsFragment extends PreferenceFragment
     {
         String value = pref.getApps ();
         CharSequence hint = mAppsHints.get (pref.getKey ());
-        String names = AppsPickerActivity.MODE_PKG_VALUE.equals (appsMode (pref.getKey ()))
-            ? valueSummary (value)
+        String mode = appsMode (pref.getKey ());
+        String names = (AppsPickerActivity.MODE_PKG_VALUE.equals (mode) ||
+                        AppsPickerActivity.MODE_PKG_PERCENT.equals (mode))
+            ? valueSummary (mode, value)
             : Apps.names (getActivity (), value);
 
         /* Пустой список — состояние по умолчанию: возвращаем пояснение из XML,
@@ -212,18 +215,24 @@ public class SettingsFragment extends PreferenceFragment
 
     /* Значение «пакет=число» в виде «VLC = 50 Гц, Just Player = 59.94 Гц»:
      * имя пакета пользователю бесполезно, а Apps.names() на таком значении
-     * ищет метку для всей строки «пакет=число» и находит только её саму. */
-    private String valueSummary (String value)
+     * ищет метку для всей строки «пакет=число» и находит только её саму.
+     * Единица зависит от настройки: у mode.min.hz.list герцы, у fps.correct.list
+     * проценты поправки. */
+    private String valueSummary (String mode, String value)
     {
+        boolean pct = AppsPickerActivity.MODE_PKG_PERCENT.equals (mode);
+        int unitRes = pct ? R.string.apps_value_percent : R.string.apps_value_hz;
+
         StringBuilder sb = new StringBuilder ();
         for (Map.Entry<String, String> e : PkgValues.parse (value,
-                PkgValues.MIN_HZ, PkgValues.MAX_HZ).entrySet ())
+                pct ? PkgValues.MIN_PERCENT : PkgValues.MIN_HZ,
+                pct ? PkgValues.MAX_PERCENT : PkgValues.MAX_HZ).entrySet ())
         {
             if (sb.length () > 0)
                 sb.append (", ");
             sb.append (Apps.label (getActivity (), e.getKey ()));
             if (!e.getValue ().isEmpty ())
-                sb.append (" = ").append (getString (R.string.apps_value_hz, e.getValue ()));
+                sb.append (" = ").append (getString (unitRes, e.getValue ()));
         }
 
         return sb.toString ();

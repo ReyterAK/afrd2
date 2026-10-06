@@ -28,6 +28,11 @@ public class PkgValuesTest
         return PkgValues.format (PkgValues.parse (value, MIN, MAX));
     }
 
+    private static String roundPct (String value)
+    {
+        return PkgValues.format (PkgValues.parse (value, PkgValues.MIN_PERCENT, PkgValues.MAX_PERCENT));
+    }
+
     public static void main (String [] args)
     {
         /* обычный список: порядок записей сохраняется */
@@ -124,6 +129,28 @@ public class PkgValuesTest
         catch (java.io.IOException exc)
         {
             System.err.println ("PkgValues: pkgdet.h не читается: " + exc);
+            System.exit (1);
+        }
+
+        /* Проценты (fps.correct.list): демон принимает строго -50 < pct < 50 и не
+         * принимает 0, поэтому 0 в диалоге запрещён, а отрицательные разрешены. */
+        eq ("проценты", roundPct ("a=-2.5 b=5 c=0.1"), "a=-2.5 b=5 c=0.1");
+        eq ("проценты: границы", roundPct ("a=-49.9 b=49.9 c=-50 d=50 e=-60 f=60"), "a=-49.9 b=49.9");
+        if (PkgValues.inRange ("0", PkgValues.MIN_PERCENT, PkgValues.MAX_PERCENT, false))
+        {
+            System.err.println ("PkgValues: ноль в процентах демон не принимает — диалог обязан его запрещать");
+            System.exit (1);
+        }
+        if (!PkgValues.inRange ("0.1", PkgValues.MIN_PERCENT, PkgValues.MAX_PERCENT, false) ||
+            !PkgValues.inRange ("-0.1", PkgValues.MIN_PERCENT, PkgValues.MAX_PERCENT, false))
+        {
+            System.err.println ("PkgValues: проценты около нуля должны приниматься");
+            System.exit (1);
+        }
+        /* ноль в герцах допустим (это разные единицы, и режим Гц нуля не боится) */
+        if (!PkgValues.inRange ("1", PkgValues.MIN_HZ, PkgValues.MAX_HZ, true))
+        {
+            System.err.println ("PkgValues: герцы должны принимать значение в диапазоне");
             System.exit (1);
         }
 
