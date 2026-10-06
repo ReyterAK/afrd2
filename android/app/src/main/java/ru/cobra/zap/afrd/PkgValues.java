@@ -85,6 +85,33 @@ public class PkgValues
         return n;
     }
 
+    /**
+     * Обрезка до предела записей, которые демон хранит: лишние (сверх max
+     * заполненных) отбрасываются, порядок сохраняется, записи без числа
+     * остаются — слотов у демона они не занимают.
+     */
+    public static LinkedHashMap<String, String> trim (Map<String, String> values, int max)
+    {
+        LinkedHashMap<String, String> out = new LinkedHashMap<> ();
+        int filled = 0;
+
+        for (Map.Entry<String, String> e : values.entrySet ())
+        {
+            boolean hasValue = (e.getValue () != null) && !e.getValue ().isEmpty ();
+            if (hasValue)
+            {
+                if (filled >= max)
+                    continue;
+
+                filled++;
+            }
+
+            out.put (e.getKey (), e.getValue ());
+        }
+
+        return out;
+    }
+
     /** Сборка значения: записи через пробел, порядок сохраняется. */
     public static String format (Map<String, String> values)
     {

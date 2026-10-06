@@ -90,6 +90,18 @@ public class PkgValuesTest
             System.exit (1);
         }
 
+        /* Обрезка до предела демона: порядок сохраняется, лишние отбрасываются,
+         * записи без числа (слотов не занимают) остаются. */
+        eq ("обрезка", PkgValues.format (PkgValues.trim (
+            PkgValues.parse ("a=1 b=2 c=3 d=4 e=5 f=6 g=7 h=8 i=9 j=10", MIN, MAX),
+            PkgValues.MAX_ENTRIES)), "a=1 b=2 c=3 d=4 e=5 f=6 g=7 h=8");
+        eq ("обрезка с пустой", PkgValues.format (PkgValues.trim (
+            PkgValues.parse ("z a=1 b=2 c=3", MIN, MAX), 2)), "z a=1 b=2");
+        eq ("обрезка не нужна", PkgValues.format (PkgValues.trim (
+            PkgValues.parse ("a=1 b=2", MIN, MAX), PkgValues.MAX_ENTRIES)), "a=1 b=2");
+        eq ("обрезка в ноль", PkgValues.format (PkgValues.trim (
+            PkgValues.parse ("a=1 z", MIN, MAX), 0)), "z");
+
         System.out.println ("PkgValues: OK");
     }
 }
