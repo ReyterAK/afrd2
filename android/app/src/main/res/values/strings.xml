@@ -99,6 +99,7 @@
     <string name="notif_start_afrd">Enable AFR</string>
     <string name="settings_advanced">Advanced settings</string>
     <string name="not_applicable_atv14">(has no effect on Android 10-14)</string>
+    <string name="not_applicable_legacy">(does not work on Android 6-9)</string>
     <string name="prefs_group_correct">Per-player frame rate calibration</string>
     <string name="prefs_group_atv14">Settings for Android 10 and above</string>
     <string name="prefs_fps_prefer_api">Trust the player hint</string>

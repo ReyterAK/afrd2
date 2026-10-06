@@ -90,6 +90,7 @@
     <string name="mode_use_fract_int">Предпочитать целые частоты</string>
     <string name="settings_advanced">Настройки для опытных пользователей</string>
     <string name="not_applicable_atv14">(не действует на Android 10-14)</string>
+    <string name="not_applicable_legacy">(не действует на Android 6-9)</string>
     <string name="prefs_group_correct">Калибровка частоты по плееру</string>
     <string name="prefs_group_atv14">Настройки для Android 10 и выше</string>
     <string name="prefs_fps_prefer_api">Доверять подсказке плеера</string>

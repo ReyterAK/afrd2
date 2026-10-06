@@ -18,7 +18,9 @@
  * 10-14) и "ResumedActivity: ..." (Android 6-9), но подстрока "ResumedActivity"
  * есть в обоих, а первое совпадение в дампе — нужная строка (на ATV14 первым
  * идёт topResumedActivity). Фильтр на стороне команды обязателен: дамп activity —
- * 18-26 КБ, буфер приёма в afrd.c — 4 КБ (как и у дампа SurfaceFlinger). */
+ * 18-26 КБ, буфер приёма под него в afrd.c — 4 КБ, и без фильтра нужная строка
+ * не доходит до парсера. Фильтр обязателен и для дампа SurfaceFlinger (буфер
+ * приёма там 64 КБ, сам дамп — 126-150 КБ). */
 #define ACTIVITY_DUMP_CMD "dumpsys activity activities | grep -m1 ResumedActivity"
 
 static bool sf_backdoor_available (void)

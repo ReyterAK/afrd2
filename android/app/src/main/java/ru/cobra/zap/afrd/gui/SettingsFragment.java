@@ -61,6 +61,29 @@ public class SettingsFragment extends PreferenceFragment
         "frhint_vdec_blacklist",
     };
 
+    /* Настройки, которые демон объявляет ключами нового пути (CFGKEY_ATV14) и
+     * потому на Android 6-9 не читает. switch.skip.pkg здесь нет: он действует
+     * на обоих путях (перенос 2026-10-06). */
+    private static final String [] kInactiveOnLegacy =
+    {
+        "fps_correct_enable",
+        "fps_correct_list",
+        "fps_correct_av1_offset",
+        "fps_correct_av1_pkg",
+    };
+
+    private static boolean isInactiveLegacy (String key)
+    {
+        if (Control.isAtv14 ())
+            return false;
+
+        for (String k : kInactiveOnLegacy)
+            if (k.equals (key))
+                return true;
+
+        return false;
+    }
+
     private static boolean isInactive (String key)
     {
         if (!Control.isAtv14 ())
@@ -80,25 +103,27 @@ public class SettingsFragment extends PreferenceFragment
             Preference p = group.getPreference (i);
             if (p instanceof PreferenceGroup)
                 markInapplicable ((PreferenceGroup)p);
-            else if (!isInactive (p.getKey ()))
-                continue;
-            else
-            {
-                p.setEnabled (false);
-                CharSequence s = p.getSummary ();
-                p.setSummary ((s == null ? "" : s + " ") +
-                              getString (R.string.not_applicable_atv14));
-            }
+            else if (isInactive (p.getKey ()))
+                markInactive (p, R.string.not_applicable_atv14);
+            else if (isInactiveLegacy (p.getKey ()))
+                markInactive (p, R.string.not_applicable_legacy);
         }
+    }
+
+    private void markInactive (Preference p, int msgRes)
+    {
+        p.setEnabled (false);
+        CharSequence s = p.getSummary ();
+        p.setSummary ((s == null ? "" : s + " ") + getString (msgRes));
     }
 
     /* Настройки-списки приложений: ключ настройки → режим выбора. Значение
      * таких ключей — имена пакетов, их задают выбором из списка установленных
-     * приложений, а не вводом с пульта. Вторая строка (fps_correct_av1_pkg)
-     * добавляется, когда эта настройка переводится на выборщик. */
+     * приложений, а не вводом с пульта. */
     private static final String [][] kAppsPrefs =
     {
         { "switch_skip_pkg", AppsPickerActivity.MODE_MULTI },
+        { "fps_correct_av1_pkg", AppsPickerActivity.MODE_SINGLE },
     };
 
     private static final int REQ_APPS = 1001;
@@ -201,8 +226,10 @@ public class SettingsFragment extends PreferenceFragment
             try
             {
                 addPreferencesFromResource (R.xml.preferences);
-                markInapplicable (getPreferenceScreen ());
+                /* Сначала сводки списков приложений, затем пометки: иначе
+                 * setAppsSummary() затрёт дописанную пометку. */
                 setupAppsPrefs ();
+                markInapplicable (getPreferenceScreen ());
                 break;
             }
             catch (Exception ignored)

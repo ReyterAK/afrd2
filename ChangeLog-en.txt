@@ -1,5 +1,14 @@
 AFRd2 — a fork of AFRd (original by Andrey Zabolotnyi, anpaza @ 4pda)
 
+  * Applications picker screen in the GUI: switch.skip.pkg and
+    fps.correct.av1.pkg are set by picking installed applications instead of
+    typing — the "Video players only" filter (clear it to see every installed
+    application), already selected packages are always visible;
+    fps.correct.av1.pkg uses the same screen in single-choice mode. Settings
+    that do not work on Android 6-9 (fps.correct.*) are now marked in the GUI
+    as "(does not work on Android 6-9)" — the way keys that only work on
+    Android 10-14 were marked before.
+
   * switch.skip.pkg and mode.min.hz.list also act on the old path (Android 6-9):
     the foreground app package is resolved by the common activity dump parser,
     the gate stands at both mode switching decision points.
