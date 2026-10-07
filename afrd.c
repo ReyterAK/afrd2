@@ -21,6 +21,7 @@
 #include "reconf.h"
 #include "hdrinfo.h"
 #include "pkgdet.h"
+#include "stuck.h"
 
 #define __USE_GNU
 #include <math.h>
@@ -1870,14 +1871,14 @@ static int run_atv14 (const platform_t *plat)
 	/* R56: одноразовая перепроверка замера после смены режима */
 	mstime_t recheck_timer = 0;
 	bool recheck_armed = false;
-	/* Залипший канал: плеер, который вёл текущее видео, и число подряд
-	 * идущих проверок, где он уже не на переднем плане */
-	char video_pkg [PKG_NAME_LEN] = { 0 };
+	/* Залипший канал: состояние сторожа (пакет плеера, счётчик несовпадений,
+	 * флаг «про отказ пробы уже сказали») — см. stuck.h */
+	stuck_state_t stuck;
+	stuck_reset (&stuck);
 	/* признак «пакет в списке switch.skip.pkg» — считается на каждой итерации
 	 * и логируется один раз на видео */
 	bool skip_pkg = false;
 	bool skip_logged = false;
-	int pkg_mismatch = 0;
 	unsigned long long pkg_probe_us = 0;
 
 	/* Заморозка счётчика кадров (AV1 и т.п.): сколько живём без роста и
@@ -2223,13 +2224,16 @@ static int run_atv14 (const platform_t *plat)
 				 * остался и счётчик стоит) */
 				if (new_video)
 				{
-					video_pkg [0] = 0;
-					pkg_mismatch = 0;
+					stuck_reset (&stuck);
 					pkg_probe_us = 0;
-					if (pkg_probe (plat, video_pkg, sizeof (video_pkg)) == 0)
-						trace (2, "видео ведёт приложение %s\n", video_pkg);
-					else
-						video_pkg [0] = 0;
+					{
+						char video_pkg [PKG_NAME_LEN] = { 0 };
+						if (pkg_probe (plat, video_pkg, sizeof (video_pkg)) == 0)
+						{
+							stuck_set_pkg (&stuck, video_pkg);
+							trace (2, "видео ведёт приложение %s\n", video_pkg);
+						}
+					}
 				}
 			}
 			else
@@ -2275,37 +2279,55 @@ static int run_atv14 (const platform_t *plat)
 			prev_frames = v0.frames;
 			have_prev_frames = true;
 
-			/* Залипший канал (см. §todo): счётчик стоит, режим удержан, но
+			/* Залипший канал (§25.1): счётчик стоит, режим удержан, но
 			 * приложение, которое вело это видео, ушло с переднего плана —
 			 * значит в системе остался инстанс декодера без плеера. Настоящая
 			 * пауза так не выглядит (плеер остаётся на экране), а при
 			 * pause.keep=1 режим с флагом backdoor иначе остался бы навсегда.
-			 * Проверяем не чаще раза в 5 с и требуем двух подтверждений. */
-			if (paused && held && video_pkg [0] &&
-			    (now_us () - pkg_probe_us) > 5000000ULL)
+			 * Проверяем не чаще раза в 5 с; состояние и переходы — в stuck.c
+			 * (покрыты tests/test_stuck.c: живьём это состояние воспроизводится
+			 * только руками).
+			 *
+			 * Проба нужна и при пустом пакете: если она не удалась на старте
+			 * видео, сторож иначе не работает вообще (был условный выход). */
+			if (paused && held && (now_us () - pkg_probe_us) > 5000000ULL)
 			{
 				char top_pkg [PKG_NAME_LEN] = { 0 };
 				pkg_probe_us = now_us ();
-				if (pkg_probe (plat, top_pkg, sizeof (top_pkg)) == 0)
+				int probe_rc = pkg_probe (plat, top_pkg, sizeof (top_pkg));
+
+				switch (stuck_step (&stuck, probe_rc, top_pkg))
 				{
-					if (top_pkg [0] && (strcmp (top_pkg, video_pkg) != 0))
-					{
-						if (++pkg_mismatch >= 2)
-						{
-							trace (0, "плеер %s ушёл с переднего плана (сейчас %s), "
-							       "а счётчик кадров стоит — снимаю удержание режима\n",
-							       video_pkg, top_pkg);
-							atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
-							video = false;
-							want_sf_id = -1;
-							video_pkg [0] = 0;
-							pkg_mismatch = 0;
-							fps_env_reset (&env);
-							env_growing = false;
-						}
-					}
-					else
-						pkg_mismatch = 0;
+				case STUCK_BLIND:
+					/* Отказ пробы: без строки в журнале он неотличим от
+					 * «всё в порядке» */
+					trace (0, "передний план не определён (код %d), "
+					       "а счётчик кадров стоит — залипший канал проверить не могу\n",
+					       probe_rc);
+					break;
+
+				case STUCK_FILL_PKG:
+					/* Проба на старте видео сорвалась — пакет запомнен сейчас */
+					trace (1, "видео ведёт приложение %s (проба на старте не удалась)\n",
+					       stuck.pkg);
+					break;
+
+				case STUCK_GIVE_UP:
+					trace (0, "плеер %s ушёл с переднего плана (сейчас %s), "
+					       "а счётчик кадров стоит — снимаю удержание режима\n",
+					       stuck.pkg, top_pkg);
+					atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
+					video = false;
+					want_sf_id = -1;
+					stuck_reset (&stuck);
+					fps_env_reset (&env);
+					env_growing = false;
+					break;
+
+				case STUCK_NONE:
+					/* Либо пауза, либо ещё одно несовпадение — состояние
+					 * уже обновлено в stuck_step */
+					break;
 				}
 			}
 		}
@@ -2314,8 +2336,7 @@ static int run_atv14 (const platform_t *plat)
 			still = 0;
 			paused = false;
 			have_prev_frames = false;
-			video_pkg [0] = 0;
-			pkg_mismatch = 0;
+			stuck_reset (&stuck);
 		}
 
 		/* pause.keep==0: пауза обрабатывается как стоп (guard вернёт режим) */
@@ -2327,8 +2348,8 @@ static int run_atv14 (const platform_t *plat)
 		 * (плеер сам выбирает темп отрисовки под текущий режим экрана, а
 		 * удержанный низкий режим «зажимал» бы следующий ролик — проверено
 		 * живьём на YouTube TV, см. README, ограничение 8). */
-		skip_pkg = (g_skip_pkgs.size > 0) && video_eff && (video_pkg [0] != 0) &&
-		           strlist_contains (&g_skip_pkgs, video_pkg);
+		skip_pkg = (g_skip_pkgs.size > 0) && video_eff && (stuck.pkg [0] != 0) &&
+		           strlist_contains (&g_skip_pkgs, stuck.pkg);
 
 		/* R50: сброс состояния замера висит на video_eff, а не на video.
 		 * Пауза при pause.keep==0 для замера равносильна концу видео: пока
@@ -2799,7 +2820,7 @@ static int run_atv14 (const platform_t *plat)
 			{
 				skip_logged = true;
 				trace (0, "пакет %s в списке switch.skip.pkg — режим не переключаю и не удерживаю\n",
-				       video_pkg);
+				       stuck.pkg);
 			}
 
 			want_sf_id = -1;
