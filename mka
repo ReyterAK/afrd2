@@ -5,6 +5,13 @@ test -z "$NDK" && export NDK=$HOME/Android/Sdk/android-ndk-r26d
 # arm64-v8a (legacy-артефакт для APK и install/mk-update). Переопределяется
 # переменной AFRD_ABIS, напр. AFRD_ABIS=armeabi-v7a ./mka
 test -z "$AFRD_ABIS" && AFRD_ABIS="armeabi-v7a arm64-v8a"
+
+# BDATE («дата сборки», её показывают `afrd -v`, `afrd -s` и приложение)
+# вычисляется как флаг компиляции, но ни ndk-build, ни make не узнают о смене
+# флагов: main.o считался готовым, если не менялся main.c, и в бинарнике
+# оставалась дата прежней сборки. Удаляем объект — он один и крошечный.
+find obj -name 'main.o' -delete 2>/dev/null
+
 $NDK/ndk-build APP_ABI="$AFRD_ABIS" $* || exit $?
 
 test -n "$*" && exit 0
