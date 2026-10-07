@@ -17,15 +17,47 @@ done
 
 VERSION=`sed main.c -ne '/const char \*g_version/{' -e 's/^.*= *"//' -e 's/".*$//' -e p -e '}'`
 SUFFIX=`sed main.c -ne '/const char \*g_ver_sfx/{' -e 's/^.*= *"//' -e 's/".*$//' -e p -e '}'`
+# Числовая версия для Android и Magisk: major*10000 + minor*100 + patch
+# (та же формула, что в README/журнале). Без ведущих нулей: 0.3.3 -> 303.
+vpart() { echo "$VERSION" | cut -d. -f"$1" | sed 's/^0*//' ; }
+VMAJ=`vpart 1`; VMIN=`vpart 2`; VPAT=`vpart 3`
+VMAJ=${VMAJ:-0}; VMIN=${VMIN:-0}; VPAT=${VPAT:-0}
+VCODE=`expr "$VMAJ" \* 10000 + "$VMIN" \* 100 + "$VPAT"`
 BUILD=android/app/build.gradle
 sed -e "s/\( *versionName *'\).*\('\)/\1$VERSION\2/" \
     -e "s/\( *versionNameSuffix *'\).*\('\)/\1$SUFFIX\2/" \
+    -e "s/\( *versionCode *\).*/\1$VCODE/" \
 	"${BUILD}" > "${BUILD}~"
 if ! cmp -s "${BUILD}~" "${BUILD}" ; then
 	mv -f "${BUILD}~" "${BUILD}"
-	echo "Updated Android version number to $VERSION$SUFFIX"
+	echo "Updated Android version number to $VERSION$SUFFIX ($VCODE)"
 else
 	rm -f "${BUILD}~"
+fi
+
+# Версия Magisk-модуля — из того же источника, иначе обновление модуля
+# приносит прежний номер и Magisk не видит смену версии.
+PROP=install/magisk/module.prop
+sed -e "s|^version=.*|version=$VERSION$SUFFIX|" \
+    -e "s|^versionCode=.*|versionCode=$VCODE|" \
+	"${PROP}" > "${PROP}~"
+if ! cmp -s "${PROP}~" "${PROP}" ; then
+	mv -f "${PROP}~" "${PROP}"
+	echo "Updated Magisk module version to $VERSION$SUFFIX ($VCODE)"
+else
+	rm -f "${PROP}~"
+fi
+
+# Строка о версии форка в README — тоже из main.c (согласованность проверяет
+# tests/test_versions.sh).
+README=README.md
+sed "s|^AFRd2 — версия .*|AFRd2 — версия $VERSION$SUFFIX (номер синхронизируется из main.c сборкой ./mka).|" \
+	"${README}" > "${README}~"
+if ! cmp -s "${README}~" "${README}" ; then
+	mv -f "${README}~" "${README}"
+	echo "Updated README version to $VERSION$SUFFIX"
+else
+	rm -f "${README}~"
 fi
 
 cp config/afrd-android7-.ini android/app/src/main/res/raw/afrd_7.ini
