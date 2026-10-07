@@ -65,7 +65,7 @@
         be determined
     </string>
     <string name="prefs_switch_timeout">Frame rate wait timeout</string>
-    <string name="prefsum_switch_timeout">How long the daemon waits before giving up.\n\nAndroid 6-9: if the frame rate is still undetermined after this time, detection is abandoned.\n\nAndroid 10-14: how long to wait for decoder data while a mode is already held — if vdec_status cannot be read for longer than this, the mode is restored and the switch flag is cleared (otherwise the mode would stick until reboot). The same value sets the threshold for the series-of-read-failures message (the value divided by the decoder poll period). Frame rate detection itself is configured by "Observation before switching" and "Measurement attempts".</string>
+    <string name="prefsum_switch_timeout">How long the daemon waits before giving up.\n\nAndroid 6-9: if the frame rate is still undetermined after this time, detection is abandoned.\n\nAndroid 12-14: how long to wait for decoder data while a mode is already held — if vdec_status cannot be read for longer than this, the mode is restored and the switch flag is cleared (otherwise the mode would stick until reboot). The same value sets the threshold for the series-of-read-failures message (the value divided by the decoder poll period). Frame rate detection itself is configured by "Observation before switching" and "Measurement attempts".</string>
     <string name="prefs_switch_blackout">Screen off delay</string>
     <string name="prefsum_switch_blackout">The delay in ms to turn display off after movie starts.
         Set to 0 to disable this feature
@@ -96,10 +96,10 @@
     <string name="notif_stop_afrd">Disable AFR</string>
     <string name="notif_start_afrd">Enable AFR</string>
     <string name="settings_advanced">Advanced settings</string>
-    <string name="not_applicable_atv14">(has no effect on Android 10-14)</string>
+    <string name="not_applicable_atv14">(has no effect on Android 12-14)</string>
     <string name="not_applicable_legacy">(does not work on Android 6-9)</string>
     <string name="prefs_group_correct">Per-player frame rate calibration</string>
-    <string name="prefs_group_atv14">Settings for Android 10 and above</string>
+    <string name="prefs_group_atv14">Settings for Android 12 and above</string>
     <string name="prefs_fps_prefer_api">Trust the player hint</string>
     <string name="prefsum_fps_prefer_api">If the player reports the frame rate itself via the AFRd2 API
         (frame_rate_hint), prefer it over our own frame counter measurement.</string>
@@ -176,7 +176,7 @@
         "24 fps detected as 25 Hz" is treated as the lesser evil than the reverse, so the correction
         is not raised to the measured 0.5; the envelope observation already removes most of the
         bias. Applied only when player calibration is enabled (see the switch above): with it off the
-        value is neither used nor logged. Android 10-14.</string>
+        value is neither used nor logged. Android 12-14.</string>
     <string name="prefs_fps_correct_av1_pkg">AV1 correction: package only</string>
     <string name="prefsum_fps_correct_av1_pkg">Limit the AV1 correction to one player package
         (fps.correct.av1.pkg). Empty — any player.</string>

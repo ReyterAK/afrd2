@@ -1,6 +1,6 @@
 id=afrd2
-name=AFRd2 (AFR для Android TV 10-14, Amlogic)
+name=AFRd2 (AFR для Amlogic, Android 12-14)
 version=0.3.3
 versionCode=303
 author=порт: reyter; оригинал AFRd: Andrey Zabolotnyi
-description=Автостарт демона AFRd2: подстройка частоты обновления HDMI под частоту кадров видео (Android 10-14, ядро 5.x, Amlogic S905X5M).
+description=Автостарт демона AFRd2: подстройка частоты обновления HDMI под частоту кадров видео (Android 12-14, ядро 5.x, Amlogic).

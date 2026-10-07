@@ -116,7 +116,7 @@
 
 ! When two independent measurements agree, the switch happens earlier (about
 ! 14 seconds). The observation window is configurable in "Settings for
-! Android 10 and above" ("Observation before switching", "Early decision").
+! Android 12 and above" ("Observation before switching", "Early decision").
 
 ? How to make the screen blink less often during playback?
 
@@ -172,13 +172,13 @@
 ! Every rule has the form "mode_name=value". If the value contains a rule
 ! with "444" (as in the Android 6-9 profiles, where it is the last one:
 ! ".*=444"), replace "444" in it with "rgb". If there is no such rule (the
-! Android 10-14 profile has only "2160p[4-9].*=420"), add your own at the
+! Android 12-14 profile has only "2160p[4-9].*=420"), add your own at the
 ! end, e.g. ".*=rgb" - then RGB will be used instead of YUV444.
 
 ! Don't touch the "420" rule - an RGB stream cannot be transmitted at 4k
 ! resolution and 40 Hz or above over an HDMI link.
 
-! On Android 10 and above this works too: the daemon applies the selected
+! On Android 12 and above this works too: the daemon applies the selected
 ! format after every mode switch (through the built-in service). The exception
 ! is HDR/Dolby Vision: they are managed by the system and the player.
 
@@ -201,7 +201,7 @@
 ! video framerate - detection takes from half to a few seconds, so an
 ! unnecessary black screen can't be avoided completely.
 
-! On Android 10 and above this does not apply: the daemon does not turn the
+! On Android 12 and above this does not apply: the daemon does not turn the
 ! screen to black. It first measures the frame rate (this takes 10-20 seconds)
 ! and only then switches the mode, so the "click" happens 10-20 seconds after
 ! video start, not at the very beginning.
@@ -219,7 +219,7 @@
 ! If you want display to turn off after the start of video, wait first
 ! for the original refresh rate to restore.
 
-! On Android 10 and above this does not apply: the screen is never turned
+! On Android 12 and above this does not apply: the screen is never turned
 ! to black.
 
 ? What is the meaning of "Fractional rate usage policy" option?
@@ -251,10 +251,10 @@
 ? Do I need root (Superuser) privileges?
 
 ! Yes. AFRd switches the display mode through system mechanisms and requires
-! Administrator rights - both on Android 6-9 and on Android 10 and above. The
+! Administrator rights - both on Android 6-9 and on Android 12 and above. The
 ! application asks for them on the first run (Magisk/su).
 
-! On Android 10 and above an additional mechanism built into the firmware is
+! On Android 12 and above an additional mechanism built into the firmware is
 ! required (SurfaceFlinger "backdoor"). If the vendor removed it, the daemon
 ! switches to the passive mode: only the API and statistics work, the mode is
 ! not switched.
