@@ -23,6 +23,12 @@ run test_vdec vdec.c fps_class.c
 run test_reconf reconf.c
 run test_hdrinfo hdrinfo.c exec.c tests/stub.c
 
+# Проверки по исходникам и данным, а не по коду на C: согласованность версии
+# во всех местах, где она записана, и формат ЧАВО, которое видит пользователь.
+for sh_test in tests/test_versions.sh tests/test_faq.sh; do
+	sh "$sh_test" || status=1
+done
+
 # Java-логика без Android-зависимостей (значения «пакет=число», правило посева
 # настроек): те же исходники, что идут в APK, компилируются javac и работают на JVM.
 JAVAC=${JAVAC:-javac}
