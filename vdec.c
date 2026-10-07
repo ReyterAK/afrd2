@@ -61,6 +61,33 @@ static const char *skip_ws (const char *p)
 	return p;
 }
 
+/* Найти подпись поля вида "   status : 6" и вернуть указатель сразу после
+ * двоеточия. Подпись ищется как отдельное слово (перед ней — начало строки или
+ * пробел), поэтому "status" не поймает, например, "VDEC_STATUS" в чужой строке. */
+static const char *find_field (const char *start, const char *p, const char *end,
+                               const char *label)
+{
+	size_t len = strlen (label);
+
+	while (p && &p [0] < end)
+	{
+		p = strstr (p, label);
+		if (!p || &p [0] >= end)
+			return NULL;
+
+		bool at_word_start = (p == start) || (p [-1] == ' ') ||
+		                     (p [-1] == '\t') || (p [-1] == '\n');
+		const char *after = p + len;
+		const char *colon = skip_ws (after);
+		if (at_word_start && (colon [0] == ':'))
+			return skip_ws (colon + 1);
+
+		p = after;
+	}
+
+	return NULL;
+}
+
 static bool parse_uint (const char *p, const char *end, unsigned *out)
 {
 	char buf [32];
@@ -125,6 +152,17 @@ int vdec_parse_channels (const char *text, vdec_chan_t *out, int max)
 				if (parse_uint (fd + 1, end, &dur))
 					ch.decl_dur = dur;
 			}
+
+			/* status — сырое поле драйвера (см. vdec.h): читаем и отдаём в
+			 * журнал, решений по нему демон не принимает. Ищем подпись поля
+			 * (выровнена пробелами), а не подстроку "status" где попало. */
+			const char *st = find_field (text, p, end, "status");
+			if (st)
+			{
+				unsigned sv = 0;
+				if (parse_uint (st, end, &sv))
+					ch.status = sv;
+			}
 			out [n++] = ch;
 		}
 
@@ -185,6 +223,7 @@ int vdec_read (const char *path, vdec_status_t *out, vdec_sel_t *st)
 	snprintf (out->device, sizeof (out->device), "%s", chans [idx].device);
 	out->frames = chans [idx].frames;
 	out->decl_dur = chans [idx].decl_dur;
+	out->status = chans [idx].status;
 	return 0;
 }
 

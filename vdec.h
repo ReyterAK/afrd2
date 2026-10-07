@@ -15,6 +15,12 @@ typedef struct
 	unsigned long long frames;	/* frame count (для замера fps по дельте) */
 	unsigned decl_dur;		/* frame dur: длительность кадра в тиках 1/96000 с,
 					 * 0 — поля нет. Только как уточнение к замеру */
+	unsigned status;		/* сырое поле "status" из vdec_status. Величина
+					 * приватная для драйвера декодера (в upstream-драйвере
+					 * это vs.status от dec_status()), общего смысла не имеет;
+					 * читается и пишется в журнал, чтобы на стенде отличить
+					 * «настоящую паузу» от «залипшего канала»
+					 * (см. журнал §31.18). Решений демон по нему не принимает. */
 } vdec_status_t;
 
 /* Один канал vdec_status. */
@@ -23,6 +29,7 @@ typedef struct
 	char device [40];
 	unsigned long long frames;
 	unsigned decl_dur;
+	unsigned status;
 } vdec_chan_t;
 
 /*

@@ -1880,6 +1880,9 @@ static int run_atv14 (const platform_t *plat)
 	bool skip_pkg = false;
 	bool skip_logged = false;
 	unsigned long long pkg_probe_us = 0;
+	/* Сказали ли уже про «счётчик стоит» (status декодера) — один раз на
+	 * эпизод; используется только для журнала (§31.18) */
+	bool pause_logged = false;
 
 	/* Заморозка счётчика кадров (AV1 и т.п.): сколько живём без роста и
 	 * сообщили ли уже об этом (логируем один раз на видео) */
@@ -2226,6 +2229,7 @@ static int run_atv14 (const platform_t *plat)
 				{
 					stuck_reset (&stuck);
 					pkg_probe_us = 0;
+					pause_logged = false;
 					{
 						char video_pkg [PKG_NAME_LEN] = { 0 };
 						if (pkg_probe (plat, video_pkg, sizeof (video_pkg)) == 0)
@@ -2234,6 +2238,13 @@ static int run_atv14 (const platform_t *plat)
 							trace (2, "видео ведёт приложение %s\n", video_pkg);
 						}
 					}
+
+					/* Сырое поле status декодера на старте видео: вместе с
+					 * записями при паузе и залипании это даёт материал для
+					 * решения «отличает ли драйвер конец видео от паузы»
+					 * (журнал §31.18). Решение демон по нему не принимает. */
+					trace (2, "декодер %s: status %u, frame dur %u\n",
+					       v0.device, v0.status, v0.decl_dur);
 				}
 			}
 			else
@@ -2279,6 +2290,18 @@ static int run_atv14 (const platform_t *plat)
 			prev_frames = v0.frames;
 			have_prev_frames = true;
 
+			/* Пауза или залипание: пишем status декодера один раз на эпизод —
+			 * это точка замера, по которой на стенде видно, различает ли
+			 * драйвер паузу и залипший канал (§31.18). Поведение не зависит. */
+			if (paused && !pause_logged)
+			{
+				pause_logged = true;
+				trace (1, "счётчик кадров стоит: %s, status %u — пауза или залипший канал\n",
+				       v0.device, v0.status);
+			}
+			else if (!paused)
+				pause_logged = false;
+
 			/* Залипший канал (§25.1): счётчик стоит, режим удержан, но
 			 * приложение, которое вело это видео, ушло с переднего плана —
 			 * значит в системе остался инстанс декодера без плеера. Настоящая
@@ -2314,8 +2337,8 @@ static int run_atv14 (const platform_t *plat)
 
 				case STUCK_GIVE_UP:
 					trace (0, "плеер %s ушёл с переднего плана (сейчас %s), "
-					       "а счётчик кадров стоит — снимаю удержание режима\n",
-					       stuck.pkg, top_pkg);
+					       "а счётчик кадров стоит (%s status %u) — снимаю удержание режима\n",
+					       stuck.pkg, top_pkg, v0.device, v0.status);
 					atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
 					video = false;
 					want_sf_id = -1;
@@ -2545,9 +2568,10 @@ static int run_atv14 (const platform_t *plat)
 				    !counter_stall_logged)
 				{
 					counter_stall_logged = true;
-					trace (0, "счётчик кадров декодера не растёт %llu с (декодер активен, "
-					       "частота неизвестна) — режим не переключаю\n",
-					       (unsigned long long)((sample_t - counter_last_grow_us) / 1000000ULL));
+					trace (0, "счётчик кадров декодера не растёт %llu с (%s status %u, "
+					       "декодер активен, частота неизвестна) — режим не переключаю\n",
+					       (unsigned long long)((sample_t - counter_last_grow_us) / 1000000ULL),
+					       v0.device, v0.status);
 
 					/* Запасной источник — подача видео-слоя: она от счётчика
 					 * не зависит, а картинка идёт. Пробуем один раз за эпизод

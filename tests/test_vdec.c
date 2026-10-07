@@ -40,6 +40,9 @@ int main (void)
 	assert (chans [0].frames == 13516);
 	/* frame dur парсится только как уточнение (96000/4004 = 23.976) */
 	assert (chans [0].decl_dur == 4004);
+	/* status — сырое поле драйвера, читается ради разделения «пауза vs
+	 * залипший канал» на стенде (§31.18), решений по нему нет */
+	assert (chans [0].status == 6);
 
 	/* мусор без имени устройства не должен "включать" видео */
 	assert (vdec_parse_channels ("vdec channel 0 statistics:\n  frame count : 5\n",
@@ -53,8 +56,10 @@ int main (void)
 	                             chans, VDEC_MAX_CHANNELS) == 2);
 	assert (strcmp (chans [0].device, "amvdec_av1_v4l") == 0);
 	assert (chans [0].frames == 264);
+	assert (chans [0].status == 53);
 	assert (chans [1].frames == 1139);
 	assert (chans [1].decl_dur == 3200);
+	assert (chans [1].status == 5);
 
 	/* потолок каналов */
 	char many [1024] = "";
@@ -65,6 +70,22 @@ int main (void)
 		strcat (many, blk);
 	}
 	assert (vdec_parse_channels (many, chans, VDEC_MAX_CHANNELS) == VDEC_MAX_CHANNELS);
+
+	/* status ищется как подпись поля: слово внутри другого слова (как в
+	 * "vdec_status=5") подписью не считается, а отсутствие поля даёт 0 */
+	assert (vdec_parse_channels ("  device name : dev1\n  frame count : 7\n"
+	                             "      vdec_status=5\n", chans, VDEC_MAX_CHANNELS) == 1);
+	assert (chans [0].status == 0);
+	assert (vdec_parse_channels ("  device name : dev1\n       status : 9\n"
+	                             "  frame count : 7\n", chans, VDEC_MAX_CHANNELS) == 1);
+	assert (chans [0].status == 9);
+	assert (vdec_parse_channels ("  device name : dev1\n  frame count : 7\n",
+	                             chans, VDEC_MAX_CHANNELS) == 1);
+	assert (chans [0].status == 0);
+	/* поле с другим именем ("vdec_status") — это не наше поле "status" */
+	assert (vdec_parse_channels ("  device name : dev1\n  frame count : 7\n"
+	                             "  vdec_status : 5\n", chans, VDEC_MAX_CHANNELS) == 1);
+	assert (chans [0].status == 0);
 
 	/* --- выбор канала (R61, вариант 2) --- */
 	vdec_sel_t sel;
