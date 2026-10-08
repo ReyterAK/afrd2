@@ -1285,6 +1285,95 @@ static int atv14_select_mode (int hz, int w, int h, int floor)
 	return ch.id;
 }
 
+static int sf_active_mode (const platform_t *plat, sf_mode_t *out);
+
+/* Текущий режим для решений цикла, в тех же единицах, что mode_resolve:
+ * ATV14 — id из таблицы SurfaceFlinger; ATV11 — частота (24.8) режима из узла
+ * /sys/class/display/mode (таблицы SF на 10/11 нет, а guard_decide сравнивает
+ * только равенство). Заодно отдаёт геометрию текущего режима.
+ * Возврат: текущее значение или -1, если прочитать не удалось. */
+static int atv_current_target (const platform_t *plat, int *w, int *h)
+{
+	if (plat->sink == SINK_VENDOR_MODE)
+	{
+		display_mode_get_current ();
+		if (w) *w = g_current_mode.width  ? g_current_mode.width  : 1920;
+		if (h) *h = g_current_mode.height ? g_current_mode.height : 1080;
+
+		char *cm = sysfs_read (g_mode_path);
+		if (!cm)
+			return -1;
+
+		char nm [64];
+		size_t i = 0;
+		while (((i + 1) < sizeof (nm)) && cm [i] && cm [i] != '\n' && cm [i] != '\r')
+		{
+			nm [i] = cm [i];
+			i++;
+		}
+		nm [i] = 0;
+		free (cm);
+
+		/* Для ATV11 ключом режима служит ИНДЕКС в списке disp_cap, а не
+		 * частота: имя режима не различает 23.976 и 24.000, и частота дала бы
+		 * ложное расхождение с целью выбора (живая находка: демон применял
+		 * режим по кругу — хотел 6138, видел 6144). */
+		for (int j = 0; j < g_modes_n; j++)
+			if (strcmp (g_modes [j].name, nm) == 0)
+				return j;
+
+		return -1;
+	}
+
+	sf_mode_t active;
+	if (sf_active_mode (plat, &active) != 0)
+		return -1;
+
+	if (w) *w = active.width;
+	if (h) *h = active.height;
+	return active.id;
+}
+
+/* Целевой режим для решения о переключении.
+ *
+ * ATV14 возвращает id из таблицы SurfaceFlinger (он уходит в транзакцию 1035).
+ * ATV11 (Android 10/11) не имеет такой таблицы: режим выбирается по ИМЕНИ из
+ * disp_cap, а идентификатором для проверки «режим уже нужный» служит его
+ * ЧАСТОТА (24.8) — guard_decide сравнивает только равенство, ему безразлично,
+ * что это за число. Имя по частоте резолвит atv14_apply_mode перед вызовом
+ * вендорного помощника.
+ *
+ * Возврат: id/частота цели, -1 — подходящего режима нет. */
+static int mode_resolve (const platform_t *plat, int hz, int w, int h, int floor)
+{
+	if (plat->sink != SINK_VENDOR_MODE)
+		return atv14_select_mode (hz, w, h, floor);
+
+	if (g_modes_n <= 0)
+		display_modes_init ();
+
+	display_mode_t best;
+	char nm [32];
+	int mhz = 0;
+	if (modes_select_by_hz (g_modes, g_modes_n, hz, w, h,
+	                        g_current_mode.interlaced, g_mode_prefer_exact,
+	                        floor, rate_allowed_cb, NULL,
+	                        &best, nm, sizeof (nm), &mhz) != 0)
+		return -1;
+
+	/* Идентификатор для решений цикла — индекс в списке (см. atv_current_target) */
+	int idx = -1;
+	for (int j = 0; j < g_modes_n; j++)
+		if (strcmp (g_modes [j].name, best.name) == 0)
+		{
+			idx = j;
+			break;
+		}
+
+	trace (1, "режим " HZ_FMT " Гц выбран как %s\n", HZ_ARGS (mhz), nm);
+	return idx;
+}
+
 /* Пакет плеера текущего видео. Пустая строка — не удалось определить.
  * (Объявление — выше, в выборе режима: mode.min.hz.list.) */
 static char g_cur_pkg [PKG_NAME_LEN];
@@ -1572,18 +1661,40 @@ static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skip
 	if (sf_id < 0)
 		return -1;
 
-	if ((g_sf_modes_n <= 0) ||
-	    (sfmodes_current_hz (g_sf_modes, g_sf_modes_n, sf_id) == 0))
+	if (plat->sink == SINK_VENDOR_MODE)
 	{
-		trace (1, "id %d отсутствует в текущей таблице режимов — %s\n",
-		       sf_id, skipped);
-		return -1;
-	}
+		/* Android 10/11: режим задаётся ИМЕНЕМ вендорным SystemControl, а
+		 * «id» здесь — индекс режима в списке disp_cap (см. mode_resolve):
+		 * таблицы SurfaceFlinger на этих версиях нет. */
+		if ((sf_id < 0) || (sf_id >= g_modes_n))
+		{
+			trace (1, "режима с индексом %d нет в списке режимов ТВ — %s\n",
+			       sf_id, skipped);
+			return -1;
+		}
 
-	if (sink_apply (plat->sink, g_mode_path, sf_id, NULL) != 0)
+		const char *name = g_modes [sf_id].name;
+		if (sink_apply (plat->sink, g_mode_path, -1, name) != 0)
+		{
+			trace (1, "вендорный SystemControl не применил режим %s\n", name);
+			return -2;
+		}
+	}
+	else
 	{
-		trace (1, "backdoor не применил режим id %d\n", sf_id);
-		return -2;
+		if ((g_sf_modes_n <= 0) ||
+		    (sfmodes_current_hz (g_sf_modes, g_sf_modes_n, sf_id) == 0))
+		{
+			trace (1, "id %d отсутствует в текущей таблице режимов — %s\n",
+			       sf_id, skipped);
+			return -1;
+		}
+
+		if (sink_apply (plat->sink, g_mode_path, sf_id, NULL) != 0)
+		{
+			trace (1, "backdoor не применил режим id %d\n", sf_id);
+			return -2;
+		}
 	}
 
 	/* Цветовое пространство по правилам cs.select — как делал legacy-путь при
@@ -2676,7 +2787,7 @@ static int run_atv14 (const platform_t *plat)
 							h = act.height;
 						}
 
-						int id = atv14_select_mode (lhz, w, h, mode_min_hz_for (g_cur_pkg));
+						int id = mode_resolve (plat, lhz, w, h, mode_min_hz_for (g_cur_pkg));
 						if (id >= 0)
 						{
 							want_sf_id = id;
@@ -2832,15 +2943,10 @@ static int run_atv14 (const platform_t *plat)
 			if (g_sf_modes_n <= 0)
 				sf_modes_refresh (plat);
 
-			sf_mode_t active;
 			int w = 1920, h = 1080;
-			if (sf_active_mode (plat, &active) == 0)
-			{
-				w = active.width;
-				h = active.height;
-			}
+			(void) atv_current_target (plat, &w, &h);
 
-			cur_sf_id = atv14_select_mode (hz, w, h, mode_min_hz_for (g_cur_pkg));
+			cur_sf_id = mode_resolve (plat, hz, w, h, mode_min_hz_for (g_cur_pkg));
 			if (cur_sf_id < 0)
 			{
 				trace (1, "режим для %d.%02d Гц не найден в списке\n",
@@ -2872,15 +2978,10 @@ static int run_atv14 (const platform_t *plat)
 			if (g_sf_modes_n <= 0)
 				sf_modes_refresh (plat);
 
-			sf_mode_t active;
 			int w = 1920, h = 1080;
-			if (sf_active_mode (plat, &active) == 0)
-			{
-				w = active.width;
-				h = active.height;
-			}
+			(void) atv_current_target (plat, &w, &h);
 
-			int hint_id = atv14_select_mode (hint_hz, w, h, mode_min_hz_for (g_cur_pkg));
+			int hint_id = mode_resolve (plat, hint_hz, w, h, mode_min_hz_for (g_cur_pkg));
 			if (hint_id < 0)
 			{
 				/* режима нет в текущей таблице (напр. частота есть только для
@@ -2901,11 +3002,14 @@ static int run_atv14 (const platform_t *plat)
 			}
 		}
 
-		/* актуальный режим перечитываем у SurfaceFlinger: так мы видим и то,
-		 * что переключило приложение со своим AFR, и не расходимся с реальностью */
-		sf_mode_t active;
-		if (sf_active_mode (plat, &active) == 0)
-			cur_sf_id = active.id;
+		/* актуальный режим перечитываем у системы: так мы видим и то, что
+		 * переключило приложение со своим AFR, и не расходимся с реальностью.
+		 * На ATV11 источник — узел режима (таблицы SurfaceFlinger нет). */
+		{
+			int cur = atv_current_target (plat, NULL, NULL);
+			if (cur >= 0)
+				cur_sf_id = cur;
+		}
 
 		/* Таблица режимов сменилась (рестарт SurfaceFlinger) — нумерация id
 		 * уже другая, и кэшированный want_sf_id в транзакцию 1035 пускать

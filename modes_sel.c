@@ -57,6 +57,31 @@ void display_mode_set_hz (display_mode_t *mode, int hz)
 		mode->fractional = false;
 }
 
+int modes_find_name_by_hz (const display_mode_t *modes, int n, int hz,
+                           char *name_out, size_t name_sz)
+{
+	int best = -1, best_d = 1 << 30;
+
+	for (int i = 0; i < n; i++) {
+		int mhz = display_mode_hz ((display_mode_t *)&modes [i]);
+		int d = (mhz > hz) ? (mhz - hz) : (hz - mhz);
+		if (d < best_d) {
+			best_d = d;
+			best = i;
+		}
+	}
+
+	/* допуск тот же, что у sfmodes (0.125 Гц): частота активного/целевого
+	 * режима должна совпасть точно, иначе это не наш режим */
+	if ((best < 0) || (best_d > 32))
+		return -1;
+
+	if (name_out && name_sz)
+		snprintf (name_out, name_sz, "%s", modes [best].name);
+
+	return 0;
+}
+
 int modes_select_by_hz (const display_mode_t *modes, int n, int hz,
                         int width, int height, bool interlaced,
                         int prefer_exact, int floor_hz,

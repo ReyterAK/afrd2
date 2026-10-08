@@ -142,9 +142,26 @@ static void test_no_match (void)
 	                            0, 0, allow_all, NULL, NULL, name, sizeof (name), &hz) == -1);
 }
 
+/* Имя режима по частоте: нужно пути Android 10/11 (помощник принимает имя). */
+static void test_find_name (void)
+{
+	char name [32];
+
+	/* класс 23.976 (6138) -> имя режима 24 Гц, хотя в списке хранится 24.000 */
+	assert (modes_find_name_by_hz (modes, N_MODES, 6138, name, sizeof (name)) == 0);
+	assert (strcmp (name, "1080p24hz") == 0);
+
+	assert (modes_find_name_by_hz (modes, N_MODES, 50 * 256, name, sizeof (name)) == 0);
+	assert (strcmp (name, "1080p50hz") == 0);
+
+	/* такого режима нет */
+	assert (modes_find_name_by_hz (modes, N_MODES, 100 * 256, name, sizeof (name)) == -1);
+}
+
 int main (void)
 {
 	test_25_doubling ();
+	test_find_name ();
 	test_25_exact ();
 	test_23976 ();
 	test_60 ();

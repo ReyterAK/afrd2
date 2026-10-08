@@ -30,6 +30,13 @@ void display_mode_set_hz (display_mode_t *mode, int hz);
  * не нужно восстанавливать дробность по имени. name_out/hz_out — та же
  * информация в виде, удобном для вендорного помощника (он принимает ИМЯ).
  * Возврат: 0 — найден, -1 — подходящего режима нет. */
+/* Имя режима по частоте (24.8) из списка: точное совпадение, иначе ближайший
+ * в пределах 0.125 Гц. Нужно пути Android 10/11, где выбранная частота служит
+ * идентификатором режима, а помощнику требуется ИМЯ.
+ * Возврат: 0 — имя найдено, -1 — режима с такой частотой нет. */
+int modes_find_name_by_hz (const display_mode_t *modes, int n, int hz,
+                           char *name_out, size_t name_sz);
+
 int modes_select_by_hz (const display_mode_t *modes, int n, int hz,
                         int width, int height, bool interlaced,
                         int prefer_exact, int floor_hz,
