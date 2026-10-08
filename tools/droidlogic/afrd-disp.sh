@@ -17,7 +17,13 @@ if [ -z "$MODE" ]; then
 	exit 2
 fi
 
-DEX=${AFRD_DISP_DEX:-/data/local/tmp/afrd-disp.dex}
+# Каталог скрипта: приложение и Magisk-модуль кладут dex РЯДОМ с ним (cache
+# приложения, каталог модуля), поэтому по умолчанию ищем там же. Прежнее
+# умолчание /data/local/tmp было ошибкой: на чистой системе dex там нет, и
+# режим не переключался вовсе (нашло финальное ревью).
+DIR=${0%/*}
+[ -n "$DIR" ] && [ "$DIR" != "$0" ] || DIR=.
+DEX=${AFRD_DISP_DEX:-$DIR/afrd-disp.dex}
 RES=${AFRD_DISP_RES:-/system_ext/priv-app/droidlogic-res/droidlogic-res.apk}
 
 CLASSPATH="$DEX:/system/framework/android.hidl.base-V1.0-java.jar:/system/framework/android.hidl.manager-V1.0-java.jar:$RES"

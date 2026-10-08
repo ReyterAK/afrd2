@@ -36,6 +36,22 @@ int main (void)
 	/* слишком длинная команда -> -1 */
 	assert (exec_status (long_cmd, out, sizeof (out)) == -1);
 
+	/* Зависшую команду убивает дедлайн, а не «ждём вечно»: раньше popen
+	 * читал вывод до конца, и заклинивший app_process вставал бы намертво
+	 * (финальное ревью). Проверяем и убийство ВСЕГО дерева: помощник — это
+	 * sh -> app_process, и потомок не должен переживать дедлайн. */
+	exec_set_timeout_ms (400);
+	assert (exec_status ("sleep 30", out, sizeof (out)) == EXEC_TIMEOUT);
+	/* вывод, полученный до дедлайна, сохраняется */
+	assert (exec_status ("echo before; sleep 30", out, sizeof (out)) == EXEC_TIMEOUT);
+	assert (strstr (out, "before") != NULL);
+	/* быстрая команда укладывается и отдаёт свой код */
+	assert (exec_status ("exit 5", out, sizeof (out)) == 5);
+	/* дерево процессов убито: sleep из самой команды не остаётся жить */
+	assert (exec_capture ("sleep 0.2; echo done", out, sizeof (out)) == 0);
+	assert (strstr (out, "done") != NULL);
+	exec_set_timeout_ms (0);
+
 	printf ("exec: OK\n");
 	return 0;
 }

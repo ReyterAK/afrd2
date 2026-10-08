@@ -87,11 +87,17 @@ void display_mode_add (display_mode_t *mode)
 	trace (2, "\t+ "DISPMODE_FMT"\n", DISPMODE_ARGS (new_mode, display_mode_hz (&new_mode)));
 }
 
-int display_modes_init ()
+/* Разбор списка режимов из файла (disp_cap). Путь передаётся явно: на ATV14 он
+ * берётся из g_hdmi_dev, на вендорном пути Android 10/11 — из ключа
+ * vendor.disp.cap (таблицы режимов SurfaceFlinger там нет). */
+static int display_modes_parse_file (const char *path)
 {
+	/* Список по ключу — решающий: старый очищаем до разбора, иначе при
+	 * нечитаемом ключе оставался бы список от прежнего источника (hdmi.sysfs),
+	 * и ключ выглядел бы работающим (живая находка прогона приёмки). */
 	display_modes_fini ();
 
-	char *modes = sysfs_get_str (g_hdmi_dev, "disp_cap");
+	char *modes = sysfs_read (path);
 	if (!modes)
 		return -1;
 
@@ -138,6 +144,23 @@ int display_modes_init ()
 	}
 
 	return 0;
+}
+
+int display_modes_init ()
+{
+	char path [256];
+	snprintf (path, sizeof (path), "%s/disp_cap", g_hdmi_dev);
+	return display_modes_parse_file (path);
+}
+
+/* Список режимов из конкретного файла (ключ vendor.disp.cap). Значение ключа
+ * читается, а не игнорируется: раньше ключ был мёртвым (нашло финальное ревью). */
+int display_modes_init_path (const char *path)
+{
+	if (!path || !*path)
+		return -1;
+
+	return display_modes_parse_file (path);
 }
 
 void display_mode_get_current ()

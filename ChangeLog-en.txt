@@ -23,6 +23,29 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
     * Without the vendor service or the helper the daemon falls back to the
       passive mode with a warning — modes are untouched, API and stats work.
 
+    Fixes in this code path (found by an independent review and a live run before
+    publication):
+
+    * The mode-switching helper looks for its dex next to its own script rather
+      than in /data/local/tmp: on a clean install switching did not work at all.
+    * The app re-extracts the helper if the files are gone or truncated (the
+      system clears the cache when space runs out); previously switching died
+      silently until the next app update.
+    * A hung helper (e.g. stuck inside a vendor service call) no longer stalls
+      the daemon: the command has a deadline (switch.timeout) and its whole
+      process tree is taken down.
+    * A helper failure is not retried on every loop iteration: one attempt per
+      video instead of dozens of log lines and process launches mid-movie.
+    * The fast decision by the declared frame rate remembers the original mode,
+      so restoration on stop works in the honest case too (previously the home
+      screen stayed at the video's rate).
+    * The default of the "Fast decision by declared frame rate" setting no longer
+      enables that path on Android 12-14: the value depends on the OS version.
+    * `afrd -s`, the API and the app on Android 10-11 report real refresh rates
+      (used to be 0 Hz and "mode not switched").
+    * The `vendor.disp.cap` key works again (the TV mode list is read from it);
+      an unreadable list produces a single warning and the mode is left alone.
+
     Android 12-14 (kernel 5.x) — the new code path:
 
     * The HDMI mode is switched by the stock SurfaceFlinger mechanism, so it stays

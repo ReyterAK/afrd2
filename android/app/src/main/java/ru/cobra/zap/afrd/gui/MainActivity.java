@@ -168,6 +168,21 @@ public class MainActivity extends Activity
         SharedPreferences prefs = getSharedPreferences ("requisites", 0);
         boolean rewrite = true;
 
+        /* Помощник смены режима (Android 10/11) — в кэше приложения, а кэш
+         * система чистит при нехватке места; тогда демон молча остаётся без
+         * переключения до следующего обновления APK. Поэтому извлекаем его не
+         * только при обновлении, но и когда файлов нет или они подозрительно
+         * коротки (обрыв записи при той же чистке кэша).
+         *
+         * Признак отдельный: проверка обновления APK ниже ПЕРЕЗАПИСЫВАЕТ
+         * rewrite, поэтому присваивать его здесь нельзя — иначе условие
+         * мёртвое (живая находка прогона приёмки). */
+        boolean helper_missing = Control.isAtv14 () &&
+                                 (!mControl.mDispSh.exists () ||
+                                  !mControl.mDispDex.exists () ||
+                                  (mControl.mDispSh.length () < 64) ||
+                                  (mControl.mDispDex.length () < 64));
+
         if (mControl.mIni.exists ())
             try
             {
@@ -179,6 +194,9 @@ public class MainActivity extends Activity
             catch (java.lang.ClassCastException ignored)
             {
             }
+
+        if (helper_missing)
+            rewrite = true;
 
         if (rewrite)
         {
@@ -199,6 +217,20 @@ public class MainActivity extends Activity
                     showMessage (getString (R.string.msg_title_critical_error), res, null);
                     return false;
                 }
+            }
+
+            /* Быстрое решение по заявленной частоте: умолчание зависит от
+             * версии Android (10/11 — включено, как у штатного системного AFR;
+             * 12-14 — выключено). Проставляем ЯВНО, иначе XML-умолчание строки
+             * настроек перебило бы умолчание пути и включило быстрый путь на
+             * 12-14 (нашло финальное ревью). */
+            if (Control.isAtv14 ())
+            {
+                /* 30 — Android 11: на 10/11 быстрый путь включён, на 12+ выключен.
+                 * Литерал, а не VERSION_CODES.R: compileSdk проекта — 27. */
+                boolean fast = (android.os.Build.VERSION.SDK_INT <= 30);
+                mControl.setIniKey ("fps.declare.fast", fast ? "1" : "0");
+                prefs.edit ().putBoolean ("fps_declare_fast", fast).apply ();
             }
 
             prefs.edit ().putLong ("afrd_ini_ver", mPackageInfo.lastUpdateTime).apply ();

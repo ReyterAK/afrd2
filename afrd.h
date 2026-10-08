@@ -139,6 +139,7 @@ extern void afrd_emerg ();
 
 // read the list of all supported display modes and current display mode
 extern int display_modes_init ();
+extern int display_modes_init_path (const char *path);
 // free the list of supported modes
 extern void display_modes_fini ();
 // query the current video mode

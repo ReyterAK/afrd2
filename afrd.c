@@ -105,6 +105,10 @@ static strlist_t g_skip_pkgs;
  * pkg_name() понимает, откуда брать пакет переднего плана. */
 static platform_t g_plat;
 
+/* Список режимов ТВ не прочитан: предупреждаем один раз, а не на каждой
+ * итерации цикла. Сбрасывается успешным обновлением списка. */
+static bool g_modes_unreadable;
+
 /* «Записка» прошлого экземпляра демона из разделяемой памяти: читается в
  * afrd_init до её затирания и разбирается в ATV14-цикле (atv14_recover_stale). */
 static afrd_shmem_t g_prev_stats;
@@ -935,6 +939,34 @@ static void delay_framerate_switch (bool restore, int hz, const char *modalias)
 	}
 }
 
+/* Обновление списка режимов ТВ по пути платформы.
+ *
+ * Ключ определяет платформа, а не «кто первый»: на вендорном пути Android 10/11
+ * таблицы режимов SurfaceFlinger нет, и список читается из vendor.disp.cap
+ * (спека §5). Прежде на этом пути список попадал из hdmi.sysfs, а vendor.disp.cap
+ * был мёртвым ключом (нашло финальное ревью). */
+/* Список режимов читается при старте и на событиях HDMI, а не в mode_resolve:
+ * иначе нечитаемый ключ давал бы по строке в журнал на каждую итерацию цикла
+ * (~300 мс), как это уже было с отказом вендорного помощника (финальное ревью). */
+static void modes_refresh_platform (void)
+{
+	if (g_plat.sink == SINK_VENDOR_MODE)
+	{
+		int rc = display_modes_init_path (g_plat.disp_cap);
+
+		if ((rc != 0) && !g_modes_unreadable)
+			trace (0, "список режимов ТВ не прочитан (%s)"
+			          " — переключать не из чего\n",
+			       g_plat.disp_cap ? g_plat.disp_cap : "<путь не задан>");
+
+		g_modes_unreadable = (rc != 0) || (g_modes_n <= 0);
+		return;
+	}
+
+	display_modes_init ();
+	g_modes_unreadable = (g_modes_n <= 0);
+}
+
 static void handle_hdmi_switch (int state)
 {
 	if (state == -1)
@@ -946,7 +978,7 @@ static void handle_hdmi_switch (int state)
 		display_modes_fini ();
 		memset (&g_state.orig_mode, 0, sizeof (g_state.orig_mode));
 	} else {
-		display_modes_init ();
+		modes_refresh_platform ();
 		colorspace_refresh ();
 		hdcp_init ();
 	}
@@ -1350,7 +1382,13 @@ static int mode_resolve (const platform_t *plat, int hz, int w, int h, int floor
 		return atv14_select_mode (hz, w, h, floor);
 
 	if (g_modes_n <= 0)
-		display_modes_init ();
+	{
+		/* Пустой список означает, что выбирать не из чего: об этом уже сказано
+		 * при старте (modes_refresh_platform, спека §5). Возврат без решения —
+		 * замер ниже отработает как обычно. */
+		(void) plat;
+		return -1;
+	}
 
 	display_mode_t best;
 	char nm [32];
@@ -1585,7 +1623,10 @@ static int sf_active_mode (const platform_t *plat, sf_mode_t *out)
 		return -1;
 
 	int hz = (int)(atof (p + strlen ("activeMode=")) * 256.0 + 0.5);
-	if (g_sf_modes_n <= 0)
+	/* Таблицу режимов SurfaceFlinger читаем только на ATV14: на вендорном пути
+	 * её нет, а сообщение о ней («переключать режимы нечем») было бы ложью —
+	 * там режимы переключаются (нашло финальное ревью). */
+	if ((plat->sink != SINK_VENDOR_MODE) && (g_sf_modes_n <= 0))
 		sf_modes_refresh (plat);
 
 	int w = 0, h = 0, id;
@@ -1852,16 +1893,29 @@ static pid_t pidof (const char *name)
 	return (pid_t) atoi (out);
 }
 
+/* Частота режима по его идентификатору для статистики.
+ *
+ * Идентификатор различается по пути: ATV14 — id из таблицы SurfaceFlinger,
+ * ATV11 — ИНДЕКС режима в списке disp_cap (см. mode_resolve). На Android 10/11
+ * таблицы SF нет вовсе (g_sf_modes_n = 0), поэтому прежний поиск по ней отдавал
+ * 0 Гц и switched=false — тот же класс дефекта, что чинили для пассивного режима
+ * (§33.17); нашло финальное ревью. */
+static int atv14_mode_hz (const platform_t *plat, int id)
+{
+	if (plat->sink == SINK_VENDOR_MODE)
+		return ((id >= 0) && (id < g_modes_n)) ? display_mode_hz (&g_modes [id]) : 0;
+
+	return sfmodes_current_hz (g_sf_modes, g_sf_modes_n, id);
+}
+
 /* Статистика для GUI/API (afrd -s, status): legacy-структуры в ATV14 не
  * ведутся, поэтому отдаём id текущего режима и id режима возврата. */
-static void atv14_stats_sync (int cur_sf_id, int orig_sf_id, bool held)
+static void atv14_stats_sync (const platform_t *plat, int cur_id, int orig_id, bool held)
 {
 	g_atv14_state.valid = true;
 	g_atv14_state.switched = held;
-	g_atv14_state.current_hz =
-		sfmodes_current_hz (g_sf_modes, g_sf_modes_n, cur_sf_id);
-	g_atv14_state.original_hz = sfmodes_current_hz (g_sf_modes, g_sf_modes_n,
-		held ? orig_sf_id : cur_sf_id);
+	g_atv14_state.current_hz = atv14_mode_hz (plat, cur_id);
+	g_atv14_state.original_hz = atv14_mode_hz (plat, held ? orig_id : cur_id);
 }
 
 /* Пассивный режим (нет backdoor или enable=0): переключать нечем/нельзя, но
@@ -2129,9 +2183,14 @@ static int run_atv14 (const platform_t *plat)
 
 	preferred_id = preferred_mode_id (plat);
 
-	sf_modes_refresh (plat);
-
-	trace (1, "предпочтительный режим ТВ: %d\n", preferred_id);
+	/* Таблицу режимов SurfaceFlinger читаем только на ATV14: на вендорном пути
+	 * Android 10/11 её нет, и прежнее сообщение «переключать режимы нечем»
+	 * было бы ложью — там режимы переключаются (нашло финальное ревью). */
+	if (plat->sink != SINK_VENDOR_MODE)
+	{
+		sf_modes_refresh (plat);
+		trace (1, "предпочтительный режим ТВ: %d\n", preferred_id);
+	}
 
 	/* Прошлый экземпляр могли убить с удержанным режимом (см.
 	 * atv14_recover_stale): тогда возвращаем его до снятия флага. */
@@ -2299,7 +2358,7 @@ static int run_atv14 (const platform_t *plat)
 		 * больше никто не обновляет */
 		if (ticks % 3 == 0)
 		{
-			atv14_stats_sync (cur_sf_id, orig_sf_id, held);
+			atv14_stats_sync (plat, cur_sf_id, orig_sf_id, held);
 			update_stats ();
 		}
 
@@ -2839,20 +2898,80 @@ static int run_atv14 (const platform_t *plat)
 					if (dclass)
 					{
 						int w = 1920, h = 1080;
-						(void) atv_current_target (plat, &w, &h);
+						int cur = atv_current_target (plat, &w, &h);
 
 						int did = mode_resolve (plat, dclass, w, h, mode_min_hz_for (g_cur_pkg));
 						if (did < 0)
+						{
+							/* Решения нет — повторять его на каждой итерации
+							 * цикла (~300 мс) незачем: набор режимов ТВ за
+							 * время ролика не меняется, а журнал забивался
+							 * десятками одинаковых строк (нашло финальное
+							 * ревью). Источник истины ниже — замер. */
+							fast_applied = true;
+							fast_class = 0;
 							trace (1, "заявлено %u fps, но режима под эту частоту нет\n",
 							       v0.decl_fps);
-						else if (atv14_apply_mode (plat, did, "быстрое решение") == 0)
+						}
+						else if (did == cur)
 						{
+							/* Режим уже нужный — sink не зовём (лишнее
+							 * переключение = мигание), но решение принимаем:
+						 * замер ниже проверит заявленную частоту. В журнал
+						 * идёт выбранный режим, а не частота класса: класс 30
+						 * уходит в 1080p60hz удвоением, и строка «режим уже
+						 * 30 Гц» читалась бы как противоречие (живая находка
+						 * прогона приёмки). */
 							fast_applied = true;
 							fast_class = dclass;
-							want_sf_id = did;
-							cur_sf_id = did;
-							trace (0, "быстрое решение по заявленной частоте: %u fps — "
-							       "режим применён сразу, замер проверит\n", v0.decl_fps);
+							trace (1, "быстрое решение: заявлено %u fps — "
+							       "режим " HZ_FMT " Гц уже стоит, не трогаю\n",
+							       v0.decl_fps, HZ_ARGS (atv14_mode_hz (plat, did)));
+						}
+						else
+						{
+							/* Запоминаем исходный режим ДО применения: guard_decide
+							 * заполняет orig_sf_id только когда want != cur, а здесь
+							 * мы применяем сами — без этой записи возврат на
+							 * остановке не сработал бы (нашло финальное ревью:
+							 * на честном 25 fps рабочий стол оставался в 50 Гц). */
+							if (!held && (orig_sf_id < 0) && (cur >= 0))
+							{
+								orig_sf_id = cur;
+								held = true;
+							}
+
+							if (atv14_apply_mode (plat, did, "быстрое решение") == 0)
+							{
+								fast_applied = true;
+								fast_class = dclass;
+								want_sf_id = did;
+								cur_sf_id = did;
+								trace (0, "быстрое решение по заявленной частоте: %u fps — "
+								       "режим применён сразу, замер проверит\n", v0.decl_fps);
+							}
+							else
+							{
+								/* применить не удалось — удержание не начинаем,
+								 * иначе демон считал бы, что режим уведён, и
+								 * снимал бы удержание с чужого режима */
+								if (held && (orig_sf_id == cur))
+								{
+									held = false;
+									orig_sf_id = -1;
+								}
+
+								/* И больше не пробуем до конца видео: повтор на
+								 * каждой итерации цикла (~300 мс) — это fork/exec
+								 * sh + app_process и строки в журнале на весь
+								 * ролик (нашло финальное ревью). Новое видео
+								 * сбросит признак. */
+								fast_applied = true;
+								fast_class = 0;
+								measure_failed = true;
+								trace (0, "быстрое решение: режим не применился — "
+								       "больше не пробую до конца видео\n");
+							}
 						}
 					}
 				}
@@ -3152,7 +3271,22 @@ static int run_atv14 (const platform_t *plat)
 
 		if (act == GUARD_SWITCH)
 		{
-			if (atv14_apply_mode (plat, want_sf_id, "переключение пропущено") == 0)
+			int apply_rc = atv14_apply_mode (plat, want_sf_id, "переключение пропущено");
+			if (apply_rc != 0)
+			{
+				/* Отказ применения (в том числе ненулевой код вендорного
+				 * помощника): не повторять на каждой итерации цикла (~300 мс) —
+				 * это fork/exec sh + app_process и строки в журнале на весь
+				 * ролик. Признак сбрасывается новым видео. */
+				if ((apply_rc == -2) && (plat->sink == SINK_VENDOR_MODE))
+				{
+					measure_failed = true;
+					trace (0, "вендорный SystemControl не применил режим — "
+					       "больше не пробую до конца видео\n");
+				}
+			}
+
+			if (apply_rc == 0)
 			{
 				cur_sf_id = want_sf_id;
 
@@ -3261,6 +3395,14 @@ static void cfg_audit_warn (const char *msg, void *ctx)
 int afrd_run ()
 {
 	g_plat = platform_detect ();
+
+	/* Платформа определяется здесь, а список режимов читается ещё в afrd_init
+	 * (там g_plat пуст) — и на вендорном пути он попадал из hdmi.sysfs, из-за
+	 * чего ключ vendor.disp.cap оставался мёртвым (нашло финальное ревью).
+	 * Перечитываем по ключу платформы: пока список ещё никем не использован,
+	 * это одна операция чтения. */
+	if (g_plat.sink == SINK_VENDOR_MODE)
+		modes_refresh_platform ();
 
 	/* switch.delay.off на новом пути значит другое (предел терпения к паузе,
 	 * см. pause.h) и имеет своё умолчание: конфиг читается в afrd_init до
@@ -3610,6 +3752,11 @@ int afrd_init ()
 	g_switch_delay_off = cfg_get_int ("switch.delay.off", DEFAULT_SWITCH_DELAY_OFF);
 	g_switch_delay_retry = cfg_get_int ("switch.delay.retry", DEFAULT_SWITCH_DELAY_RETRY);
 	g_switch_timeout = cfg_get_int ("switch.timeout", DEFAULT_SWITCH_TIMEOUT);
+
+	/* Тот же предел — на внешние команды демона (вендорный помощник, service
+	 * call): иначе зависший app_process остановил бы цикл целиком, и никакая
+	 * страховка переключения не сработала бы (финальное ревью). */
+	exec_set_timeout_ms (g_switch_timeout);
 	g_switch_blackout = cfg_get_int ("switch.blackout", DEFAULT_SWITCH_BLACKOUT);
 	g_switch_ignore = cfg_get_int ("switch.ignore", DEFAULT_SWITCH_IGNORE);
 	g_switch_hdmi = cfg_get_int ("switch.hdmi", DEFAULT_SWITCH_HDMI);

@@ -134,11 +134,14 @@
         <SwitchPreference android:defaultValue="1" android:key="fps_prefer_api"
                           android:summary="@string/prefsum_fps_prefer_api"
                           android:title="@string/prefs_fps_prefer_api"/>
-        <!-- Быстрое решение по заявленной частоте: на Android 10/11 включено по
-             умолчанию (так решает штатный системный AFR), на 12-14 — выключено.
-             Умолчание зависит от пути и задаётся в afrd_run; здесь значение по
-             умолчанию для показа, пока ключа нет в ini. -->
-        <SwitchPreference android:defaultValue="1" android:key="fps_declare_fast"
+        <!-- Быстрое решение по заявленной частоте: умолчание зависит от версии
+             Android (10/11 — включено, как у штатного системного AFR; 12-14 —
+             выключено). Проставить его правильно может только приложение
+             (знает версию), поэтому здесь безопасное значение 0, а на 10/11
+             приложение записывает 1 в ini и в свои настройки при первом запуске
+             (MainActivity.prepareConfig). Иначе XML-умолчание перебило бы
+             умолчание пути и включило быстрый путь на 12-14. -->
+        <SwitchPreference android:defaultValue="0" android:key="fps_declare_fast"
                           android:summary="@string/prefsum_fps_declare_fast"
                           android:title="@string/prefs_fps_declare_fast"/>
         <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="20000" android:key="fps_measure_envelope_ms"

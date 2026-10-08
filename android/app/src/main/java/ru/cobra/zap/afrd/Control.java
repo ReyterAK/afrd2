@@ -80,7 +80,7 @@ public class Control
      * Записать ключ в ini, заменив существующую строку (или добавив её в конец).
      * Нужно для vendor.disp.cli: путь к помощнику зависит от каталога приложения.
      */
-    private void setIniKey (String key, String value)
+    public void setIniKey (String key, String value)
     {
         try
         {
