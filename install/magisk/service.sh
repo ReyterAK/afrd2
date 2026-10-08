@@ -15,6 +15,19 @@ INI="$MODDIR/afrd.ini"
 # право явно, чтобы модуль работал независимо от того, что сделал установщик.
 chmod 755 "$BIN" 2>/dev/null
 
+# Вендорный помощник смены режима (Android 10/11, Amlogic): dex и обёртка лежат
+# в модуле, путь к обёртке указываем демону ключом vendor.disp.cli (он в профиле
+# может быть задан под другой каталог — правим). Без помощника демон на этих
+# версиях уходит в пассивный режим, поэтому отсутствие файлов — не ошибка.
+if [ -f "$MODDIR/afrd-disp.dex" ] && [ -f "$MODDIR/afrd-disp.sh" ]; then
+	chmod 755 "$MODDIR/afrd-disp.sh" 2>/dev/null
+	if grep -q '^vendor.disp.cli=' "$INI" 2>/dev/null; then
+		sed -i "s|^vendor.disp.cli=.*|vendor.disp.cli=$MODDIR/afrd-disp.sh|" "$INI"
+	else
+		echo "vendor.disp.cli=$MODDIR/afrd-disp.sh" >> "$INI"
+	fi
+fi
+
 if [ ! -x "$BIN" ]; then
 	echo "afrd2: нет исполняемого $BIN — модуль собран неверно" > /dev/kmsg 2>/dev/null || true
 	exit 1

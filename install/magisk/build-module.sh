@@ -28,6 +28,20 @@ cp "$BIN" "$OUT/afrd"
 cp "$INI" "$OUT/afrd.ini"
 chmod 755 "$OUT/service.sh" "$OUT/uninstall.sh" "$OUT/afrd"
 
+# Вендорный помощник смены режима (Android 10/11): dex и обёртка едут вместе с
+# модулем, service.sh раскладывает их и указывает путь в конфиге. Без него
+# демон на 10/11 честно уходит в пассивный режим, поэтому сборка модуля без
+# помощника — предупреждение, а не ошибка.
+DISP="$ROOT/tools/droidlogic"
+if [ -f "$DISP/afrd-disp.dex" ] && [ -f "$DISP/afrd-disp.sh" ]; then
+	cp "$DISP/afrd-disp.dex" "$OUT/afrd-disp.dex"
+	cp "$DISP/afrd-disp.sh" "$OUT/afrd-disp.sh"
+	chmod 755 "$OUT/afrd-disp.sh"
+else
+	echo "ВНИМАНИЕ: нет $DISP/afrd-disp.{dex,sh} — модуль без смены режима на Android 10/11" >&2
+	echo "           соберите dex: sh tools/droidlogic/build-dex.sh" >&2
+fi
+
 mkdir -p "$ROOT/out"
 rm -f "$ZIP"
 ( cd "$OUT" && zip -qr "$ZIP" . )
