@@ -16,6 +16,21 @@
 #   long_25          | 1080p50hz + activeMode=50.00 Hz | 1080p60hz + 59.94 Hz + backdoor=false
 #   long_50          | 1080p50hz + activeMode=50.00 Hz | 1080p60hz + 59.94 Hz + backdoor=false
 #
+# Это — новый путь (ATV14). Для старого пути (Android 6-9) эталон другой, и
+# вместо флага backdoor сверяется частота из /sys/class/display/vinfo:
+#
+#   клип             | во время видео     | после стопа
+#   long_24000_1001  | 1080p24hz + 23.97  | исходный режим + та же частота
+#   long_25          | 1080p50hz + 50.00  | исходный режим + та же частота
+#   long_50          | 1080p50hz + 50.00  | исходный режим + та же частота
+#   60 fps           | 1080p60hz + 59.94  | исходный режим + та же частота
+#
+# «Исходный режим» на старом стенде не жёсткий: он снимается до прогона (владелец
+# мог оставить любой). Эталоны переопределяются переменными LEGACY_EXP_24000,
+# LEGACY_EXP_25, LEGACY_EXP_50, LEGACY_EXP_60 в формате «режим|подстрока частоты».
+# Переменная PLAT=atv14|legacy|auto (по умолчанию auto — по узлам, как
+# platform_detect() в демоне) выбирает ветку.
+#
 # Режимы удержания подтверждены живым прогоном 2026-09-29 (полный прогон
 # `/tmp/afrd-acceptance-fix2.log`: OK=19 FAIL=0 SKIP=0). Для 25 fps тогда
 # ожидалось и наблюдалось 1080p25hz, потому что mode.prefer.exact на новом пути
@@ -69,6 +84,9 @@
 
 D=${ADB_DEV:-${D:-192.168.88.50:5555}}
 SDIR=$(cd "$(dirname "$0")" && pwd)
+# Путь демона: auto (по узлам, как platform_detect()), atv14 или legacy.
+# Для legacy идёт отдельная ветка с эталонами старого пути (см. ниже).
+PLAT=${PLAT:-auto}
 CLIP_DIR=${CLIP_DIR:-/sdcard/Download/afr}
 CLIPS=${CLIPS:-"long_24000_1001 long_25 long_50"}
 ORIG_MODE=${ORIG_MODE:-1080p60hz}
@@ -203,6 +221,123 @@ fi
 # Состав клипов не выдумываем — печатаем то, что реально лежит на устройстве.
 echo "клипы на устройстве ($CLIP_DIR):"
 adb -s "$D" shell "ls -l $CLIP_DIR 2>&1" | tr -d '\r'
+
+# ---- Определение пути демона (то же правило, что platform_detect()) ----
+# Новый путь (ATV14) переключает режим backdoor-транзакцией SurfaceFlinger, и
+# вердикты ниже опираются на флаг debugDisplayModeSetByBackdoor. На старых
+# Android (6-9) режим пишется в /sys/class/display/mode, флага нет, а фактическую
+# частоту даёт /sys/class/display/vinfo. Поэтому для старого пути идёт отдельная,
+# самодостаточная ветка (ниже), а поток ATV14 не меняется.
+if [ "$PLAT" = auto ]; then
+	if adb -s "$D" shell '[ -e /sys/class/switch/hdmi/cable.0/state ] || [ -e /sys/class/switch/hdmi/state ]' >/dev/null 2>&1; then
+		PLAT=legacy
+	else
+		PLAT=atv14
+	fi
+fi
+echo "путь демона: $PLAT"
+
+if [ "$PLAT" = legacy ]; then
+	# Эталон старого пути (живой прогон 2026-10-08 на ATV9 .76, журнал §33.2):
+	# 23.976 fps -> 1080p24hz, 25/50 fps -> 1080p50hz (удвоение 2:1 при
+	# mode.prefer.exact=0), 60 fps -> 1080p60hz; на стопе возврат в исходный
+	# режим. Формат ожидания — «режим|подстрока частоты из vinfo».
+	LEGACY_EXP_24000=${LEGACY_EXP_24000:-1080p24hz|23.97}
+	LEGACY_EXP_25=${LEGACY_EXP_25:-1080p50hz|50.00}
+	LEGACY_EXP_50=${LEGACY_EXP_50:-1080p50hz|50.00}
+	LEGACY_EXP_60=${LEGACY_EXP_60:-1080p60hz|59.94}
+
+	# Возврат — в тот режим, что стоял до прогона (не жёстко 1080p60hz: на
+	# старом стенде исходный режим задаёт владелец). Снимок берём здесь же:
+	# ATV14-код ниже (mode0/snap0/hz0) в этой ветке не выполняется.
+	mode0=$(adb -s "$D" shell 'cat /sys/class/display/mode' | tr -d '\r')
+	echo "режим до прогона: ${mode0:-<не прочитан>}"
+	snap0=$(snap)
+	hz0=$(fld "$snap0" 3)
+	echo "снимок до прогона: ${snap0:-<пустой снимок>}"
+	ORIG_MODE=$mode0
+
+	for clip in $CLIPS; do
+		echo
+		echo "=== $clip"
+
+		case "$clip" in
+			*23976*|*24000*) exp="$LEGACY_EXP_24000" ;;
+			*_25)            exp="$LEGACY_EXP_25" ;;
+			*_50)            exp="$LEGACY_EXP_50" ;;
+			*60)             exp="$LEGACY_EXP_60" ;;
+			*)               exp= ;;
+		esac
+		exp_mode=${exp%%|*}
+		exp_rate=${exp#*|}
+
+		if ! sh "$SDIR/play_clip.sh" start "$clip"; then
+			skip "$clip: не запущен (нет клипа или ошибка adb) — проверка не выполнена"
+			continue
+		fi
+
+		sleep "$HOLD_WAIT"
+		hold=$(snap)
+		echo "в удержании: ${hold:-<пустой снимок>}"
+
+		if ! snap_ok "$hold"; then
+			skip "$clip: снимок удержания не снят — вердикт не выносится"
+		elif [ -z "$exp_mode" ]; then
+			skip "$clip: эталона в плане нет — вердикт не выносится (снимок выше)"
+		else
+			m=$(fld "$hold" 1)
+			r=$(fld "$hold" 3)
+			if [ "$m" = "$exp_mode" ]; then
+				ok "$clip: режим удержания $m"
+			else
+				fail "$clip: режим удержания $m, ожидался $exp_mode"
+			fi
+			if printf '%s' "$r" | grep -q "$exp_rate"; then
+				ok "$clip: частота режима = $r"
+			else
+				fail "$clip: частота режима = $r, ожидалась $exp_rate"
+			fi
+		fi
+
+		sh "$SDIR/play_clip.sh" stop
+		if ! decoder_idle; then
+			skip "$clip: после стопа декодер занят — вердикт по возврату не выносится"
+			continue
+		fi
+		sleep "$STOP_WAIT"
+		after=$(snap)
+		echo "после стопа: ${after:-<пустой снимок>}"
+
+		if ! snap_ok "$after"; then
+			skip "$clip: снимок после стопа не снят — вердикт не выносится"
+		else
+			m=$(fld "$after" 1)
+			r=$(fld "$after" 3)
+			if [ "$m" = "$ORIG_MODE" ]; then
+				ok "$clip: возврат в $ORIG_MODE"
+			else
+				fail "$clip: после стопа режим $m, ожидался $ORIG_MODE"
+			fi
+			if [ "$r" = "$hz0" ]; then
+				ok "$clip: возврат в ту же частоту ($r)"
+			else
+				fail "$clip: после стопа частота $r, до прогона была $hz0"
+			fi
+		fi
+	done
+
+	echo
+	echo "== итог: OK=$oks FAIL=$fails SKIP=$skips =="
+	echo "старый путь (Android 6-9): эталон 23.976->1080p24hz, 25/50->1080p50hz, 60->1080p60hz;"
+	echo "возврат в исходный режим; частота — из /sys/class/display/vinfo."
+
+	[ "$fails" = 0 ] || exit 1
+	if [ "$oks" = 0 ]; then
+		echo "ни одна проверка не выполнена (одни SKIP) — результат не получен" >&2
+		exit 2
+	fi
+	exit 0
+fi
 
 mode0=$(adb -s "$D" shell 'cat /sys/class/display/mode' | tr -d '\r')
 echo "режим до прогона: $mode0"
