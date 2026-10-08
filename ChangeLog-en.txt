@@ -1,240 +1,80 @@
-AFRd2 — a fork of AFRd (original by Andrey Zabolotnyi, anpaza @ 4pda)
+AFRd2 — a fork of AFRd (based on AFRd 0.3.2 by Andrey Zabolotnyi,
+anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
-  * Applications picker screen in the GUI: switch.skip.pkg and
-    fps.correct.av1.pkg are set by picking installed applications instead of
-    typing — the "Video players only" filter (clear it to see every installed
-    application), already selected packages are always visible;
-    fps.correct.av1.pkg uses the same screen in single-choice mode. Settings
-    that do not work on Android 6-9 (fps.correct.*) are now marked in the GUI
-    as "(does not work on Android 6-9)" — as keys that have no effect on
-    Android 10-14 were marked before.
+1.0.0 Thu Oct 08 2026
 
-  * switch.skip.pkg and mode.min.hz.list also act on the old path (Android 6-9):
-    the foreground app package is resolved by the common activity dump parser,
-    the gate stands at both mode switching decision points.
+    First public build of the fork. Below are the differences from AFRd 0.3.2;
+    later versions get ordinary change entries.
 
-  * mode.min.hz.list is now set from the application: the "Minimum display rate
-    per player" row opens the application list, and the rate (Hz) is typed in
-    the same row — entering a package name with the remote is no longer needed.
-    The daemon validates exactly what it did before (range 1…1000, no more than
-    eight entries) and the application refuses to add a ninth one. The value is
-    kept in the application settings, so it survives an APK update, which
-    overwrites the profile from resources — while the commented example in the
-    profile and a hand-written value are preserved: a non-empty profile value is
-    imported into the application settings.
+    Android 12-14 (kernel 5.x) — the new code path:
 
-  * The "Color space selection rules" row (cs.select) works on Android 10-14
-    again: it was marked as inactive in the GUI although cs.select rules are
-    applied there too (through the vendor service). GUI markings are now checked
-    against the daemon's key table by a host test, so such a drift can no longer
-    pass silently.
+    * The HDMI mode is switched by the stock SurfaceFlinger mechanism, so it stays
+      in sync with the system: video and UI never disagree. On firmware without
+      that mechanism (including Android 10 and 11, where the service call is taken
+      by a different operation) the daemon says so in the log and leaves the
+      system alone.
 
-  * Dormant settings rows now work: fps.measure.envelope.early.ms and
-    fps.cadence.fix.ms were present in the GUI but the application never copied
-    them into the config, so editing those fields did nothing (the "Early
-    decision, ms" row showed 12000 while the daemon read the profile's 14000).
-    The "GUI row ↔ application key set" drift is now checked by a host test, the
-    same way the "does not work" markers are.
+    * The frame rate is measured from the decoder frame counter using the lower
+      envelope of observation sub-windows rather than a single window, so short
+      spikes and repeated frames do not spoil the decision. If the player reports
+      the rate itself (frame_rate_hint), its value wins.
 
-  * Excess mode.min.hz.list entries are trimmed with a message: the daemon keeps
-    at most eight entries, and when a value has more (for instance after a manual
-    profile edit) the extra ones are dropped with a warning instead of silently.
+    * Mode behaviour is configurable: on pause the mode is held by default, on
+      video stop the original mode is restored (both are switchable). Pause
+      patience is set separately (switch.delay.off): by default the mode is held
+      until the pause ends; with a non-zero value a long pause counts as the end
+      of the video, the original mode is restored, and on resume the held mode
+      comes back without a new measurement. This is the only way to tell a pause
+      from a stopped video with the player still on screen: the system does not
+      distinguish them.
 
-  * Package names longer than 63 bytes are no longer truncated: the daemon's
-    buffers were 64 bytes while the system accepts much longer names (verified by
-    installing a package with a 171-character name), so settings for a player
-    with a long name (mode.min.hz.list, fps.correct.*, the player blacklist)
-    silently did nothing. The size is now the shared PKG_NAME_LEN; a name longer
-    than the limit cannot be added in the application.
+    * The daemon verifies that frames actually reach the screen and fixes
+      "half-rate" output; it also logs the case where the player itself sets the
+      pace (AFR gets in the way of such a player — see below).
 
-  * fps.correct.list is set by picking applications: the "Corrections (package=percent)"
-    row opens the list of players, and the correction is typed in the row's dialog
-    (negative means the player under-reports the rate). Zero is rejected, the range
-    matches the daemon, and the package name is no longer typed with the remote.
+    * Player exit and a stuck decoder channel are detected: the mode is not left
+      behind when the video ends or the app leaves the screen.
 
-0.3.3 Fri Oct 02 22:45:00 MSK 2026
+    * Colour space rules (cs.select) apply here too, through the vendor service.
+      HDR/SDR attributes are read and shown but never changed: the system and the
+      player own them.
 
-    A caveat for switch.skip.pkg: for an excluded player the display mode is chosen
-    by the system itself, so that mode must not be lower than the content rate. On
-    the test panel the EDID prefers 50 Hz and the "user preferred" setting still
-    held 50 Hz (leftovers from earlier experiments), so the exclusion initially
-    produced 30 Hz and a 24 fps video ran at an uneven 1.25 periods. The cure is to
-    set the mode explicitly: `cmd display set-user-preferred-display-mode 1920 1080 60`
-    (after that both 24 and 25 fps videos play evenly at their own rate on a 60 Hz
-    display). README limitation 8 updated with the caveat.
+    * The app watches the daemon and restarts it if it stops. If the daemon died
+      while holding a mode (crash, force stop), the restarted daemon restores the
+      original mode: otherwise the launcher would stay in a low refresh rate until
+      reboot — SurfaceFlinger does not reset the mode itself, and the service flag
+      is cleared by the system within seconds.
 
-0.3.3 Fri Oct 02 22:30:00 MSK 2026
+    Android 6-9 — the previous AFRd behaviour; shared settings were ported:
 
-    New key switch.skip.pkg — players that AFR gets in the way of. For them the
-    daemon measures the rate and logs everything, but never switches or holds the
-    display mode (nor honours their frame rate hint). The stock YouTube is in the
-    list by default.
+    * "Players AFR gets in the way of" (switch.skip.pkg): for the selected players
+      the daemon measures the rate and logs everything but does not switch the
+      mode. Such players fix their render pace at clip start, and a mode held from
+      the previous clip throttles the next one — which broke clip browsing. The
+      stock YouTube is in the list by default.
 
-    Reason: the player picks its render cadence at video start from the then-current
-    display mode and never recovers (30 fps under 24 Hz -> 24.2 fps, 60 fps under
-    50 Hz -> 50.3 fps), so a mode held from the previous video clamped the next one
-    — and that is the main scenario, browsing videos. With a display the daemon
-    leaves alone (usually 60 Hz) clamping is impossible in principle, and the player
-    itself lays 24/25/30/60 fps out on the 60 Hz grid. As a side effect this player
-    sees no screen blinking and pause.keep/switch.restore.on.stop do not apply
-    (there is nothing to hold).
+    * "Minimum mode rate for players" (mode.min.hz.list): modes below the given
+      rate are not chosen for those players.
 
-    mode.min.hz.list remains a tool for other clamping players (YouTube removed
-    from it).
+    App:
 
-0.3.3 Fri Oct 02 22:05:00 MSK 2026
+    * Name AFRd2, package ru.reyter.afrd2.
 
-    The "residual" clamping case was checked and turned out to be systematic rather
-    than one-off: a 60 fps video started while a 50 Hz mode is held (i.e. right after
-    a 25 or 50 fps video in the same player) is clamped to 50 fps (live measurement:
-    50.35 fps with the display at 60 Hz) and does not recover by itself. Re-opening
-    the video helps: afterwards 59.94 fps with all intervals at 16.7 ms.
+    * Players are picked from the list of installed apps — the package name is no
+      longer typed with the remote; per-player rate corrections are set there too.
 
-    The daemon now names this case in the log: the cadence check threshold was
-    lowered from 1.25 to 1.125 (this case — 1.18 — used to pass as "подача в
-    порядке"). README limitation 8 updated.
+    * Settings that do not apply on the current Android version are marked in the
+      app, and the daemon names them in the log at startup.
 
-0.3.3 Fri Oct 02 21:50:00 MSK 2026
+    * The configuration is re-read without stopping the daemon (reconf), so
+      settings apply without a restart.
 
-    Refined the mode.min.hz.list rule: when there is no clean multiple for the
-    content rate, the fastest available mode is taken instead of the one closest to
-    the double. Verified live: 23.976/24 fps -> 60 Hz (at 50 Hz the hiccups are rare
-    but 20 ms long, at 60 Hz the 3:2 pattern spreads them over 8 ms; the owner
-    compared visually and chose 60), 25 fps -> 50 Hz (a clean multiple), 29.97/30
-    fps -> 59.94 Hz.
+    Installation: the application (APK) or a Magisk module to run without the app
+    (it has no interface — settings are edited in a file). Only one of the two at
+    a time.
 
-    The source of the video on which the owner saw residual unevenness was checked
-    separately: CFR 30 fps without duplicates (599 frames, all intervals 33.3 ms),
-    i.e. the unevenness was on the submission side and went away after restarting
-    the video — a fresh start at 60 Hz gives an even 33.4 ms.
+    Known limitations (by design) — see README: the daemon changes the frame rate
+    only, never resolution or HDCP, does not manage HDR, and does not blank the
+    screen while switching.
 
-0.3.3 Fri Oct 02 21:35:00 MSK 2026
-
-    New key mode.min.hz.list ("package=Hz"): for the listed players the daemon does
-    not choose modes below the given rate. This cures a "stuck render cadence": a
-    player picks its render cadence at video start from the then-current display
-    mode and never raises it (verified live on the stock YouTube TV: a 30 fps video
-    started under a 24 Hz mode kept running at 24 fps; only restarting the video or
-    the player helps). The default is com.google.android.youtube.tv=50: 24 fps
-    videos on YouTube are shown at 50 Hz (mild 2:2.08 instead of an ideal 1:1), but
-    30/60 fps videos after them are no longer clamped. List format is the same as
-    fps.correct.list.
-
-0.3.3 Fri Oct 02 21:10:00 MSK 2026
-
-    The log now recognises "uneven frame submission". Previously the post-switch
-    cadence check only complained about "exactly twice as slow" (a display-side
-    half-rate defect), while a player submitting frames slower on its own — for
-    example, one that picked its render cadence at video start and never raises it —
-    was reported as "подача в порядке". Now, when the mean interval deviates by more
-    than 25 % (and is not exactly twice), a line "подача неровная: X ms at period
-    Y ms, expectation Z ms" is written. The cause was found live on the stock
-    YouTube TV: a 30 fps video started under a 24 Hz mode stays at 24 fps even after
-    the display is raised to 60 Hz (only restarting the video helps). A limitation
-    note was added to the README.
-
-0.3.3 Fri Oct 02 20:05:00 MSK 2026
-
-    The AV1 correction is enabled with the value 0.1 — the largest one at which no
-    25 fps clip is pushed into 24 Hz. Tuned on live recordings (13 YouTube clips,
-    the same statistic the daemon uses — lower envelope): without the correction
-    "24 correct / 25 correct" = 5/7 and 6/6; at 0.1 — 6/7 and 6/6; at 0.3 — 6/7
-    and 5/6 (a genuine 25 fps clip lands in 24 Hz); at 0.5 — 7/7 and 4/6. In the
-    application: "Apply player calibration" is on, "AV1 correction" = 0.1.
-
-    No value gives a "100 %" guarantee: on a 65-clip control sample two genuine
-    25 fps clips measured below the class boundary with no correction at all (the
-    envelope is biased downwards), and the spread within a single playback reaches
-    ±0.5 frames/s.
-
-0.3.3 Fri Oct 02 19:45:00 MSK 2026
-
-    The AV1 correction (fps.correct.*) is now off by default. The owner compared on
-    a TV (all picture "enhancers" disabled): 24 fps video in a 25 Hz mode looks
-    noticeably better than 25 fps in a 24 Hz mode. The correction moves the
-    measurement downwards, i.e. can produce exactly the worse side, while its gain
-    is small and does not reproduce from run to run. The keys remain — enable them
-    deliberately, for a specific player or decoder path.
-
-    Application settings now take effect immediately: after the config is written
-    the daemon is woken up, so the "enable automatic frame rate matching" switch
-    (and the notification "AFR on/off" action) apply within ~5 seconds, without
-    restarting the daemon. Previously turning it off had no effect until the daemon
-    was restarted.
-
-0.3.3 Fri Oct 02 19:00:00 MSK 2026
-
-    Display attributes (HDR Mode, HDR Policy, HDR Priority, SDR Mode, FORCE HDR
-    Mode) are read from the built-in service and shown in the log (with -v) and
-    in the API status reply. The daemon only reads them: HDR/SDR modes are still
-    chosen by the system and the player.
-
-    A memory leak on config reload is fixed: the pointer array of the string
-    lists (decoder blacklists) was not freed.
-
-0.3.3 Fri Oct 02 18:20:00 MSK 2026
-
-    Fixed a daemon crash on config reload (the reconf command or editing
-    afrd.ini): the freed pointer to the current color space was not cleared, so
-    the next initialization freed the same memory again (double free, heap
-    corruption). It took two reloads in a row — reproduced live on ATV14. The
-    file-change check on the legacy path now uses the shared function (one rule
-    instead of two copies).
-
-0.3.3 Fri Oct 02 18:10:00 MSK 2026
-
-    Config reload (the reconf API command or editing afrd.ini) now works on
-    Android 10-14 too. Previously the new path read the keys once on entry, and
-    the daemon had to be restarted after editing the file.
-
-    The daemon notices the file change and the reconf command, restores the
-    original mode, releases the mode-switch flag, re-reads the config and keeps
-    running — without restarting the process and without interrupting the API.
-
-0.3.3 Fri Oct 02 18:00:00 MSK 2026
-
-    The daemon no longer gets stuck on decoder leftovers and can detect the rate
-    when the frame counter is silent; color space settings are applied on
-    Android 10-14 again.
-
-    If the player is closed but a decoder instance remains (the frame counter
-    stands still), the daemon notices that the application has left the
-    foreground and releases the mode hold — previously the mode stayed with the
-    mode-switch flag set until a reboot.
-
-    When the decoder frame counter is silent but the picture is running, the rate
-    is taken from video layer submission — a source that does not depend on the
-    counter.
-
-    The color space (cs.select rules) is applied on Android 10-14 as well: the
-    value is set through the built-in service after a mode switch.
-
-0.3.3 Fri Oct 02 12:00:00 MSK 2026
-
-    The application and the daemon are now called AFRd2.
-
-    Previously the mode was switched only after twenty seconds of observation. Now,
-    when two independent rate measurements agree, the switch happens earlier.
-
-    After switching, the daemon checks that frames really reach the display and, on
-    a "half rate" picture (video looks like thirteen frames per second), switches
-    the mode once more.
-
-    If the daemon stops working, the application starts it again; the stuck
-    mode-switch flag is released, and applications with their own frame rate
-    matching can change the mode again.
-
-    The active decoder channel is chosen by the growing frame counter, so a stuck
-    channel no longer prevents rate detection.
-
-0.3.2 Tue Sep 29 2026
-
-    AFRd was forked: support for Android 10-14 added, the old path (Android 6-9)
-    is unchanged.
-
-    On newer kernels the decoder does not report video start and stop, so the
-    daemon polls the decoder state itself and switches the mode through the stock
-    SurfaceFlinger mechanism.
-
-    The rate is detected from the decoder frame counter (lower envelope over
-    sub-windows), with a correction for AV1.
+The original AFRd and its version history — github.com/anpaza/afrd.
