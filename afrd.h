@@ -104,6 +104,9 @@ extern const char *g_mode_path;
 // путь к вендорному помощнику смены режима (Android 10/11, Amlogic):
 // app_process + dex, метод setActiveDispMode(<имя режима>) — см. tools/droidlogic
 extern const char *g_vendor_disp_cli;
+// быстрое решение по заявленной частоте кадра (fps.declare.fast): 1 — применить
+// режим сразу по заявленной частоте и проверить замером, 0 — решать по замеру
+extern int g_fps_declare_fast;
 
 // the list of supported video modes
 extern display_mode_t *g_modes;

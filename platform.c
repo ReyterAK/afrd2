@@ -13,6 +13,10 @@
 /* Вендорский клиент SystemControl: через него на Android 10-14 применяется
  * цветовое пространство (sysfs-узел attr там только на чтение). */
 #define CS_CLI			"/vendor/bin/meson_display_client"
+/* Признаки вендорного механизма смены режима (Android 10/11, Amlogic): сам
+ * сервис и apk с классами HIDL-прокси (его читает помощник через app_process). */
+#define VENDOR_SYSTEMCONTROL	"/vendor/bin/systemcontrol"
+#define VENDOR_DROIDLOGIC_RES	"/system_ext/priv-app/droidlogic-res/droidlogic-res.apk"
 /* Вывод `dumpsys activity activities` нужен только одной строкой: приложение на
  * переднем плане. Поле называется по-разному — "topResumedActivity=..." (Android
  * 10-14) и "ResumedActivity: ..." (Android 6-9), но подстрока "ResumedActivity"
@@ -80,6 +84,24 @@ platform_t platform_detect (void)
 		/* Вендорский клиент нужен и для цветового пространства, и для чтения
 		 * HDR/SDR-атрибутов (hdrinfo). */
 		p.vendor_cli = (access (CS_CLI, X_OK) == 0) ? CS_CLI : NULL;
+		p.vendor_mode_cli = cfg_get_str ("vendor.disp.cli", DEFAULT_VENDOR_DISP_CLI);
+		p.disp_cap = cfg_get_str ("vendor.disp.cap", DEFAULT_VENDOR_DISP_CAP);
+
+		/* Android 10/11 (Amlogic): транзакция 1035 там означает другую
+		 * операцию, и на сборке 11 вызов с одним int роняет SurfaceFlinger
+		 * (проверено живьём). Но режим переключается вендорным SystemControl
+		 * HIDL — им пользуется штатный системный AFR (журнал §33.18). Идём
+		 * этим путём только если помощник и вендорный сервис на месте; иначе
+		 * остаётся прежний пассивный режим с предупреждением. */
+		if (!p.sf_backdoor &&
+		    (sysfs_exists (VENDOR_SYSTEMCONTROL) == 0) &&
+		    (sysfs_exists (VENDOR_DROIDLOGIC_RES) == 0) &&
+		    p.vendor_mode_cli && (sysfs_exists (p.vendor_mode_cli) == 0))
+		{
+			p.kind = PLAT_ATV11;
+			p.sink = SINK_VENDOR_MODE;
+			trace (1, "режим задаётся вендорным SystemControl (%s)\n", p.vendor_mode_cli);
+		}
 	}
 	else
 	{
@@ -91,8 +113,10 @@ platform_t platform_detect (void)
 	}
 
 	trace (1, "Окружение: %s (sink=%s, backdoor=%s)\n",
-	       (p.kind == PLAT_ATV14) ? "ATV14" : "legacy",
-	       (p.sink == SINK_SF_BACKDOOR) ? "sf-1035" : "sysfs",
+	       (p.kind == PLAT_LEGACY) ? "legacy" :
+	       (p.kind == PLAT_ATV11) ? "ATV11" : "ATV14",
+	       (p.sink == SINK_SF_BACKDOOR) ? "sf-1035" :
+	       (p.sink == SINK_VENDOR_MODE) ? "vendor-mode" : "sysfs",
 	       p.sf_backdoor ? "да" : "нет");
 
 	if (p.kind == PLAT_ATV14 && !p.sf_backdoor)

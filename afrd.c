@@ -48,6 +48,9 @@
 const char *g_hdmi_dev = NULL;
 const char *g_mode_path = NULL;
 const char *g_vendor_disp_cli = NULL;
+/* Быстрое решение по заявленной частоте кадра (fps.declare.fast): заполняется
+ * в afrd_run — умолчание зависит от пути (на Android 10/11 включено). */
+int g_fps_declare_fast = 0;
 
 static const char *g_hdmi_state = NULL;
 static int g_uevent_sock = -1;
@@ -2023,8 +2026,10 @@ static int run_atv14 (const platform_t *plat)
 	/* Backdoor недоступен — переключать режимы нечем. Пассивный режим
 	 * (спека §3.2.6): ни одного sink_apply, только обслуживание API, чтобы
 	 * работали frame_rate_hint и afrd -s. Перезагрузка конфига работает и
-	 * здесь: enable=0 снимается правкой файла, без перезапуска процесса. */
-	if (!plat->sf_backdoor)
+	 * здесь: enable=0 снимается правкой файла, без перезапуска процесса.
+	 * Только для ATV14: на ATV11 (Android 10/11) переключаем вендорным
+	 * SystemControl, там пассивный режим не нужен (см. platform_detect). */
+	if ((plat->kind == PLAT_ATV14) && !plat->sf_backdoor)
 	{
 		trace (0, "backdoor SurfaceFlinger недоступен — пассивный режим\n");
 		atv14_stats_sync_passive (plat);
@@ -3132,21 +3137,40 @@ int afrd_run ()
 	 * см. pause.h) и имеет своё умолчание: конфиг читается в afrd_init до
 	 * определения платформы, поэтому уточняем значение здесь. Явно заданный
 	 * ключ не трогаем — на этой ветке важно лишь то, чего в файле нет. */
-	if ((g_plat.kind == PLAT_ATV14) && !cfg_get (g_cfg, "switch.delay.off"))
+	if ((g_plat.kind != PLAT_LEGACY) && !cfg_get (g_cfg, "switch.delay.off"))
 	{
 		g_switch_delay_off = DEFAULT_SWITCH_DELAY_OFF_ATV14;
 		trace (1, "switch.delay.off не задан — на новом пути беру умолчание %d мс "
 		       "(предел удержания режима на паузе)\n", g_switch_delay_off);
 	}
 
+	/* Быстрое решение по заявленной частоте кадра: умолчание зависит от пути.
+	 * На Android 10/11 включено (так решает штатный системный AFR — отсюда его
+	 * 2–4 с), на ATV14 выключено: путь проверен живьём, а быстрое решение
+	 * меняет поведение, поэтому включается осознанно. Явно заданный ключ не
+	 * трогаем — важно лишь то, чего в файле нет. */
+	{
+		int def = (g_plat.kind == PLAT_ATV11) ? DEFAULT_FPS_DECLARE_FAST_ATV11
+		                                      : DEFAULT_FPS_DECLARE_FAST_ATV14;
+		if (cfg_get (g_cfg, "fps.declare.fast"))
+			g_fps_declare_fast = cfg_get_int ("fps.declare.fast", def);
+		else
+		{
+			g_fps_declare_fast = def;
+			if (def)
+				trace (1, "fps.declare.fast не задан — на этом пути беру %d "
+				       "(быстрое решение по заявленной частоте)\n", def);
+		}
+	}
+
 	/* «Громкие ключи»: настройка, которая на выбранном пути не действует,
 	 * должна быть названа в логе, а не молча проигнорирована (именно так
 	 * потерялось удвоение частоты, mode.prefer.exact). */
 	cfgkeys_audit (g_config,
-	               (g_plat.kind == PLAT_ATV14) ? CFGKEY_ATV14 : CFGKEY_LEGACY,
+	               (g_plat.kind == PLAT_LEGACY) ? CFGKEY_LEGACY : CFGKEY_ATV14,
 	               cfg_audit_warn, NULL);
 
-	if (g_plat.kind == PLAT_ATV14)
+	if (g_plat.kind != PLAT_LEGACY)
 	{
 		/* mtime нужен и ATV14-циклу: по нему ловится правка файла конфига
 		 * (legacy-ветка ставит его ниже, в своём блоке). */
