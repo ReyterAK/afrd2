@@ -66,7 +66,7 @@
         be determined
     </string>
     <string name="prefs_switch_timeout">Frame rate wait timeout</string>
-    <string name="prefsum_switch_timeout">How long the daemon waits before giving up.\n\nAndroid 6-9: if the frame rate is still undetermined after this time, detection is abandoned.\n\nAndroid 12-14: how long to wait for decoder data while a mode is already held — if vdec_status cannot be read for longer than this, the mode is restored and the switch flag is cleared (otherwise the mode would stick until reboot). The same value sets the threshold for the series-of-read-failures message (the value divided by the decoder poll period). Frame rate detection itself is configured by "Observation before switching" and "Measurement attempts".</string>
+    <string name="prefsum_switch_timeout">How long the daemon waits before giving up.\n\nAndroid 6-9: if the frame rate is not determined within this time, detection stops.\n\nAndroid 12-14: how long to wait for decoder data while the mode is held, otherwise it stays stuck until reboot.</string>
     <string name="prefs_switch_blackout">Screen off delay</string>
     <string name="prefsum_switch_blackout">The delay in ms to turn display off after movie starts.
         Set to 0 to disable this feature

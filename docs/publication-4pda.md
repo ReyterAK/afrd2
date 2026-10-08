@@ -139,7 +139,7 @@ adb shell 'cat /sys/class/vdec/vdec_status'               # состояние �
 
 | файл | MD5 |
 |---|---|
-| APK `1.0.0` | `4a65e2220e34f1a813675e006b258ff0` |
+| APK `1.0.0` | `36298c5c7c9a1e0738a1806d61b13646` |
 | модуль `1.0.0`, `armeabi-v7a` | `7647187de5bfd21267658db6374d558a` |
 | модуль `1.0.0`, `arm64-v8a` | `3a00ebe7de8feff54b2a4d8ebc81acb4` |
 
