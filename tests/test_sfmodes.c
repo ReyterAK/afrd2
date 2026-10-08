@@ -48,7 +48,7 @@ static void test_synthetic (void)
 /* Живой дамп стенда ATV14 (Amlogic S905X5M, Android 14), снятый ровно той
  * командой, что стоит в platform.sf_dump_cmd:
  *   adb -s 192.168.88.50:5555 shell \
- *     "dumpsys SurfaceFlinger | grep -E 'activeMode=|^ *[{]id='"
+ *     "dumpsys SurfaceFlinger | grep -E 'activeMode=|refresh-rate|^ *[{]id='"
  * Именно её результат обязан разбираться: полный `dumpsys SurfaceFlinger` на
  * стенде — ~150 КБ, то есть больше буфера захвата (64 КБ), и таблица режимов
  * в него не влезала (живая приёмка ловила «режимов SurfaceFlinger: 0»).
@@ -243,6 +243,38 @@ static void test_restore_target (void)
 	assert (sfmodes_restore_target (sf, 0, -1, -1) == -1);
 }
 
+/* Частота активного режима и таблица на Android 10/11.
+ *
+ * Дампы 10/11 в привычном формате не отдают ничего: строки «activeMode=» там нет,
+ * а таблица режимов — не «{id=…}», а таблица коннектора
+ * («CONFIG | name | VSYNC_PERIOD | WIDTH | HEIGHT»), которую sfmodes_parse не
+ * разбирает. Фикстура — ровно то, что даёт штатный фильтр демона на Android 11
+ * (живой стенд 192.168.88.45, 2026-10-08): одна строка refresh-rate.
+ *
+ * Проверяем главное для пассивного режима: частоту активного режима читаем (для
+ * статистики API — иначе GUI показывал «демон выключен», живая находка), а
+ * разбора таблицы не ждём и не выдумываем. */
+static void test_android11 (void)
+{
+	static char buf [65536];
+	read_file ("tests/fixtures/sf_modes_android11.txt", buf, sizeof (buf));
+
+	/* 59.940061 fps -> 15345 (59.94 * 256 + 0.5) — как activeMode на ATV14 */
+	assert (sfmodes_active_hz (buf) == 15345);
+
+	sf_mode_t modes [SF_MODE_MAX];
+	assert (sfmodes_parse (buf, modes, SF_MODE_MAX) == 0);
+
+	/* На ATV14-фикстуре частота берётся из activeMode=59.94 Hz — тот же код */
+	static char live [65536];
+	read_file ("tests/fixtures/sf_modes_live.txt", live, sizeof (live));
+	assert (sfmodes_active_hz (live) == 15345);
+
+	/* Ни того, ни другого в дампе нет -> -1, а не мусорная частота */
+	assert (sfmodes_active_hz ("") == -1);
+	assert (sfmodes_active_hz (NULL) == -1);
+}
+
 int main (void)
 {
 	test_synthetic ();
@@ -250,6 +282,7 @@ int main (void)
 	test_select_synthetic ();
 	test_select_live ();
 	test_restore_target ();
+	test_android11 ();
 
 	printf ("sfmodes: OK\n");
 	return 0;

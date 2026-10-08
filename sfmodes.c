@@ -50,6 +50,38 @@ int sfmodes_parse (const char *dump, sf_mode_t *out, int max)
 	return n;
 }
 
+int sfmodes_active_hz (const char *dump)
+{
+	if (!dump)
+		return -1;
+
+	/* Android 12-14 (AOSP): «activeMode=59.94 Hz» */
+	const char *p = strstr (dump, "activeMode=");
+	if (p)
+	{
+		double hz = atof (p + strlen ("activeMode="));
+		if (hz > 0)
+			return (int)(hz * 256.0 + 0.5);
+	}
+
+	/* Android 10/11 (Amlogic): «refresh-rate              : 59.940061 fps».
+	 * Строки activeMode в этих дампах нет вовсе, а частота активного режима
+	 * нужна статистике (пассивный режим: переключать нечем). */
+	p = strstr (dump, "refresh-rate");
+	if (p)
+	{
+		const char *colon = strchr (p, ':');
+		if (colon)
+		{
+			double hz = atof (colon + 1);
+			if (hz > 0)
+				return (int)(hz * 256.0 + 0.5);
+		}
+	}
+
+	return -1;
+}
+
 int sfmodes_find (const sf_mode_t *modes, int n, int hz, int width, int height)
 {
 	int best = -1, best_d = 1 << 30;

@@ -1424,11 +1424,18 @@ static void sf_modes_refresh (const platform_t *plat)
 
 	g_sf_modes_n = sfmodes_parse (dump, g_sf_modes, SF_MODE_MAX);
 	if (g_sf_modes_n <= 0)
-		/* Уровень 0 — иначе ровно этот случай (дамп усечён >64 КБ или
-		 * команда ничего не вернула) оставался только в stdout и AFR
-		 * молча не переключал (живая приёмка ATV14). */
-		trace (0, "таблица режимов SurfaceFlinger не разобрана (пусто/усечён дамп: %d байт?)\n",
-		       (int) strlen (dump));
+	{
+		/* Различаем «дамп пуст/усечён» и «дамп в формате другой версии
+		 * Android»: на 10/11 нет ни activeMode, ни строк {id=…}, и прежнее
+		 * сообщение про «0 байт» путало (живой случай 2026-10-08). Уровень 0
+		 * — иначе AFR молча не переключал бы. */
+		if (strstr (dump, "refresh-rate") && !strstr (dump, "{id="))
+			trace (0, "режимов SurfaceFlinger нет: дамп в формате Android 10/11"
+			       " (нет activeMode) — переключать режимы нечем\n");
+		else
+			trace (0, "таблица режимов SurfaceFlinger не разобрана"
+			       " (пусто/усечён дамп: %d байт?)\n", (int) strlen (dump));
+	}
 	trace (1, "режимов SurfaceFlinger: %d\n", g_sf_modes_n);
 }
 
@@ -1779,25 +1786,39 @@ static void atv14_stats_sync (int cur_sf_id, int orig_sf_id, bool held)
 }
 
 /* Пассивный режим (нет backdoor или enable=0): переключать нечем/нельзя, но
- * статистику API заполняем один раз при входе — иначе `status`/`afrd -s`
- * отдают current hz: 0 (мелочь из леджера). Периодически её обновлять не стоим:
- * каждый опрос — это dumpsys SurfaceFlinger (~150 КБ), а режим в пассивном
- * режиме меняет не демон. */
+ * статистику API заполняем один раз при входе — иначе `status`/`afrd -s` и GUI
+ * показывают «демон выключен» и нулевые частоты (README обещает: «в пассивном
+ * режиме работают API и статистика»). Периодически её обновлять не стоим: каждый
+ * опрос — это dumpsys SurfaceFlinger (~150 КБ), а режим в пассивном режиме меняет
+ * не демон.
+ *
+ * Частоту берём прямо из дампа (sfmodes_active_hz), а не через id режима: на
+ * Android 10/11 таблицы режимов в привычном виде нет (транзакция 1035 там значит
+ * другое), и поиск по id заведомо не сработал бы — живой случай 2026-10-08 на
+ * стенде Android 11: enabled=no и 0.00 Гц при enable=1 в конфиге. */
 static void atv14_stats_sync_passive (const platform_t *plat)
 {
+	static char dump [64 * 1024];
+
 	if (g_sf_modes_n <= 0)
 		sf_modes_refresh (plat);
 
-	sf_mode_t active;
-	if (sf_active_mode (plat, &active) == 0)
+	int hz = -1;
+	if (exec_capture (plat->sf_dump_cmd, dump, sizeof (dump)) == 0)
 	{
-		atv14_stats_sync (active.id, -1, false);
-
-		/* g_afrd_stats (то, что читает API `status`) копирует update_stats(),
-		 * а он живёт в главном цикле — в пассивном режиме до него не дойдёт,
-		 * поэтому копируем здесь же */
-		update_stats ();
+		sf_modes_sync (dump);
+		hz = sfmodes_active_hz (dump);
 	}
+
+	g_atv14_state.valid = true;
+	g_atv14_state.switched = false;
+	g_atv14_state.current_hz = (hz > 0) ? hz : 0;
+	g_atv14_state.original_hz = g_atv14_state.current_hz;
+
+	/* g_afrd_stats (то, что читает API `status`) копирует update_stats(),
+	 * а он живёт в главном цикле — в пассивном режиме до него не дойдёт,
+	 * поэтому копируем здесь же */
+	update_stats ();
 }
 
 /* Сброс кэша решений: нумерация id режимов изменилась (рестарт SurfaceFlinger).

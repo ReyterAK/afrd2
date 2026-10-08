@@ -17,6 +17,16 @@ typedef struct
 /* Разбор вывода dumpsys. Возврат: число найденных режимов. */
 int sfmodes_parse (const char *dump, sf_mode_t *out, int max);
 
+/* Частота активного режима из дампа SurfaceFlinger (fixed-point 24.8), или -1.
+ *
+ * Формат отличается по версии Android: на 12–14 AOSP печатает «activeMode=59.94 Hz»,
+ * а на Android 10/11 такой строки нет — частота есть только в блоке дисплея как
+ * «refresh-rate : 59.940061 fps». Функция нужна там, где таблица режимов
+ * недоступна (Android 10/11) или не нужна: статистика пассивного режима, в
+ * котором переключать нечем, а частоту показать надо (README: «в пассивном
+ * режиме работают API и статистика»). */
+int sfmodes_active_hz (const char *dump);
+
 /* Поиск id режима по частоте (24.8) и разрешению. -1, если нет. */
 int sfmodes_find (const sf_mode_t *modes, int n, int hz, int width, int height);
 

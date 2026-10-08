@@ -1,0 +1,1 @@
+  refresh-rate              : 59.940061 fps

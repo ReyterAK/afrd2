@@ -52,7 +52,12 @@ platform_t platform_detect (void)
 	 * таблицы "{id=…, hwcId=…, resolution=…}".
 	 * `[{]` вместо `\{` — чтобы `{` не читался как начало интервала ERE.
 	 * grep берётся из PATH (/system/bin, toybox) — как и `pidof` ниже. */
-	p.sf_dump_cmd = "dumpsys SurfaceFlinger | grep -E 'activeMode=|^ *[{]id='";
+	/* Фильтр обязан пропускать строку частоты активного режима и на Android
+	 * 10/11: там нет ни activeMode, ни таблицы {id=…}, а частота (refresh-rate)
+	 * нужна статистике пассивного режима. На 12-14 строка лишняя, но парсер её
+	 * игнорирует (sfmodes_parse читает только «{id=…»), а sf_active_mode ищет
+	 * activeMode первым. */
+	p.sf_dump_cmd = "dumpsys SurfaceFlinger | grep -E 'activeMode=|refresh-rate|^ *[{]id='";
 	/* display-дамп (~30 КБ) тоже режем: нужны только активное разрешение
 	 * ("real 1920 x 1080") и предпочтение пользователя. -o обязателен: строка
 	 * mBaseDisplayInfo содержит и то, и другое, но целиком длиннее буфера. */
