@@ -36,6 +36,8 @@ public class Control
 
     public File mIni;
     public File mAfrd;
+    public File mDispDex;
+    public File mDispSh;
 
     /**
      * Новый путь демона (Android 10-14, ядро 5.x): определяется по узлам, как
@@ -54,6 +56,70 @@ public class Control
     {
         mIni = new File (ctx.getCacheDir (), "afrd.ini");
         mAfrd = new File (ctx.getCacheDir (), "afrd");
+        mDispDex = new File (ctx.getCacheDir (), "afrd-disp.dex");
+        mDispSh = new File (ctx.getCacheDir (), "afrd-disp.sh");
+    }
+
+    /**
+     * Помощник смены режима для Android 10/11 (Amlogic): dex + обёртка.
+     * Лежат в приватном каталоге приложения (демон работает от root и читает их),
+     * путь к обёртке уходит в конфиг ключом vendor.disp.cli.
+     */
+    public String extractVendorCli (Context ctx)
+    {
+        if (!jfun.extractFile (ctx, R.raw.afrd_disp_dex, mDispDex))
+            return ctx.getString (R.string.failed_copy_raw, mDispDex.getPath ());
+        if (!jfun.extractFile (ctx, R.raw.afrd_disp_sh, mDispSh))
+            return ctx.getString (R.string.failed_copy_raw, mDispSh.getPath ());
+
+        mDispSh.setExecutable (true, false);
+        return "";
+    }
+
+    /**
+     * Записать ключ в ini, заменив существующую строку (или добавив её в конец).
+     * Нужно для vendor.disp.cli: путь к помощнику зависит от каталога приложения.
+     */
+    private void setIniKey (String key, String value)
+    {
+        try
+        {
+            java.util.List<String> lines = new java.util.ArrayList<> ();
+            boolean found = false;
+
+            if (mIni.exists ())
+            {
+                java.io.BufferedReader r = new java.io.BufferedReader (
+                        new java.io.InputStreamReader (new java.io.FileInputStream (mIni)));
+                String line;
+                while ((line = r.readLine ()) != null)
+                {
+                    if (line.startsWith (key + "="))
+                    {
+                        lines.add (key + "=" + value);
+                        found = true;
+                    }
+                    else
+                        lines.add (line);
+                }
+                r.close ();
+            }
+
+            if (!found)
+            {
+                lines.add ("# путь к помощнику смены режима (Android 10/11), ставит приложение");
+                lines.add (key + "=" + value);
+            }
+
+            java.io.PrintWriter w = new java.io.PrintWriter (mIni, "UTF-8");
+            for (String line : lines)
+                w.println (line);
+            w.close ();
+        }
+        catch (Exception exc)
+        {
+            jfun.logExc ("setIniKey", exc);
+        }
     }
 
     public void restart ()
@@ -133,6 +199,12 @@ public class Control
 
         if (!jfun.extractFile (ctx, res_id, mIni))
             return ctx.getString (R.string.failed_copy_raw, mIni.getPath ());
+
+        /* Путь к помощнику смены режима (Android 10/11) зависит от каталога
+         * приложения, поэтому профиль, извлечённый из ресурсов, дополняем
+         * ключом — иначе демон искал бы помощник по умолчанию. */
+        if (isAtv14 ())
+            setIniKey ("vendor.disp.cli", mDispSh.getPath ());
 
         return "";
     }

@@ -189,6 +189,18 @@ public class MainActivity extends Activity
                 return false;
             }
 
+            /* Вендорный помощник смены режима (Android 10/11) — рядом с профилем:
+             * тот же срок жизни, что у APK, и путь уже прописан в ini. */
+            if (Control.isAtv14 ())
+            {
+                res = mControl.extractVendorCli (this);
+                if (!res.isEmpty ())
+                {
+                    showMessage (getString (R.string.msg_title_critical_error), res, null);
+                    return false;
+                }
+            }
+
             prefs.edit ().putLong ("afrd_ini_ver", mPackageInfo.lastUpdateTime).apply ();
         }
 

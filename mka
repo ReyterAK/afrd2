@@ -75,5 +75,18 @@ cp ChangeLog-en.txt android/app/src/main/res/raw/changelog.txt
 cp ChangeLog-ru.txt android/app/src/main/res/raw-ru/changelog.txt
 cp FAQ-en.txt android/app/src/main/res/raw/faq.txt
 cp FAQ-ru.txt android/app/src/main/res/raw-ru/faq.txt
+
+# Вендорный помощник смены режима (Android 10/11): dex и обёртка кладутся в
+# ресурсы APK, как демон и профили, — приложение извлекает их к себе в кэш и
+# указывает путь ключом vendor.disp.cli. Сборка dex требует d8 и android.jar;
+# на машине без них шаг пропускается с предупреждением (сборка демона от него
+# не зависит, а без помощника демон честно уходит в пассивный режим).
+if sh tools/droidlogic/build-dex.sh 2>/dev/null; then
+	cp tools/droidlogic/afrd-disp.dex android/app/src/main/res/raw/afrd_disp_dex
+	cp tools/droidlogic/afrd-disp.sh android/app/src/main/res/raw/afrd_disp_sh
+else
+	echo "ВНИМАНИЕ: dex вендорного помощника не собран (нужны d8 и android.jar) —" >&2
+	echo "           в APK не будет смены режима на Android 10/11" >&2
+fi
 cp COPYING.txt android/app/src/main/res/raw/copying.txt
 cp COPYING-ru.txt android/app/src/main/res/raw-ru/copying.txt
