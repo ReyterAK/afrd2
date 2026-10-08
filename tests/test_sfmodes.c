@@ -204,11 +204,12 @@ static void test_select_live (void)
 	assert (ch.id == 25 && ch.rate_n == 1);
 }
 
-/* Цель возврата режима после видео. preferred_id — из dumpsys display
- * (mUserPreferredModeId, пространство DisplayManager), cur_id — id текущего
- * режима из таблицы SurfaceFlinger. Таблица ниже повторяет стенд ATV14, где
- * нумерации DM и SF расходятся: живой баг — preferred=1 при таблице 30..43
- * и текущем режиме 30. */
+/* Цель возврата режима после видео. cur_id — id режима из таблицы SF, который был
+ * на экране до переключения; preferred_id — из dumpsys display
+ * (mUserPreferredModeId, пространство DisplayManager). Таблица ниже повторяет стенд
+ * ATV14: живой случай — preferred=1, и при этом id 1 в таблице SF означает 60.000 Гц,
+ * то есть совпадение номеров с другим смыслом (2026-10-08: возврат уводил в 60.000
+ * вместо исходного 59.94). */
 static void test_restore_target (void)
 {
 	static const sf_mode_t sf [4] = {
@@ -218,20 +219,23 @@ static void test_restore_target (void)
 		{ 43, 1280,  720, 12800 },	/* 50.00 Гц */
 	};
 
-	/* (а) preferred есть в таблице SF — возвращаемся в него */
-	assert (sfmodes_restore_target (sf, 4, 37, 30) == 37);
-	/* preferred совпадает с текущим режимом — тоже он */
-	assert (sfmodes_restore_target (sf, 4, 30, 30) == 30);
+	/* (а) запомненный режим главнее «предпочтительного»: возвращаемся туда,
+	 * где были, даже если preferred тоже есть в таблице */
+	assert (sfmodes_restore_target (sf, 4, 37, 30) == 30);
+	assert (sfmodes_restore_target (sf, 4, 30, 36) == 36);
 
-	/* (б) живой баг: preferred=1 из нумерации DisplayManager в таблице SF
-	 * отсутствует — возврат идёт в cur_id (30), а не пропускается */
+	/* (б) совпадение номеров: preferred=1 из нумерации DisplayManager — это
+	 * ДРУГОЙ режим, а не 60.000 Гц из таблицы SF; берём запомненный */
 	assert (sfmodes_restore_target (sf, 4, 1, 30) == 30);
 
-	/* (в) ни preferred, ни cur нет в таблице — возвращать нечего */
+	/* (в) запомненного режима в таблице нет (нумерация сменилась после
+	 * рестарта SurfaceFlinger) — возвращаемся в preferred */
+	assert (sfmodes_restore_target (sf, 4, 37, 2) == 37);
+	/* (г) ни запомненного, ни preferred нет в таблице — возвращать нечего */
 	assert (sfmodes_restore_target (sf, 4, 1, 2) == -1);
 	assert (sfmodes_restore_target (sf, 4, -1, -1) == -1);
 
-	/* (г) пустая таблица: проверить id нечем — берём cur, а если и он
+	/* (д) пустая таблица: проверить id нечем — берём cur, а если и он
 	 * неизвестен, остаётся preferred */
 	assert (sfmodes_restore_target (sf, 0, 1, 30) == 30);
 	assert (sfmodes_restore_target (NULL, 0, 1, 30) == 30);

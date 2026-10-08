@@ -174,13 +174,18 @@ int sfmodes_restore_target (const sf_mode_t *modes, int n, int preferred_id, int
 	if (!modes || n <= 0)
 		return (cur_id >= 0) ? cur_id : ((preferred_id >= 0) ? preferred_id : -1);
 
-	/* preferred_id приходит из другого пространства нумерации (DisplayManager),
-	 * поэтому в транзакцию 1035 уходит только при наличии в таблице SF. */
-	if ((preferred_id >= 0) && sfmodes_current_hz (modes, n, preferred_id))
-		return preferred_id;
-
+	/* Сначала cur_id: это режим, который демон видел на экране ДО своего
+	 * переключения, — буквально «куда возвращаться». preferred_id приходит из
+	 * другого пространства нумерации (DisplayManager), и проверка «есть в
+	 * таблице SF» от расхождения спасает не всегда: номера могут СОВПАСТЬ и
+	 * означать разные режимы. Живая находка 2026-10-08 (стенд ATV14):
+	 * mUserPreferredModeId=1, а id 1 в таблице SF — 60.000 Гц, тогда как
+	 * исходным был 59.94; после видео демон возвращал 60.000. */
 	if ((cur_id >= 0) && sfmodes_current_hz (modes, n, cur_id))
 		return cur_id;
+
+	if ((preferred_id >= 0) && sfmodes_current_hz (modes, n, preferred_id))
+		return preferred_id;
 
 	return -1;
 }

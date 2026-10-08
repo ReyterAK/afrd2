@@ -2866,14 +2866,16 @@ static int run_atv14 (const platform_t *plat)
 
 		act = guard_decide (video_eff, want_sf_id, cur_sf_id, &orig_sf_id, &held);
 
-		/* preferred_id приходит из dumpsys display (mUserPreferredModeId) —
-		 * это нумерация DisplayManager, а транзакция 1035 требует id из
-		 * таблицы SurfaceFlinger. На стенде ATV14 нумерации расходятся
-		 * (DM: preferred=1; SF: 30..43), и прямая подстановка давала id,
-		 * которого в таблице нет: возврат после видео молча пропускался
-		 * («id 1 отсутствует в текущей таблице режимов»). sfmodes_restore_target
-		 * берёт preferred, только если он есть в таблице SF, иначе cur_sf_id,
-		 * уже запомненный guard_decide в orig_sf_id. */
+		/* Цель возврата после видео: id, который был на экране до нашего
+		 * переключения (его запомнил guard_decide в orig_sf_id), а не
+		 * preferred_id из dumpsys display. preferred_id — нумерация
+		 * DisplayManager, транзакция 1035 требует id из таблицы SurfaceFlinger,
+		 * и номера могут совпасть, означая разные режимы: на стенде ATV14
+		 * preferred=1, а id 1 в таблице SF — 60.000 Гц при исходном 59.94
+		 * (живая находка 2026-10-08 — возвращались в 60.000). preferred
+		 * остаётся запасным: если запомненный id в таблице отсутствует
+		 * (нумерация сменилась после рестарта SF) или неизвестен (видео уже
+		 * играло на старте демона), sfmodes_restore_target возьмёт его. */
 		if (act == GUARD_SWITCH)
 		{
 			int back = sfmodes_restore_target (g_sf_modes, g_sf_modes_n,

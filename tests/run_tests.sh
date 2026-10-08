@@ -25,8 +25,8 @@ run test_reconf reconf.c
 run test_hdrinfo hdrinfo.c exec.c tests/stub.c
 
 # Проверки по исходникам и данным, а не по коду на C: согласованность версии
-# во всех местах, где она записана, и формат ЧАВО, которое видит пользователь.
-for sh_test in tests/test_versions.sh tests/test_faq.sh; do
+# во всех местах, где она записана, формат ЧАВО, контракт запуска Magisk-модуля.
+for sh_test in tests/test_versions.sh tests/test_faq.sh tests/test_magisk_module.sh; do
 	sh "$sh_test" || status=1
 done
 
