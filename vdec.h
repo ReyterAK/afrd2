@@ -15,6 +15,12 @@ typedef struct
 	unsigned long long frames;	/* frame count (для замера fps по дельте) */
 	unsigned decl_dur;		/* frame dur: длительность кадра в тиках 1/96000 с,
 					 * 0 — поля нет. Только как уточнение к замеру */
+	unsigned decl_fps;		/* frame rate: заявленная частота кадра (целые fps),
+					 * 0 — поля нет или мусор. Источник БЫСТРОГО решения:
+					 * именно это значение берёт штатный системный AFR
+					 * Amlogic (журнал §33.18–33.19), поэтому его читаем и мы.
+					 * Решает по нему только быстрый путь (fps.declare.fast);
+					 * замер остаётся источником истины и правит режим. */
 	unsigned status;		/* сырое поле "status" из vdec_status. Величина
 					 * приватная для драйвера декодера (в upstream-драйвере
 					 * это vs.status от dec_status()), общего смысла не имеет;
@@ -29,6 +35,7 @@ typedef struct
 	char device [40];
 	unsigned long long frames;
 	unsigned decl_dur;
+	unsigned decl_fps;
 	unsigned status;
 } vdec_chan_t;
 

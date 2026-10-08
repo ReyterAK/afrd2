@@ -153,6 +153,18 @@ int vdec_parse_channels (const char *text, vdec_chan_t *out, int max)
 					ch.decl_dur = dur;
 			}
 
+			/* frame rate — заявленная частота кадра (целые fps). Её берёт
+			 * штатный системный AFR Amlogic, поэтому разбираем и мы: на ней
+			 * строится быстрое решение (fps.declare.fast). Мусор ("n/a",
+			 * "0 fps") оставляет ноль — такое значение быстрый путь не берёт. */
+			const char *fr = strstr (p, "frame rate");
+			if (fr && fr < end && (fr = strchr (fr, ':')))
+			{
+				unsigned fp = 0;
+				if (parse_uint (fr + 1, end, &fp))
+					ch.decl_fps = fp;
+			}
+
 			/* status — сырое поле драйвера (см. vdec.h): читаем и отдаём в
 			 * журнал, решений по нему демон не принимает. Ищем подпись поля
 			 * (выровнена пробелами), а не подстроку "status" где попало. */
@@ -223,6 +235,7 @@ int vdec_read (const char *path, vdec_status_t *out, vdec_sel_t *st)
 	snprintf (out->device, sizeof (out->device), "%s", chans [idx].device);
 	out->frames = chans [idx].frames;
 	out->decl_dur = chans [idx].decl_dur;
+	out->decl_fps = chans [idx].decl_fps;
 	out->status = chans [idx].status;
 	return 0;
 }

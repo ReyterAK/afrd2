@@ -30,7 +30,6 @@ int main (void)
 {
 	/* --- разбор каналов --- */
 	vdec_chan_t chans [VDEC_MAX_CHANNELS];
-
 	assert (vdec_parse_channels (slurp ("tests/fixtures/vdec_status_idle.txt"),
 	                             chans, VDEC_MAX_CHANNELS) == 0);
 
@@ -40,6 +39,9 @@ int main (void)
 	assert (chans [0].frames == 13516);
 	/* frame dur парсится только как уточнение (96000/4004 = 23.976) */
 	assert (chans [0].decl_dur == 4004);
+	/* frame rate — заявленная частота кадра (целые fps): её берёт системный
+	 * AFR Amlogic, и её же берёт наш быстрый путь (§33.18–33.19 журнала) */
+	assert (chans [0].decl_fps == 24);
 	/* status — сырое поле драйвера, читается ради разделения «пауза vs
 	 * залипший канал» на стенде (§31.18), решений по нему нет */
 	assert (chans [0].status == 6);
@@ -60,6 +62,21 @@ int main (void)
 	assert (chans [1].frames == 1139);
 	assert (chans [1].decl_dur == 3200);
 	assert (chans [1].status == 5);
+	assert (chans [0].decl_fps == 30);	/* заявленная частота каждого канала */
+
+	/* Заявленная частота: поле «frame rate» есть — читается; поля нет или
+	 * мусор — ноль, и быстрый путь такую частоту не берёт. */
+	{
+		vdec_chan_t one [VDEC_MAX_CHANNELS];
+		assert (vdec_parse_channels ("  device name : d\n  frame count : 7\n",
+		                             one, VDEC_MAX_CHANNELS) == 1);
+		assert (one [0].decl_fps == 0);
+
+		assert (vdec_parse_channels ("  device name : d\n  frame rate : n/a\n"
+		                             "  frame count : 7\n",
+		                             one, VDEC_MAX_CHANNELS) == 1);
+		assert (one [0].decl_fps == 0);
+	}
 
 	/* потолок каналов */
 	char many [1024] = "";
@@ -154,6 +171,7 @@ int main (void)
 	assert (strcmp (st.device, "amvdec_av1_v4l") == 0);
 	assert (st.frames == 1139);		/* выбран живой (последний) */
 	assert (st.decl_dur == 3200);
+	assert (st.decl_fps == 30);		/* заявленная частота выбранного канала */
 
 	memset (&sel, 0, sizeof (sel));
 	assert (vdec_read ("tests/fixtures/vdec_status_idle.txt", &st, &sel) == 0);
