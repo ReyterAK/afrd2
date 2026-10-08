@@ -220,10 +220,12 @@ for clip in $CLIPS; do
 	hold=$(snap)
 	echo "в удержании: ${hold:-<пустой снимок>}"
 
+	no_hold=0
 	case "$clip" in
 		*23976*|*24000*) exp_hz=23.98; exp_mode=1080p24hz ;;
 		*_25)            exp_hz=50.00; exp_mode=1080p50hz ;;
 		*_50)            exp_hz=50.00; exp_mode=1080p50hz ;;
+		*60)             exp_hz=59.94; exp_mode=1080p60hz; no_hold=1 ;;
 		*)               exp_hz=;      exp_mode= ;;
 	esac
 
@@ -231,6 +233,20 @@ for clip in $CLIPS; do
 		skip "$clip: снимок удержания не снят (пустой снимок или пустое поле режима) — вердикт не выносится"
 	elif [ -z "$exp_mode" ]; then
 		skip "$clip: эталона в плане нет — вердикт не выносится (снимок выше)"
+	elif [ "${no_hold:-0}" = 1 ]; then
+		# Контент той же частоты, что и режим экрана: переключать нечего, и
+		# демон обязан ничего не трогать (флаг backdoor не поднимается).
+		m=$(fld "$hold" 1)
+		b=$(fld "$hold" 4)
+		if [ "$m" = "$ORIG_MODE" ]; then
+			ok "$clip: режим не менялся ($m — контент той же частоты, что и экран)"
+		else
+			fail "$clip: режим $m, ожидался неизменный $ORIG_MODE"
+		fi
+		case "$b" in
+			*false*) ok "$clip: флаг backdoor не поднимался ($b)" ;;
+			*)       fail "$clip: флаг backdoor поднят при ненужном переключении ($b)" ;;
+		esac
 	else
 		m=$(fld "$hold" 1)
 		a=$(fld "$hold" 3)
