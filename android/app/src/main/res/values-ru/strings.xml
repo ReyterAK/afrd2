@@ -87,11 +87,13 @@
     <string name="mode_use_fract_auto">Авто (наиболее подходящую)</string>
     <string name="mode_use_fract_use">Предпочитать дробные частоты</string>
     <string name="mode_use_fract_int">Предпочитать целые частоты</string>
-    <string name="settings_advanced">Настройки для опытных пользователей</string>
+    <string name="settings_misc">Прочее</string>
     <string name="not_applicable_atv14">(не действует на Android 12-14)</string>
     <string name="not_applicable_legacy">(не действует на Android 6-9)</string>
-    <string name="prefs_group_correct">Калибровка частоты по плееру</string>
-    <string name="prefs_group_atv14">Настройки для Android 12 и выше</string>
+    <string name="prefs_group_main">Основное</string>
+    <string name="prefs_group_players">Плееры</string>
+    <string name="prefs_group_mode">Выбор режима</string>
+    <string name="prefs_group_atv14">Тонкая настройка Android 12+</string>
     <string name="prefs_fps_prefer_api">Доверять подсказке плеера</string>
     <string name="prefsum_fps_prefer_api">Если плеер сам сообщает частоту через API AFRd2
         (frame_rate_hint), предпочитать её собственному замеру по счётчику кадров.</string>

@@ -168,7 +168,7 @@
 ? I heard this can help with "greenish image" / "black screens" /
 ? bad karma etc.
 
-! Open "Settings" -> "Advanced settings" -> "Color space selection rules".
+! Open "Settings" -> "Other" -> "Color space selection rules".
 ! Every rule has the form "mode_name=value". If the value contains a rule
 ! with "444" (as in the Android 6-9 profiles, where it is the last one:
 ! ".*=444"), replace "444" in it with "rgb". If there is no such rule (the
@@ -186,7 +186,7 @@
 ? I use the "Prefer exact refresh rates" option but, still, I want to use
 ? 60Hz refresh instead of 30Hz. How can I do it?
 
-! Open "Advanced settings" -> "Blacklisted refresh rates" and add the
+! Open "Settings" -> "Other" -> "Blacklisted refresh rates" and add the
 ! refresh rate of 30 (and, possibly, 29.97) Hz to the list.
 
 ? At start of video display turns off even if framerate does not change.

@@ -1,40 +1,112 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Раскладка: шесть групп по назначению (журнал §33.13). Раньше верхний уровень
+     был 11 строк, и важное (новый путь, Android 12+) уезжало вниз; теперь в корне
+     шесть групп, а нужное пользователю (включение, пауза, плееры, выбор режима)
+     лежит в первых трёх. Применимость по-прежнему помечается построчно
+     (SettingsFragment.markInapplicable), поэтому внутри групп перемешаны ключи
+     обоих путей — это осознанно.
+     Исключение из «группа = версия Android»: switch.timeout действует на обоих
+     путях (с разным смыслом), поэтому группа «Задержки переключения» названа
+     нейтрально, а не «(Android 6-9)». -->
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
                   android:title="@string/prefs_title">
 
-    <SwitchPreference android:defaultValue="1" android:key="enable" android:summary="@string/prefsum_enable"
-                      android:title="@string/prefs_enable"/>
-    <SwitchPreference android:defaultValue="0" android:key="log_enable"
-                      android:summary="@string/prefsum_log_enable"
-                      android:title="@string/prefs_log_enable"/>
-    <SwitchPreference android:layout_width="wrap_content" android:layout_height="wrap_content"
-                      android:defaultValue="1" android:key="toast_hz"
-                      android:summary="@string/prefsum_toast" android:title="@string/prefs_toast"/>
-    <SwitchPreference android:defaultValue="0" android:key="mode_prefer_exact"
-                      android:summary="@string/prefsum_mode_prefer_exact"
-                      android:title="@string/prefs_mode_prefer_exact"/>
-    <ru.cobra.zap.xprefs.XListPreference android:defaultValue="0" android:entries="@array/mode_use_fract"
-                    android:entryValues="@array/mode_use_fract_value" android:key="mode_use_fract"
-                    android:summary="@string/prefsum_mode_use_fract"
-                    android:title="@string/prefs_mode_use_fract"/>
-    <!-- switch.skip.pkg — ключ обоих путей (CFGKEY_BOTH), поэтому строка на
-         верхнем уровне, а не в группе atv14. -->
-    <ru.cobra.zap.xprefs.XAppsPreference android:key="switch_skip_pkg"
-                      android:summary="@string/prefsum_switch_skip_pkg"
-                      android:title="@string/prefs_switch_skip_pkg"/>
-    <ru.cobra.zap.xprefs.XAppsPreference android:key="mode_min_hz_list"
-                      android:summary="@string/prefsum_mode_min_hz_list"
-                      android:title="@string/prefs_mode_min_hz_list"/>
+    <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"
+                      android:key="main" android:title="@string/prefs_group_main">
+        <SwitchPreference android:defaultValue="1" android:key="enable" android:summary="@string/prefsum_enable"
+                          android:title="@string/prefs_enable"/>
+        <SwitchPreference android:defaultValue="1" android:key="pause_keep"
+                          android:summary="@string/prefsum_pause_keep"
+                          android:title="@string/prefs_pause_keep"/>
+        <!-- switch.delay.off — ключ обоих путей: на Android 12-14 это предел
+             удержания режима на паузе, на старом пути — задержка возврата после
+             остановки видео. Стоит рядом с паузой, потому что на новом пути его
+             смысл читается только здесь (журнал §33.1). -->
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="10000" android:key="switch_delay_off"
+                            android:maxLength="5" android:numeric="integer" android:selectAllOnFocus="true"
+                            android:singleLine="true" android:summary="@string/prefsum_switch_delay_off"
+                            android:title="@string/prefs_switch_delay_off"/>
+        <SwitchPreference android:defaultValue="1" android:key="switch_restore_on_stop"
+                          android:summary="@string/prefsum_switch_restore_on_stop"
+                          android:title="@string/prefs_switch_restore_on_stop"/>
+    </PreferenceScreen>
+
+    <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"
+                      android:key="players" android:title="@string/prefs_group_players">
+        <!-- switch.skip.pkg — ключ обоих путей (CFGKEY_BOTH), поэтому он здесь,
+             вместе с остальными настройками про плееры, а не в группе нового
+             пути. -->
+        <ru.cobra.zap.xprefs.XAppsPreference android:key="switch_skip_pkg"
+                          android:summary="@string/prefsum_switch_skip_pkg"
+                          android:title="@string/prefs_switch_skip_pkg"/>
+        <ru.cobra.zap.xprefs.XAppsPreference android:key="mode_min_hz_list"
+                          android:summary="@string/prefsum_mode_min_hz_list"
+                          android:title="@string/prefs_mode_min_hz_list"/>
+        <SwitchPreference android:defaultValue="1" android:key="fps_correct_enable"
+                          android:summary="@string/prefsum_fps_correct_enable"
+                          android:title="@string/prefs_fps_correct_enable"/>
+        <ru.cobra.zap.xprefs.XAppsPreference android:key="fps_correct_list"
+                          android:summary="@string/prefsum_fps_correct_list"
+                          android:title="@string/prefs_fps_correct_list"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="0.1" android:key="fps_correct_av1_offset"
+                          android:selectAllOnFocus="false" android:singleLine="true"
+                          android:summary="@string/prefsum_fps_correct_av1_offset"
+                          android:title="@string/prefs_fps_correct_av1_offset"/>
+        <ru.cobra.zap.xprefs.XAppsPreference android:key="fps_correct_av1_pkg"
+                          android:summary="@string/prefsum_fps_correct_av1_pkg"
+                          android:title="@string/prefs_fps_correct_av1_pkg"/>
+    </PreferenceScreen>
+
+    <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"
+                      android:key="mode" android:title="@string/prefs_group_mode">
+        <SwitchPreference android:defaultValue="0" android:key="mode_prefer_exact"
+                          android:summary="@string/prefsum_mode_prefer_exact"
+                          android:title="@string/prefs_mode_prefer_exact"/>
+        <ru.cobra.zap.xprefs.XListPreference android:defaultValue="0" android:entries="@array/mode_use_fract"
+                        android:entryValues="@array/mode_use_fract_value" android:key="mode_use_fract"
+                        android:summary="@string/prefsum_mode_use_fract"
+                        android:title="@string/prefs_mode_use_fract"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:key="mode_blacklist_rates" android:selectAllOnFocus="false"
+                            android:singleLine="true"
+                            android:summary="@string/prefsum_mode_blacklist_rates"
+                            android:title="@string/prefs_mode_blacklist_rates"/>
+    </PreferenceScreen>
+
+    <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"
+                      android:key="misc" android:title="@string/settings_misc">
+        <SwitchPreference android:defaultValue="0" android:key="log_enable"
+                          android:summary="@string/prefsum_log_enable"
+                          android:title="@string/prefs_log_enable"/>
+        <SwitchPreference android:layout_width="wrap_content" android:layout_height="wrap_content"
+                          android:defaultValue="1" android:key="toast_hz"
+                          android:summary="@string/prefsum_toast" android:title="@string/prefs_toast"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:key="mode_extra" android:selectAllOnFocus="false"
+                            android:singleLine="true" android:summary="@string/prefsum_mode_extra"
+                            android:title="@string/prefs_mode_extra"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="2160p[4-9].*=420 .*=444" android:key="cs_select"
+                            android:selectAllOnFocus="false" android:singleLine="true"
+                            android:summary="@string/prefsum_cs_select"
+                            android:title="@string/prefs_cs_select"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="/data/local/afrd.log" android:key="log_file"
+                            android:selectAllOnFocus="false" android:singleLine="true"
+                            android:summary="@string/prefsum_log_file"
+                            android:title="@string/prefs_log_file"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:key="vdec_blacklist"
+                            android:selectAllOnFocus="false" android:singleLine="true"
+                            android:summary="@string/prefsum_vdec_blacklist"
+                            android:title="@string/prefs_vdec_blacklist"/>
+        <ru.cobra.zap.xprefs.XEditTextPreference android:key="frhint_vdec_blacklist"
+                            android:selectAllOnFocus="false" android:singleLine="true"
+                            android:summary="@string/prefsum_frhint_vdec_blacklist"
+                            android:title="@string/prefs_frhint_vdec_blacklist"/>
+    </PreferenceScreen>
+
     <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"
                       android:key="timings" android:title="@string/prefs_group_timings">
         <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="300" android:key="switch_delay_on"
                             android:maxLength="5" android:numeric="integer" android:selectAllOnFocus="true"
                             android:singleLine="true" android:summary="@string/prefsum_switch_delay_on"
                             android:title="@string/prefs_switch_delay_on"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="10000" android:key="switch_delay_off"
-                            android:maxLength="5" android:numeric="integer" android:selectAllOnFocus="true"
-                            android:singleLine="true" android:summary="@string/prefsum_switch_delay_off"
-                            android:title="@string/prefs_switch_delay_off"/>
         <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="100" android:key="switch_delay_retry"
                             android:maxLength="5" android:numeric="integer" android:selectAllOnFocus="true"
                             android:singleLine="true" android:summary="@string/prefsum_switch_delay_retry"
@@ -56,6 +128,7 @@
                             android:singleLine="true" android:summary="@string/prefsum_switch_hdmi"
                             android:title="@string/prefs_switch_hdmi"/>
     </PreferenceScreen>
+
     <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"
                       android:key="atv14" android:title="@string/prefs_group_atv14">
         <SwitchPreference android:defaultValue="1" android:key="fps_prefer_api"
@@ -109,53 +182,5 @@
                           android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
                           android:singleLine="true" android:summary="@string/prefsum_trigger_stop_debounce"
                           android:title="@string/prefs_trigger_stop_debounce"/>
-        <SwitchPreference android:defaultValue="1" android:key="pause_keep"
-                          android:summary="@string/prefsum_pause_keep"
-                          android:title="@string/prefs_pause_keep"/>
-        <SwitchPreference android:defaultValue="1" android:key="switch_restore_on_stop"
-                          android:summary="@string/prefsum_switch_restore_on_stop"
-                          android:title="@string/prefs_switch_restore_on_stop"/>
-    </PreferenceScreen>
-    <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"
-                      android:key="correct" android:title="@string/prefs_group_correct">
-        <SwitchPreference android:defaultValue="1" android:key="fps_correct_enable"
-                          android:summary="@string/prefsum_fps_correct_enable"
-                          android:title="@string/prefs_fps_correct_enable"/>
-        <ru.cobra.zap.xprefs.XAppsPreference android:key="fps_correct_list"
-                          android:summary="@string/prefsum_fps_correct_list"
-                          android:title="@string/prefs_fps_correct_list"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="0.1" android:key="fps_correct_av1_offset"
-                          android:selectAllOnFocus="false" android:singleLine="true"
-                          android:summary="@string/prefsum_fps_correct_av1_offset"
-                          android:title="@string/prefs_fps_correct_av1_offset"/>
-        <ru.cobra.zap.xprefs.XAppsPreference android:key="fps_correct_av1_pkg"
-                          android:summary="@string/prefsum_fps_correct_av1_pkg"
-                          android:title="@string/prefs_fps_correct_av1_pkg"/>
-    </PreferenceScreen>
-    <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"
-                      android:key="advanced" android:title="@string/settings_advanced">
-        <ru.cobra.zap.xprefs.XEditTextPreference android:key="mode_blacklist_rates" android:selectAllOnFocus="false"
-                            android:singleLine="true"
-                            android:summary="@string/prefsum_mode_blacklist_rates"
-                            android:title="@string/prefs_mode_blacklist_rates"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:key="mode_extra" android:selectAllOnFocus="false"
-                            android:singleLine="true" android:summary="@string/prefsum_mode_extra"
-                            android:title="@string/prefs_mode_extra"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="2160p[4-9].*=420 .*=444" android:key="cs_select"
-                            android:selectAllOnFocus="false" android:singleLine="true"
-                            android:summary="@string/prefsum_cs_select"
-                            android:title="@string/prefs_cs_select"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="/data/local/afrd.log" android:key="log_file"
-                            android:selectAllOnFocus="false" android:singleLine="true"
-                            android:summary="@string/prefsum_log_file"
-                            android:title="@string/prefs_log_file"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:key="vdec_blacklist"
-                            android:selectAllOnFocus="false" android:singleLine="true"
-                            android:summary="@string/prefsum_vdec_blacklist"
-                            android:title="@string/prefs_vdec_blacklist"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:key="frhint_vdec_blacklist"
-                            android:selectAllOnFocus="false" android:singleLine="true"
-                            android:summary="@string/prefsum_frhint_vdec_blacklist"
-                            android:title="@string/prefs_frhint_vdec_blacklist"/>
     </PreferenceScreen>
 </PreferenceScreen>

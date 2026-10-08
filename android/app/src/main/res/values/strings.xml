@@ -96,11 +96,13 @@
     <string name="notif_hz">Refresh rate: %s, original: %s</string>
     <string name="notif_stop_afrd">Disable AFR</string>
     <string name="notif_start_afrd">Enable AFR</string>
-    <string name="settings_advanced">Advanced settings</string>
+    <string name="settings_misc">Other</string>
     <string name="not_applicable_atv14">(has no effect on Android 12-14)</string>
     <string name="not_applicable_legacy">(does not work on Android 6-9)</string>
-    <string name="prefs_group_correct">Per-player frame rate calibration</string>
-    <string name="prefs_group_atv14">Settings for Android 12 and above</string>
+    <string name="prefs_group_main">General</string>
+    <string name="prefs_group_players">Players</string>
+    <string name="prefs_group_mode">Mode selection</string>
+    <string name="prefs_group_atv14">Fine tuning (Android 12+)</string>
     <string name="prefs_fps_prefer_api">Trust the player hint</string>
     <string name="prefsum_fps_prefer_api">If the player reports the frame rate itself via the AFRd2 API
         (frame_rate_hint), prefer it over our own frame counter measurement.</string>
