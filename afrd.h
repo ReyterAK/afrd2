@@ -230,6 +230,10 @@ extern afrd_shmem_t g_afrd_stats;
 
 // initialize shared-memory stats
 extern bool shmem_init (bool read);
+// Читать «записку» прошлого экземпляра демона, не открывая писателем (файл
+// обнуляется в shmem_init (false), поэтому читать надо до него). Возврат:
+// true — состояние прочитано и целостно (размер и CRC сошлись).
+extern bool shmem_peek (afrd_shmem_t *out);
 // finalize the shared memory object
 extern void shmem_fini ();
 // emergency close

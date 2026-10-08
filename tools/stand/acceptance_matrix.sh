@@ -44,6 +44,9 @@
 #   PAUSE_LIMIT_TEST — 1: проверить предел удержания режима на паузе (шаг 2b;
 #                     на устройстве в конфиге должен стоять switch.delay.off>0,
 #                     то же значение — в PAUSE_LIMIT_MS, по умолчанию 20000 мс);
+#   RECOVER_TEST    — 1: убить демон (kill -9) при удержанном режиме и проверить,
+#                     что сторож (приложение или надзор Magisk-модуля) поднимет
+#                     его, а тот вернёт исходный режим (шаг 3б); без сторожа — SKIP;
 #   OWN_AFR_TEST    — 1: добавить проверку плеера со своим AFR; OWN_AFR_ACT — его
 #                     активность, OWN_AFR_CLIP — клип для проверки;
 #   API_TEST        — 1: добавить проверку API (шаг 3a): status, приоритет подсказки
@@ -81,6 +84,10 @@ PAUSE_LIMIT_TEST=${PAUSE_LIMIT_TEST:-0}
 PAUSE_LIMIT_MS=${PAUSE_LIMIT_MS:-20000}
 PAUSE_LIMIT_WAIT=${PAUSE_LIMIT_WAIT:-$((PAUSE_LIMIT_MS / 1000 + 8))}
 PAUSE_LIMIT_RESUME_WAIT=${PAUSE_LIMIT_RESUME_WAIT:-5}
+# Шаг 3б: сколько секунд ждать, пока сторож поднимет убитый демон (приложение
+# — до ~14 с, надзор Magisk-модуля — до 5 с плюс запуск).
+RECOVER_TEST=${RECOVER_TEST:-0}
+RECOVER_WAIT=${RECOVER_WAIT:-25}
 OWN_AFR_TEST=${OWN_AFR_TEST:-0}
 OWN_AFR_ACT=${OWN_AFR_ACT:-net.gtvbox.videoplayer/.PlayerActivity}
 OWN_AFR_CLIP=${OWN_AFR_CLIP:-long_24000_1001}
@@ -438,6 +445,68 @@ if [ "$PAUSE_LIMIT_TEST" = 1 ]; then
 				fail "терпение к паузе: после возобновления режим $lrm, ожидался $lhold"
 			fi
 		fi
+	fi
+fi
+
+# Шаг 3б: восстановление режима после гибели демона (kill -9). Демон держит
+# режим флагом SurfaceFlinger, и вернуть его после SIGKILL больше некому: флаг
+# система гасит за секунды, а режим остаётся удержанным. Поднятый заново демон
+# возвращает режим по «записке» в разделяемой памяти (atv14_recover_stale).
+# Проверка требует сторожа — приложения (AFRService) или Magisk-модуля
+# (надзор в service.sh): без них демон никто не поднимет, и шаг даёт SKIP.
+if [ "$RECOVER_TEST" = 1 ]; then
+	echo
+	echo "=== восстановление режима после kill -9 (ожидание: демон поднимется сторожем)"
+
+	rb=
+	ra=
+	rd=
+
+	if ! sh "$SDIR/play_clip.sh" start "$PAUSE_CLIP"; then
+		skip "kill -9: клип $PAUSE_CLIP не запущен — проверка не выполнена"
+	else
+		sleep "$HOLD_WAIT"
+		rb=$(snap)
+		echo "до kill -9: ${rb:-<пустой снимок>}"
+
+		adb -s "$D" shell 'kill -9 $(pidof afrd)' >/dev/null 2>&1
+		sleep 2
+		echo "после kill -9: демон=[$(adb -s "$D" shell pidof afrd | tr -d '\r')]"
+
+		# Ждём, пока сторож поднимет демон (приложение — до ~14 с, модуль — 5 с).
+		i=0
+		while [ "$i" -lt "$RECOVER_WAIT" ]; do
+			[ -n "$(adb -s "$D" shell pidof afrd | tr -d '\r')" ] && break
+			sleep 1
+			i=$((i + 1))
+		done
+		sleep 3
+
+		rd=$(adb -s "$D" shell pidof afrd | tr -d '\r')
+		ra=$(snap)
+		echo "после восстановления (ждали ${i} с, демон ${rd:-нет}): ${ra:-<пустой снимок>}"
+	fi
+
+	if [ -z "$rd" ]; then
+		skip "kill -9: демон не поднялся за ${RECOVER_WAIT} с — сторож не работает или его нет (шаг не выполнен)"
+	elif ! snap_ok "$rb" || ! snap_ok "$ra"; then
+		skip "kill -9: состояние снять не удалось (пустой снимок или пустой режим) — проверка не выполнена"
+	elif [ "$(fld "$rb" 1)" = "$ORIG_MODE" ]; then
+		# без состоявшегося удержания проверять нечего: возвращать было нечего
+		skip "kill -9: удержание не поднялось ($(fld "$rb" 1)) — проверка не выполнена"
+	else
+		rm_=$(fld "$ra" 1)
+		rfl=$(fld "$ra" 4)
+
+		if [ "$rm_" = "$ORIG_MODE" ]; then
+			ok "kill -9: режим возвращён в $ORIG_MODE перезапущенным демоном"
+		else
+			fail "kill -9: режим остался $rm_ (ожидался $ORIG_MODE) — удержание не снято"
+		fi
+		case "$rfl" in
+			*false*) ok "kill -9: флаг backdoor снят ($rfl)" ;;
+			*)       fail "kill -9: флаг backdoor не снят ($rfl)" ;;
+		esac
 	fi
 fi
 

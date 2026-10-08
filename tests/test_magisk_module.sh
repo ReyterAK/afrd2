@@ -42,7 +42,7 @@ printf '#!/bin/sh\nexec "$@"\n' > "$STUBS/setsid"
 chmod 755 "$STUBS"/*
 
 rc=0
-PATH="$STUBS:$PATH" sh "$MODDIR/service.sh" || rc=$?
+AFRD_ONESHOT=1 PATH="$STUBS:$PATH" sh "$MODDIR/service.sh" || rc=$?
 
 [ -x "$MODDIR/afrd" ] ||
 	fail "service.sh не выставил право на запуск: файлы модуля не запустятся после установки"

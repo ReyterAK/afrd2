@@ -25,20 +25,62 @@ static bool g_shmem_read;
 // local copy of the statistics
 afrd_shmem_t g_afrd_stats;
 
+// Путь файла разделяемой памяти (рядом с pid-файлом). Возврат: строка во
+// внутреннем буфере — живёт до следующего вызова.
+static const char *shmem_file_path (void)
+{
+	static char path [200];
+
+	// place shared memory file in same dir where pid file is
+	char *pidfile = strdup (g_pidfile);
+	char *dn = dirname (pidfile);
+	if (*dn && (access (dn, F_OK) != 0))
+		mkdir (dn, 0755);
+	snprintf (path, sizeof (path), "%s/afrd.ipc", dn);
+	free (pidfile);
+
+	return path;
+}
+
+bool shmem_peek (afrd_shmem_t *out)
+{
+	if (!out)
+		return false;
+
+	memset (out, 0, sizeof (*out));
+
+	crc32_init ();
+
+	int h = open (shmem_file_path (), O_RDONLY | O_CLOEXEC);
+	if (h < 0)
+		return false;
+
+	afrd_shmem_t tmp;
+	ssize_t n = read (h, &tmp, sizeof (tmp));
+	close (h);
+
+	if (n != (ssize_t) sizeof (tmp))
+		return false;
+	if (tmp.size != sizeof (afrd_shmem_t))
+		return false;
+	if (tmp.crc32 != tmp.crc32_copy)
+		return false;
+	if (tmp.crc32 != crc32_finish (crc32_update (CRC32_START,
+			(uint8_t *)&tmp.size,
+			sizeof (afrd_shmem_t) - sizeof (uint32_t) * 2)))
+		return false;
+
+	*out = tmp;
+	return true;
+}
+
 bool shmem_init (bool read)
 {
 	g_shmem_read = read;
 
 	crc32_init ();
 
-	char shmem_path [200];
-	// place shared memory file in same dir where pid file is
-	char *pidfile = strdup (g_pidfile);
-	char *dn = dirname (pidfile);
-	if (*dn && (access (dn, F_OK) != 0))
-		mkdir (dn, 0755);
-	snprintf (shmem_path, sizeof (shmem_path), "%s/afrd.ipc", dn);
-	free (pidfile);
+	const char *shmem_path = shmem_file_path ();
 
 	if (g_shmem_path)
 		free (g_shmem_path);

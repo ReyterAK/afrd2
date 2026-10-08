@@ -100,6 +100,11 @@ static strlist_t g_skip_pkgs;
  * pkg_name() понимает, откуда брать пакет переднего плана. */
 static platform_t g_plat;
 
+/* «Записка» прошлого экземпляра демона из разделяемой памяти: читается в
+ * afrd_init до её затирания и разбирается в ATV14-цикле (atv14_recover_stale). */
+static afrd_shmem_t g_prev_stats;
+static bool g_prev_stats_valid;
+
 /**
  * The one-shot timer used to switch display mode.
  * If we switch display mode instantly after we receive an uevent,
@@ -1853,6 +1858,37 @@ static bool atv14_reconf_pending (mstime_t *config_timer)
 	return false;
 }
 
+/* Возврат режима, который прошлый экземпляр демона оставил удержанным: его
+ * убили (kill -9, паника ядра), и вернуть режим больше некому — SurfaceFlinger
+ * сам режим не сбрасывает, рабочий стол остаётся в низкой частоте, пока режим
+ * не запросит кто-нибудь другой (живая проверка 2026-10-08). Флаг backdoor для
+ * опознания не годится: система гасит его за секунды. */
+static void atv14_recover_stale (const platform_t *plat)
+{
+	int hz = guard_recover_hz (g_prev_stats.switched, g_prev_stats.original_hz);
+	if (!hz)
+		return;
+
+	/* Режим ищем по частоте, а не по номеру: нумерация id меняется при
+	 * рестарте SurfaceFlinger, а частоты исходного режима (59.94 и т.п.)
+	 * различают записи точно. */
+	int id = sfmodes_find_hz (g_sf_modes, g_sf_modes_n, hz);
+	if (id < 0)
+	{
+		trace (0, "прошлый экземпляр оставлен с удержанным режимом ("HZ_FMT" Гц), "
+		       "но такого режима нет в таблице SurfaceFlinger — вернуть не могу\n",
+		       HZ_ARGS (hz));
+		return;
+	}
+
+	if (atv14_apply_mode (plat, id, "восстановление режима прошлого запуска") == 0)
+		trace (0, "прошлый экземпляр был убит с удержанным режимом — вернул "HZ_FMT
+		       " Гц (id %d)\n", HZ_ARGS (hz), id);
+	else
+		trace (0, "прошлый экземпляр был убит с удержанным режимом, "
+		       "но вернуть "HZ_FMT" Гц не удалось\n", HZ_ARGS (hz));
+}
+
 static int run_atv14 (const platform_t *plat)
 {
 	guard_action_t act;
@@ -1988,6 +2024,11 @@ static int run_atv14 (const platform_t *plat)
 	sf_modes_refresh (plat);
 
 	trace (1, "предпочтительный режим ТВ: %d\n", preferred_id);
+
+	/* Прошлый экземпляр могли убить с удержанным режимом (см.
+	 * atv14_recover_stale): тогда возвращаем его до снятия флага. */
+	if (g_prev_stats_valid)
+		atv14_recover_stale (plat);
 
 	/* страховка: снять «залипший» флаг прошлого запуска */
 	sink_release_backdoor (plat->sink);
@@ -3338,6 +3379,13 @@ int afrd_init ()
 	if (!g_cfg && (load_config (g_config) != 0))
 		return -1;
 
+	/* «Записка» прошлого экземпляра читается ДО shmem_init (false), который
+	 * затирает файл. Нужна она на случай, когда демона убили с удержанным
+	 * режимом: вернуть режим больше некому — SurfaceFlinger сам его не
+	 * сбрасывает, а флаг backdoor система гасит за секунды, так что по флагу
+	 * удержание уже не опознать (живая проверка 2026-10-08). Разбор — в
+	 * atv14_recover_stale (там уже включён журнал). */
+	g_prev_stats_valid = shmem_peek (&g_prev_stats);
 	shmem_init (false);
 	androp_init ();
 

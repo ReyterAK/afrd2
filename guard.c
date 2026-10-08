@@ -29,3 +29,14 @@ void guard_note_restored (bool *held)
 {
 	*held = false;
 }
+
+int guard_recover_hz (bool prev_switched, uint32_t prev_original_hz)
+{
+	/* Режим не удерживали — возвращать нечего. Нулевая частота означает, что
+	 * исходный режим прошлый экземпляр не запомнил (или запись не сложилась):
+	 * угадывать вместо него нельзя, это переключило бы экран вслепую. */
+	if (!prev_switched || (prev_original_hz == 0))
+		return 0;
+
+	return (int) prev_original_hz;
+}
