@@ -1,6 +1,8 @@
 #ifndef FPS_CLASS_H
 #define FPS_CLASS_H
 
+#include <stdbool.h>
+
 #define FPS_RATE_COUNT 8
 
 /* Классификация измеренной частоты в ближайшую стандартную.
@@ -101,6 +103,19 @@ int fps_refine_declared (int measured_hz, double declared_fps, double max_pct, i
  * таблице нет, resolver всё равно подберёт ближайший (см. sfmodes_find).
  * Возврат: fixed-point 24.8 Гц или 0, если частота не из таблицы. */
 int fps_rate_exact_member (int hz);
+
+/* Класс частоты по ЗАЯВЛЕННОЙ драйвером частоте кадра (целые fps: 24, 25, 30).
+ * Возврат: fixed-point 24.8 Гц или 0, если значение нестандартное/мусор.
+ *
+ * Нужен быстрому пути решения (fps.declare.fast): штатный системный AFR Amlogic
+ * берёт именно заявленную частоту из vdec_status и потому переключает за 2-4 с
+ * (журнал §33.19). Мы делаем так же, но помечаем решение предварительным —
+ * замер продолжает работать и правит режим при расхождении. */
+int fps_declared_class (int declared_fps);
+
+/* Разные ли группы у двух частот (fps_rate_group): 23.976 и 24 — одна группа,
+ * 24 и 30 — разные. Слева ноль означает «сравнивать нечего» -> false. */
+bool fps_group_differs (int a_hz, int b_hz);
 
 int fps_rate_hz (int index);
 const char *fps_rate_name (int index);

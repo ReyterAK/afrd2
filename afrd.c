@@ -2050,6 +2050,12 @@ static int run_atv14 (const platform_t *plat)
 	bool env_growing = false;
 	fps_env_reset (&env);
 
+	/* Быстрое решение по заявленной частоте (fps.declare.fast): применён ли
+	 * уже режим по ней и для какого класса — чтобы подтвердить замером или
+	 * поправить (см. блок ниже). */
+	bool fast_applied = false;
+	int fast_class = 0;
+
 	/* Поведенческие ключи профиля (R28). */
 	int prefer_api = cfg_get_int ("fps.prefer.api", 1);
 	int pause_keep = cfg_get_int ("pause.keep", 1);
@@ -2421,6 +2427,8 @@ static int run_atv14 (const platform_t *plat)
 				want_sf_id = -1;
 				measure_failed = false;
 				retries = 0;
+				fast_applied = false;	/* новое видео — быстрое решение заново */
+				fast_class = 0;
 				recheck_armed = false;	/* R56: перепроверка — на текущее видео */
 				mstime_disable (&recheck_timer);
 				cadence_armed = false;
@@ -2579,6 +2587,8 @@ static int run_atv14 (const platform_t *plat)
 			 * и признак «частота не определилась» относятся к текущему видео */
 			measure_failed = false;
 			retries = 0;
+			fast_applied = false;	/* видео кончилось — решение не переносим */
+			fast_class = 0;
 			/* R56: перепроверка — тоже на текущее видео */
 			recheck_armed = false;
 			mstime_disable (&recheck_timer);
@@ -2704,8 +2714,20 @@ static int run_atv14 (const platform_t *plat)
 			want_sf_id = -1;
 			measure_failed = false;
 			retries = 0;
+			/* Метку быстрого решения НЕ снимаем: заявленная частота от
+			 * драйвера может «плавать» (на синтетическом клипе она то 24, то
+			 * 30), и повторное быстрое решение каждый раз переставляло бы
+			 * режим — живая находка 2026-10-08: 1080p24hz -> 1080p60hz ->
+			 * снова 24. Быстрое решение принимается один раз на видео, дальше
+			 * источник истины — замер (он же и поправит режим при расхождении). */
 		}
-		else if (!measure_failed && (want_sf_id < 0))
+		/* Замер идёт и после БЫСТРОГО решения: оно предварительное, и его
+		 * обязана проверить огибающая (иначе заявленная частота от драйвера
+		 * осталась бы непроверенной — живая находка 2026-10-08: на клипе, где
+		 * драйвер заявляет 30 fps при фактических 23.976, замер не запускался
+		 * вовсе). Условие «нужно новое решение» — это `want_sf_id < 0` ИЛИ
+		 * быстрое решение, ждущее проверки. */
+		else if (!measure_failed && ((want_sf_id < 0) || fast_applied))
 		{
 			int hz = 0;
 
@@ -2805,6 +2827,36 @@ static int run_atv14 (const platform_t *plat)
 						trace (1, "подача видео-слоя частоту не дала\n");
 				}
 
+				/* Быстрое решение по заявленной частоте: штатный системный
+				 * AFR Amlogic берёт её из vdec_status и потому переключает за
+				 * 2–4 с (журнал §33.19). Делаем так же, но предварительно:
+				 * замер продолжает работать и ниже поправит режим, если
+				 * заявленная частота расходится с фактической (наш синтетический
+				 * клип: драйвер рапортует 30 fps при реальных 23.976). */
+				if (g_fps_declare_fast && !fast_applied && !held && (v0.decl_fps > 0))
+				{
+					int dclass = fps_declared_class ((int)v0.decl_fps);
+					if (dclass)
+					{
+						int w = 1920, h = 1080;
+						(void) atv_current_target (plat, &w, &h);
+
+						int did = mode_resolve (plat, dclass, w, h, mode_min_hz_for (g_cur_pkg));
+						if (did < 0)
+							trace (1, "заявлено %u fps, но режима под эту частоту нет\n",
+							       v0.decl_fps);
+						else if (atv14_apply_mode (plat, did, "быстрое решение") == 0)
+						{
+							fast_applied = true;
+							fast_class = dclass;
+							want_sf_id = did;
+							cur_sf_id = did;
+							trace (0, "быстрое решение по заявленной частоте: %u fps — "
+							       "режим применён сразу, замер проверит\n", v0.decl_fps);
+						}
+					}
+				}
+
 				bool env_full = fps_env_ready (&env, env_us);
 				/* Раннее решение: горизонт ещё не набран, но если два
 				 * разнесённых решаемых подокна согласны по классу — решаем
@@ -2890,6 +2942,15 @@ static int run_atv14 (const platform_t *plat)
 						hz = refined;
 					}
 				}
+
+				/* Быстрое решение было — сверяем его с замером: расхождение
+				 * по ГРУППЕ частот значит, что драйвер заявил неверно (23.976 и
+				 * 24 — одна группа, их ложным расхождением не считаем). */
+				if (fast_applied && fps_group_differs (fast_class, hz))
+					trace (0, "заявлено %d.%02d Гц, замер дал " HZ_FMT
+					       " Гц — правлю режим\n",
+					       fast_class >> 8, (100 * (fast_class & 255) + 128) >> 8,
+					       HZ_ARGS (hz));
 
 				trace (1, "видео: " HZ_FMT " Гц по огибающей (%d с наблюдения, "
 				       "горизонт %d мс), ищу режим\n",

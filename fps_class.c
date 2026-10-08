@@ -331,3 +331,23 @@ int fps_refine_declared (int measured_hz, double declared_fps, double max_pct, i
 
 	return 1;
 }
+
+int fps_declared_class (int declared_fps)
+{
+	/* Драйвер заявляет целые fps; мусор (0, 255, 1000) не берём — такую
+	 * частоту быстрый путь применять не должен, решает замер. */
+	if ((declared_fps <= 0) || (declared_fps > 120))
+		return 0;
+
+	return fps_classify ((double)declared_fps);
+}
+
+bool fps_group_differs (int a_hz, int b_hz)
+{
+	int ga = fps_rate_group (a_hz);
+	int gb = fps_rate_group (b_hz);
+	if (!ga || !gb)
+		return false;
+
+	return ga != gb;
+}
