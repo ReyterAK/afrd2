@@ -3768,10 +3768,14 @@ int afrd_init ()
 	g_switch_delay_retry = cfg_get_int ("switch.delay.retry", DEFAULT_SWITCH_DELAY_RETRY);
 	g_switch_timeout = cfg_get_int ("switch.timeout", DEFAULT_SWITCH_TIMEOUT);
 
-	/* Тот же предел — на внешние команды демона (вендорный помощник, service
-	 * call): иначе зависший app_process остановил бы цикл целиком, и никакая
-	 * страховка переключения не сработала бы (финальное ревью). */
-	exec_set_timeout_ms (g_switch_timeout);
+	/* Предел времени на внешние команды задан умолчанием exec.c (10 с) и НЕ
+	 * берётся из switch.timeout: у того другой смысл (сколько молчание
+	 * vdec_status считать залипанием), и на 3 с в дедлайн упирались бы честные
+	 * команды нового пути — dumpsys SurfaceFlinger под нагрузкой. Ноль в
+	 * дедлайне обнулил бы таблицу режимов и оставил ATV14 без переключения,
+	 * то есть страховка от зависания превратилась бы в источник отказов.
+	 * Дедлайн здесь только антизависательный: раньше команда могла встать
+	 * навсегда и остановить цикл. */
 	g_switch_blackout = cfg_get_int ("switch.blackout", DEFAULT_SWITCH_BLACKOUT);
 	g_switch_ignore = cfg_get_int ("switch.ignore", DEFAULT_SWITCH_IGNORE);
 	g_switch_hdmi = cfg_get_int ("switch.hdmi", DEFAULT_SWITCH_HDMI);

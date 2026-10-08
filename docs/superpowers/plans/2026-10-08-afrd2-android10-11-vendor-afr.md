@@ -1057,9 +1057,9 @@ git commit -m "feat(pack): вендорный помощник в APK и Magisk-
 
 | артефакт | размер | md5 |
 |---|---|---|
-| `ru.reyter.afrd2-1.0.0-release.apk` | 406451 | `62f25f077430a1c538d3390e97e203c9` |
-| `afrd2-magisk-armeabi-v7a.zip` | 55213 | `fa97cb00ec6b5f5787d7d16c05fe029a` |
-| `afrd2-magisk-arm64-v8a.zip` | 64608 | `58d5078616fde257afb40c5f1c66a942` |
+| `ru.reyter.afrd2-1.0.0-release.apk` | 406471 | `fbd41be9ee57e826116b0038f5eb03f1` |
+| `afrd2-magisk-armeabi-v7a.zip` | 55197 | `cd20ae51917c104240b8a5652da3c67c` |
+| `afrd2-magisk-arm64-v8a.zip` | 64552 | `6fe71fe1641e5cd0958fff057a96ce2e` |
 
 ---
 

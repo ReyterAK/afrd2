@@ -32,8 +32,8 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       system clears the cache when space runs out); previously switching died
       silently until the next app update.
     * A hung helper (e.g. stuck inside a vendor service call) no longer stalls
-      the daemon: the command has a deadline (switch.timeout) and its whole
-      process tree is taken down.
+      the daemon: external commands have an anti-hang deadline (10 s, not
+      configurable through a key) and their whole process tree is taken down.
     * A helper failure is not retried on every loop iteration: one attempt per
       video instead of dozens of log lines and process launches mid-movie.
     * The fast decision by the declared frame rate remembers the original mode,
