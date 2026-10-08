@@ -6,7 +6,14 @@
 # Запуск:
 #   sh tools/stand/guard_test.sh
 # Переменные: ADB_DEV (192.168.88.50:5555), AFRD_BIN (/data/local/tmp/afrd),
-#             AFRD_INI (/data/local/tmp/afrd.ini), CLIP, START_ACT, ORIG_MODE.
+#             AFRD_INI (/data/local/tmp/afrd.ini), CLIP, START_ACT, ORIG_MODE,
+#             HOLD_WAIT (секунды ожидания удержания, по умолчанию 26).
+#
+# HOLD_WAIT должен быть больше fps.measure.envelope.skip.ms + fps.measure.envelope.ms
+# (в профиле 2000 + 20000 = 22 с): решение по огибающей принимается не раньше
+# этого срока, и до него режим не переключён. Прежние 3 с годились, пока частота
+# решалась по одному окну — с наблюдением (20 с) скрипт всегда давал «удержание не
+# поднято» (живая находка 2026-10-08).
 #
 # Код возврата: 0 — проверка пройдена, 1 — провал, 2 — стенд недоступен (пропуск).
 
@@ -16,6 +23,7 @@ INI=${AFRD_INI:-/data/local/tmp/afrd.ini}
 CLIP=${CLIP:-/sdcard/Download/afr/long_24000_1001.mp4}
 START_ACT=${START_ACT:-org.videolan.vlc/.StartActivity}
 ORIG_MODE=${ORIG_MODE:-1080p60hz}
+HOLD_WAIT=${HOLD_WAIT:-26}
 
 adb connect "$D" >/dev/null 2>&1 || true
 if ! adb -s "$D" shell true >/dev/null 2>&1; then
@@ -31,7 +39,8 @@ mode_before=$(adb -s "$D" shell 'cat /sys/class/display/mode' | tr -d '\r')
 echo "режим до запуска демона: $mode_before"
 
 adb -s "$D" shell "$AFRD -k -D $INI &" >/dev/null 2>&1
-sleep 3
+echo "жду удержания ${HOLD_WAIT} с (окно наблюдения огибающей)"
+sleep "$HOLD_WAIT"
 
 mode_held=$(adb -s "$D" shell 'cat /sys/class/display/mode' | tr -d '\r')
 bd_held=$(adb -s "$D" shell 'dumpsys SurfaceFlinger | grep debugDisplayModeSetByBackdoor' | tr -d '\r')
