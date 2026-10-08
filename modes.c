@@ -9,6 +9,7 @@
 
 #include "afrd.h"
 #include "colorspace.h"
+#include "modes_sel.h"
 #include <unistd.h>
 
 display_mode_t *g_modes = NULL;
@@ -183,50 +184,6 @@ bool display_mode_equal (display_mode_t *mode1, display_mode_t *mode2)
 	int hz1 = display_mode_hz (mode1);
 	int hz2 = display_mode_hz (mode2);
 	return (hz1 == hz2);
-}
-
-int display_mode_hz (display_mode_t *mode)
-{
-	if (mode->fractional)
-		switch (mode->framerate) {
-			case  24: return ( 2997 * 256 + 62) / 125;
-			case  30: return ( 2997 * 256 + 50) / 100;
-			case  60: return ( 5994 * 256 + 50) / 100;
-			case 120: return (11988 * 256 + 50) / 100;
-			case 240: return (23976 * 256 + 50) / 100;
-		}
-
-	return mode->framerate * 256;
-}
-
-void display_mode_set_hz (display_mode_t *mode, int hz)
-{
-	mode->fractional = true;
-	int hz_frac = display_mode_hz (mode);
-	int hz_int = mode->framerate * 256;
-
-	if (hz_frac == hz_int) {
-		// this mode has no fractional variant
-		mode->fractional = false;
-		return;
-	}
-
-	// find multiple of hz closest to hz_int
-	int hz_n = 1;
-	int best_hz = hz;
-	int best_diff = abs (hz - hz_int);
-	for (;;) {
-		hz_n++;
-		int multiple_hz = hz * hz_n;
-		int multiple_diff = abs (multiple_hz - hz_int);
-		if (multiple_diff > best_diff)
-			break;
-		best_hz = multiple_hz;
-		best_diff = multiple_diff;
-	}
-
-	if (abs (hz_int - best_hz) < abs (hz_frac - best_hz))
-		mode->fractional = false;
 }
 
 void display_mode_switch (display_mode_t *mode, bool force)

@@ -8,6 +8,7 @@
 #include "afrd.h"
 #include "uevent_filter.h"
 #include "colorspace.h"
+#include "modes_sel.h"
 #include "androp.h"
 #include "platform.h"
 #include "vdec.h"
@@ -687,72 +688,35 @@ static bool pkg_skip_active (void);
  * обработчику vdec-uevent, который идёт раньше). */
 static void pkg_cache_invalidate (void);
 
+static bool rate_allowed_cb (int hz, void *ctx);
+
 /* Выбор режима из g_modes под частоту g_state.hz (правила старого пути).
  * floor — минимальная допустимая частота режима в формате 24.8
  * (mode.min.hz.list) или 0.
- * Возврат: true — режим найден и записан в *best. */
+ * Возврат: true — режим найден и записан в *best.
+ *
+ * Сами правила живут в modes_sel.c: они нужны и новому пути на Android 10/11
+ * (там режим задаётся именем через вендорный SystemControl), а две копии
+ * рейтинга разошлись бы. */
 static bool select_mode (int floor, display_mode_t *best)
 {
-	/* Find the video mode that:
-	 * a) Has same width and height and interlace flag
-	 * b) Closely divides by the required framerate, error less
-	 *    than 4.1% (difference between 23.976 and 25 Hz)
-	 * c) Has the highest framerate (e.g. 50Hz display modes are
-	 *    better than 25Hz display modes for displaying 25Hz video)
-	 *    if g_mode_prefer_exact is 0, or
-	 * d) Has the closest framerate if g_mode_prefer_exact is 1.
-	 */
-	unsigned best_rating = 0;
-	best->name [0] = 0;
-	for (int i = 0; i < g_modes_n; i++) {
-		display_mode_t *mode = &g_modes [i];
-		if ((mode->width != g_current_mode.width) ||
-		    (mode->height != g_current_mode.height) ||
-		    (mode->interlaced != g_current_mode.interlaced))
-			continue;
-
-		/* mode.min.hz.list: для этого плеера режимы ниже порога не годятся
-		 * (плеер «зажимает» темп отрисовки по частоте экрана в момент старта
-		 * ролика — нужен режим не ниже частоты ролика). */
-		if (floor && (display_mode_hz (mode) < floor))
-			continue;
-
-		unsigned rate_n = 1;
-		unsigned rate = (mode->framerate << 16) / g_state.hz;
-		while (rate > 0x180) {
-			rate_n++;
-			rate = (mode->framerate << 16) / (g_state.hz * rate_n);
-		}
-
-		unsigned delta = abs ((int)(rate - 0x100));
-		if (delta > 11)
-			continue; // freq error > 4.3%
-
-		// rating is larger as delta is closer to 1.0 rate
-		int rating = (11 - delta) * 16;
-
-		unsigned n = (rate_n > 3) ? 3 : (rate_n - 1);
-		rating += 4 * (g_mode_prefer_exact ? (3 - n) : n);
-
-		if (rating > best_rating) {
-			display_mode_t tmp = *mode;
-			// decide if integer or fractional framerate is better
-			display_mode_set_hz (&tmp, g_state.hz);
-
-			// if framerate is blacklisted, try to invert fractional
-			if (rate_is_blacklisted (display_mode_hz (&tmp))) {
-				tmp.fractional = !tmp.fractional;
-				if (rate_is_blacklisted (display_mode_hz (&tmp)))
-					// no luck, both framerates are banned
-					continue;
-			}
-
-			best_rating = rating;
-			*best = tmp;
-		}
+	if (modes_select_by_hz (g_modes, g_modes_n, g_state.hz,
+	                        g_current_mode.width, g_current_mode.height,
+	                        g_current_mode.interlaced, g_mode_prefer_exact, floor,
+	                        rate_allowed_cb, NULL, best, NULL, 0, NULL) != 0)
+	{
+		best->name [0] = 0;
+		return false;
 	}
 
-	return best->name [0] != 0;
+	return true;
+}
+
+/* Фильтр чёрного списка частот для modes_select_by_hz: true — частота разрешена */
+static bool rate_allowed_cb (int hz, void *ctx)
+{
+	(void)ctx;
+	return !rate_is_blacklisted (hz);
 }
 
 static void framerate_switch (bool force)

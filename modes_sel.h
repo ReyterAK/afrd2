@@ -1,0 +1,39 @@
+#ifndef MODES_SEL_H
+#define MODES_SEL_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include "afrd.h"
+
+/* Фильтр частот (mode.blacklist.rates): false — частота запрещена.
+ * ctx — контекст вызывающего (может быть NULL). */
+typedef bool (*modes_hz_filter_t) (int hz, void *ctx);
+
+/* Частота режима в fixed-point 24.8 (дробный вариант — 23.976 и родня). */
+int display_mode_hz (display_mode_t *mode);
+
+/* Привести режим к представителю группы (целому или дробному) под частоту hz. */
+void display_mode_set_hz (display_mode_t *mode, int hz);
+
+/* Выбор режима по частоте контента из списка имён (disp_cap).
+ *
+ * Правила — те же, что в legacy-пути (afrd.c: select_mode): геометрия и
+ * чересстрочность обязаны совпасть, ошибка частоты не больше 4.3 %, кратность
+ * не выше 3; при prefer_exact=0 предпочитаются кратные (25 -> 50), при 1 —
+ * точное совпадение. floor_hz (24.8, 0 — нет) отсекает режимы ниже порога
+ * (mode.min.hz.list). allowed — чёрный список частот (NULL — все разрешены).
+ *
+ * Нужен новому пути на Android 10/11: там режим задаётся ИМЕНЕМ, а не id
+ * таблицы SurfaceFlinger (журнал §33.18).
+ *
+ * out (может быть NULL) получает выбранный режим целиком — с ним вызывающему
+ * не нужно восстанавливать дробность по имени. name_out/hz_out — та же
+ * информация в виде, удобном для вендорного помощника (он принимает ИМЯ).
+ * Возврат: 0 — найден, -1 — подходящего режима нет. */
+int modes_select_by_hz (const display_mode_t *modes, int n, int hz,
+                        int width, int height, bool interlaced,
+                        int prefer_exact, int floor_hz,
+                        modes_hz_filter_t allowed, void *ctx,
+                        display_mode_t *out, char *name_out, size_t name_sz, int *hz_out);
+
+#endif
