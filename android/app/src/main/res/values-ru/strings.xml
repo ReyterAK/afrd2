@@ -57,6 +57,7 @@
     <string name="prefs_switch_delay_off">Задержка СТОП</string>
     <string name="prefsum_switch_delay_off">Задержка в мс перед восстановлением исходной частоты.
         Установите в 0 чтобы afrd не возвращал исходную частоту вертикальной развёртки.
+        На Android 12-14 — сколько держать режим на паузе; 0 — держать до конца паузы.
     </string>
     <string name="prefs_switch_delay_retry">Задержка повторного определения частоты кадров</string>
     <string name="prefsum_switch_delay_retry">Задержка перед повторным определением частоты кадров

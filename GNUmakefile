@@ -48,7 +48,7 @@ $(OUT).stamp.dir:
 
 AFRD_SRC = main.c afrd.c sysfs.c cfg_parse.c cfg.c cfgkeys.c modes.c mstime.c uevent_filter.c \
 	colorspace.c strfun.c shmem.c apisock.c crc32.c androp.c hdcp.c \
-	fps_class.c fps_env.c sfmodes.c sink.c guard.c exec.c vdec.c platform.c reconf.c \
+	fps_class.c fps_env.c sfmodes.c sink.c guard.c pause.c exec.c vdec.c platform.c reconf.c \
 	hdrinfo.c pkgdet.c stuck.c
 
 $(OUT)afrd: $(addprefix $(OUT),$(AFRD_SRC:.c=.o))

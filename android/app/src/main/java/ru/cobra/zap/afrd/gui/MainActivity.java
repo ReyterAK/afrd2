@@ -229,6 +229,7 @@ public class MainActivity extends Activity
         }
 
         // and save the modified file
+        atv14PauseDefault (conf);
         return conf.condSave (mControl.mIni);
     }
 
@@ -279,6 +280,38 @@ public class MainActivity extends Activity
             edit.apply ();
 
         req.edit ().putBoolean ("inert_defaults_reset", true).apply ();
+    }
+
+    /* Перенос умолчания switch.delay.off на новом пути. На ATV14 ключ означает
+     * предел терпения к паузе, а его XML-умолчание 10000 осталось от старого
+     * смысла (задержка возврата после остановки видео): без переноса чистая
+     * установка молча дала бы 10 с терпения к паузе, о чём пользователь не
+     * просил. Поэтому один раз при первом запуске новой версии на ATV14
+     * приводим настройку к умолчанию нового пути — 0. Своё значение
+     * пользователя (не равное старому умолчанию) не трогаем, а сделанную после
+     * обновления правку не трогаем никогда: перенос одноразовый (флаг в
+     * requisites), по образцу kInertDefaults. */
+    private void atv14PauseDefault (Config conf)
+    {
+        if (!Control.isAtv14 ())
+            return;
+
+        SharedPreferences req = getSharedPreferences ("requisites", 0);
+        if (req.getBoolean ("inert_pause_delay_reset", false))
+            return;
+
+        String val = mOptions.getString ("switch_delay_off", null);
+
+        /* Отсутствие значения — не своё значение (при null Seed.shouldReset
+         * вернул бы false), поэтому обрабатываем его отдельно. Правило
+         * сравнения со старым умолчанием — в Seed.shouldReset. */
+        if ((val == null) || Seed.shouldReset (val, "10000"))
+        {
+            mOptions.edit ().putString ("switch_delay_off", "0").apply ();
+            conf.put ("switch.delay.off", "0");
+        }
+
+        req.edit ().putBoolean ("inert_pause_delay_reset", true).apply ();
     }
 
     /* Настройки, которых ещё нет в ini_options, берём из конфига профиля. */

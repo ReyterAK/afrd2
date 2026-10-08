@@ -50,12 +50,14 @@ public class SettingsFragment extends PreferenceFragment
      * впечатление работающей настройки.
      * cs.select здесь нет: правила цветового пространства применяются и на
      * ATV14 (через вендорский сервис, см. afrd.c: atv14_apply_mode).
+     * switch.delay.off здесь нет: ключ действует на обоих путях, но значит
+     * разное — на ATV14 это предел терпения к паузе (0 — держать режим до её
+     * конца), а на старом пути — задержка возврата после остановки видео.
      * Согласованность списка с cfgkeys.c проверяет tests/test_inactive.c. */
     private static final String [] kInactiveOnAtv14 =
     {
         "mode_extra",
         "switch_delay_on",
-        "switch_delay_off",
         "switch_delay_retry",
         "switch_blackout",
         "switch_ignore",

@@ -21,6 +21,7 @@
 #include "reconf.h"
 #include "hdrinfo.h"
 #include "pkgdet.h"
+#include "pause.h"
 #include "stuck.h"
 
 #define __USE_GNU
@@ -1923,6 +1924,13 @@ static int run_atv14 (const platform_t *plat)
 	bool have_prev_frames = false;
 	bool paused = false;
 	int still = 0;
+	/* Момент последнего роста счётчика кадров: от него отсчитывается
+	 * «терпение к паузе» (switch.delay.off на новом пути, см. pause.h).
+	 * Ноль в начале — счётчик ещё ни разу не рос, предела не применяем. */
+	unsigned long long still_since_us = 0;
+	/* Память о режиме, удержанном на время паузы (pause.c) */
+	pause_state_t pause_mem;
+	pause_forget (&pause_mem);
 
 	int cur_hz = cfg_get_int ("trigger.poll.ms", 300);
 	if (cur_hz < 100) cur_hz = 100;
@@ -2222,6 +2230,11 @@ static int run_atv14 (const platform_t *plat)
 			{
 				video = new_video;
 
+				/* Память о режиме, удержанном на паузе, относится к текущему
+				 * видео: на новом видео (или после настоящего конца) она
+				 * вернула бы режим, не измерив его частоту. */
+				pause_forget (&pause_mem);
+
 				/* Запоминаем приложение, которое ведёт это видео: по нему
 				 * ловим «залипший» инстанс декодера (плеер ушёл, а канал
 				 * остался и счётчик стоит) */
@@ -2279,12 +2292,23 @@ static int run_atv14 (const platform_t *plat)
 				/* кадры двух видео не должны попасть в одну огибающую */
 				fps_env_reset (&env);
 				env_growing = false;
+				/* режим, удержанный на паузе прежнего видео, к новому
+				 * не относится (и отсчёт терпения начинается заново) */
+				pause_forget (&pause_mem);
+				still_since_us = 0;
 			}
 
 			if (have_prev_frames && (v0.frames == prev_frames))
 				still++;
 			else
 				still = 0;
+
+			/* Отсчёт терпения к паузе (switch.delay.off на новом пути) идёт
+			 * от последнего РОСТА счётчика: замороженный с самого старта
+			 * счётчик (AV1, сбой плеера) паузой не считается — у него свой
+			 * путь через подачу видео-слоя. */
+			if (have_prev_frames && (v0.frames > prev_frames))
+				still_since_us = sample_t;
 
 			paused = (still >= 2);
 			prev_frames = v0.frames;
@@ -2362,9 +2386,33 @@ static int run_atv14 (const platform_t *plat)
 			stuck_reset (&stuck);
 		}
 
-		/* pause.keep==0: пауза обрабатывается как стоп (guard вернёт режим) */
+		/* Терпение к паузе (switch.delay.off на новом пути): пауза дольше
+		 * предела считается концом видео, а на возобновлении удержанный режим
+		 * возвращается без нового замера. При switch.restore.on.stop=0 режим
+		 * с паузы не возвращается вовсе — тогда предел не нужен (решение
+		 * принимает pause.c, тест tests/test_pause.c). */
+		int pause_patience_ms = restore_on_stop ? g_switch_delay_off : 0;
+		unsigned long long stall_us = still_since_us ? (sample_t - still_since_us) : 0;
+		pause_action_t pact = pause_step (paused, held, video, cur_sf_id,
+		                                  cur_sf_id, stall_us,
+		                                  pause_patience_ms, &pause_mem);
+		if (pact == PAUSE_END)
+			trace (0, "пауза дольше %d мс (switch.delay.off) — считаю видео "
+			       "законченным, возвращаю режим; на возобновлении вернусь "
+			       "к удержанному без замера\n", pause_patience_ms);
+		else if (pact == PAUSE_RESUME)
+		{
+			/* Режим ставим целью до развилки ниже, чтобы сработал обычный
+			 * путь удержания (идемпотентен: cur_sf_id уже проверен в pause.c) */
+			want_sf_id = pause_mem.sf_id;
+			trace (1, "счётчик кадров снова растёт — возвращаю удержанный режим (%d) "
+			       "без нового замера\n", pause_mem.sf_id);
+		}
+
+		/* pause.keep==0: пауза обрабатывается как стоп (guard вернёт режим);
+		 * предел паузы (PAUSE_END) — то же самое, но по таймеру */
 		bool video_eff = video;
-		if (!pause_keep && paused)
+		if ((!pause_keep && paused) || (pact == PAUSE_END))
 			video_eff = false;
 
 		/* Пакет в списке switch.skip.pkg: режим не переключаем и не удерживаем
@@ -2456,7 +2504,13 @@ static int run_atv14 (const platform_t *plat)
 				int back = (orig_sf_id >= 0) ? orig_sf_id
 				           : sfmodes_restore_target (g_sf_modes, g_sf_modes_n,
 				                                     preferred_id, -1);
-				if ((cadence_fixes < 2) && (back >= 0) && (back != want_sf_id))
+				/* want_sf_id >= 0 обязателен: перепроверка замера (R56) сбрасывает
+				 * цель в -1, а «лечение» возвращает режим «туда» и не может
+				 * вернуть «обратно» — устройство оставалось в исходном 60 Гц при
+				 * удержании и поднятом флаге backdoor до нового замера (~14 с).
+				 * Живая находка 2026-10-08 (прогон матрицы, клип long_50). */
+				if ((cadence_fixes < 2) && (back >= 0) &&
+				    (want_sf_id >= 0) && (back != want_sf_id))
 				{
 					cadence_fixes++;
 					trace (0, "подача вдвое реже ожидаемого (%d мс при периоде %d мс, ожидание %d мс) — переключаю режим туда-обратно (лечение %d)\n",
@@ -2472,8 +2526,11 @@ static int run_atv14 (const platform_t *plat)
 					cadence_armed = true;	/* проверить результат лечения */
 				}
 				else
-					trace (0, "подача вдвое реже ожидаемого (%d мс при периоде %d мс, ожидание %d мс) — лечение не применяю\n",
-					       am, pm, expect_ms);
+					trace (0, "подача вдвое реже ожидаемого (%d мс при периоде %d мс, ожидание %d мс) — лечение не применяю%s\n",
+					       am, pm, expect_ms,
+					       (want_sf_id < 0)
+					       ? " (цель переключения сброшена — жду нового замера)"
+					       : "");
 			}
 			else if (am > 0)
 			{
@@ -2591,6 +2648,11 @@ static int run_atv14 (const platform_t *plat)
 						if (id >= 0)
 						{
 							want_sf_id = id;
+							/* Подача кадров есть — это не пауза: отсчёт
+							 * терпения к паузе начинаем заново, иначе
+							 * «терпение» сняло бы только что выбранный режим
+							 * у играющего видео. */
+							still_since_us = sample_t;
 							trace (0, "частота по подаче видео-слоя: " HZ_FMT
 							       " Гц (счётчик кадров молчит) — переключаю режим\n",
 							       HZ_ARGS (lhz));
@@ -2897,9 +2959,18 @@ static int run_atv14 (const platform_t *plat)
 			{
 				cur_sf_id = want_sf_id;
 
+				/* Возврат режима после паузы (PAUSE_RESUME) — не новое
+				 * решение: частота этого видео проверена ещё до паузы.
+				 * Перепроверка замера и проверка подачи здесь вредны: их
+				 * окна захватывают паузу, когда кадры не шли, и проверка
+				 * подачи ложно решает «подача вдвое реже» — режим уходил
+				 * в переключение туда-обратно, а после него следом возврат
+				 * (живая находка 2026-10-08, журнал §32.9). */
+				bool resume_switch = (pact == PAUSE_RESUME);
+
 				/* R56: через recheck_ms перемерить и поправить режим, если
 				 * стартовое окно было смещено (один раз на видео) */
-				if ((recheck_ms > 0) && !recheck_armed)
+				if ((recheck_ms > 0) && !recheck_armed && !resume_switch)
 				{
 					/* g_mstime обновляется в начале итерации, а с тех пор
 					 * прошло окно замера (до 6 с) и dumpsys — берём свежее
@@ -2911,8 +2982,9 @@ static int run_atv14 (const platform_t *plat)
 					trace (1, "перепроверка замера через %d мс\n", recheck_ms);
 				}
 
-				/* §21.9: проверить, что кадры реально идут на подачу */
-				if (cadence_fix_ms > 0)
+				/* §21.9: проверить, что кадры реально идут на подачу
+				 * (кроме возврата после паузы — см. resume_switch выше) */
+				if ((cadence_fix_ms > 0) && !resume_switch)
 				{
 					mstime_update ();
 					mstime_arm (&cadence_timer, (uint32_t)cadence_fix_ms);
@@ -2992,6 +3064,17 @@ static void cfg_audit_warn (const char *msg, void *ctx)
 int afrd_run ()
 {
 	g_plat = platform_detect ();
+
+	/* switch.delay.off на новом пути значит другое (предел терпения к паузе,
+	 * см. pause.h) и имеет своё умолчание: конфиг читается в afrd_init до
+	 * определения платформы, поэтому уточняем значение здесь. Явно заданный
+	 * ключ не трогаем — на этой ветке важно лишь то, чего в файле нет. */
+	if ((g_plat.kind == PLAT_ATV14) && !cfg_get (g_cfg, "switch.delay.off"))
+	{
+		g_switch_delay_off = DEFAULT_SWITCH_DELAY_OFF_ATV14;
+		trace (1, "switch.delay.off не задан — на новом пути беру умолчание %d мс "
+		       "(предел удержания режима на паузе)\n", g_switch_delay_off);
+	}
 
 	/* «Громкие ключи»: настройка, которая на выбранном пути не действует,
 	 * должна быть названа в логе, а не молча проигнорирована (именно так
@@ -3294,6 +3377,10 @@ int afrd_init ()
 		g_mode_use_fract, g_mode_prefer_exact);
 
 	g_switch_delay_on = cfg_get_int ("switch.delay.on", DEFAULT_SWITCH_DELAY_ON);
+	/* switch.delay.off: на старом пути — задержка возврата режима после
+	 * события «видео кончилось»; на новом — предел удержания режима на паузе
+	 * (см. pause.h). Здесь ключ читается до определения платформы, поэтому
+	 * умолчание нового пути подставляется позже, в afrd_run. */
 	g_switch_delay_off = cfg_get_int ("switch.delay.off", DEFAULT_SWITCH_DELAY_OFF);
 	g_switch_delay_retry = cfg_get_int ("switch.delay.retry", DEFAULT_SWITCH_DELAY_RETRY);
 	g_switch_timeout = cfg_get_int ("switch.timeout", DEFAULT_SWITCH_TIMEOUT);

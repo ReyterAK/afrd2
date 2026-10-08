@@ -59,6 +59,7 @@
     <string name="prefsum_switch_delay_off">The delay in ms to wait before restoring original
         refresh rate after movie ends. Set to 0 to tell afrd not to restore original refresh
         rate.
+        On Android 12-14 - how long to keep the mode on pause; 0 - keep until the pause ends.
     </string>
     <string name="prefs_switch_delay_retry">Detect FPS retry delay</string>
     <string name="prefsum_switch_delay_retry">The delay between retries if movie frame rate cannot

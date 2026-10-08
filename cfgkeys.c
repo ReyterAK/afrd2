@@ -35,6 +35,11 @@ static const struct
 	{ "mode.min.hz.list",		CFGKEY_BOTH, NULL },
 	{ "switch.skip.pkg",		CFGKEY_BOTH, NULL },
 	{ "switch.timeout",		CFGKEY_BOTH, NULL },
+	/* На новом пути ключ ожил 2026-10-08 со своим смыслом (предел удержания
+	 * режима на паузе): события «видео кончилось», к которому он привязан на
+	 * старом пути, там не существует — остановленное видео с плеером на
+	 * экране неотличимо от паузы (журнал §32.1). */
+	{ "switch.delay.off",		CFGKEY_BOTH, NULL },
 
 	/* только новый путь (Android 10-14) */
 	{ "trigger.poll.ms",		CFGKEY_ATV14, NULL },
@@ -72,7 +77,6 @@ static const struct
 	{ "hdmi.sysfs",			CFGKEY_LEGACY, NULL },
 	{ "hdmi.state",			CFGKEY_LEGACY, NULL },
 	{ "switch.delay.on",		CFGKEY_LEGACY, NULL },
-	{ "switch.delay.off",		CFGKEY_LEGACY, NULL },
 	{ "switch.delay.retry",		CFGKEY_LEGACY, NULL },
 	{ "switch.blackout",		CFGKEY_LEGACY, NULL },
 	{ "switch.ignore",		CFGKEY_LEGACY, NULL },

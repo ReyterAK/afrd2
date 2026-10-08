@@ -41,6 +41,9 @@
 #   PLAYER          — компонент плеера без своего AFR (org.videolan.vlc/.StartActivity);
 #   PAUSE_TEST      — 1: добавить проверку паузы; PAUSE_CLIP — клип для неё;
 #   PAUSE_EXPECT    — keep (профиль pause.keep=1, по умолчанию) | restore (pause.keep=0);
+#   PAUSE_LIMIT_TEST — 1: проверить предел удержания режима на паузе (шаг 2b;
+#                     на устройстве в конфиге должен стоять switch.delay.off>0,
+#                     то же значение — в PAUSE_LIMIT_MS, по умолчанию 20000 мс);
 #   OWN_AFR_TEST    — 1: добавить проверку плеера со своим AFR; OWN_AFR_ACT — его
 #                     активность, OWN_AFR_CLIP — клип для проверки;
 #   API_TEST        — 1: добавить проверку API (шаг 3a): status, приоритет подсказки
@@ -72,6 +75,12 @@ PLAYER=${PLAYER:-org.videolan.vlc/.StartActivity}
 PAUSE_TEST=${PAUSE_TEST:-0}
 PAUSE_CLIP=${PAUSE_CLIP:-long_24000_1001}
 PAUSE_EXPECT=${PAUSE_EXPECT:-keep}
+# Шаг 2b: предел удержания режима на паузе (switch.delay.off на новом пути).
+# PAUSE_LIMIT_MS должен совпадать со значением ключа в конфиге НА УСТРОЙСТВЕ.
+PAUSE_LIMIT_TEST=${PAUSE_LIMIT_TEST:-0}
+PAUSE_LIMIT_MS=${PAUSE_LIMIT_MS:-20000}
+PAUSE_LIMIT_WAIT=${PAUSE_LIMIT_WAIT:-$((PAUSE_LIMIT_MS / 1000 + 8))}
+PAUSE_LIMIT_RESUME_WAIT=${PAUSE_LIMIT_RESUME_WAIT:-5}
 OWN_AFR_TEST=${OWN_AFR_TEST:-0}
 OWN_AFR_ACT=${OWN_AFR_ACT:-net.gtvbox.videoplayer/.PlayerActivity}
 OWN_AFR_CLIP=${OWN_AFR_CLIP:-long_24000_1001}
@@ -351,6 +360,71 @@ if [ "$PAUSE_TEST" = 1 ]; then
 	fi
 fi
 
+# Шаг 2b: терпение к паузе (switch.delay.off на новом пути). Пауза дольше
+# предела считается концом видео: режим возвращается, а на возобновлении
+# удержанный режим возвращается сразу, без окна замера — оно в профиле 20 с
+# плюс 2 с прогрева, поэтому возврат за PAUSE_LIMIT_RESUME_WAIT секунд
+# доказывает, что нового замера не было.
+if [ "$PAUSE_LIMIT_TEST" = 1 ]; then
+	echo
+	echo "=== терпение к паузе ($PAUSE_CLIP, предел ${PAUSE_LIMIT_MS} мс)"
+
+	lb=
+	lp=
+	lr=
+
+	if ! sh "$SDIR/play_clip.sh" start "$PAUSE_CLIP"; then
+		skip "терпение к паузе: клип $PAUSE_CLIP не запущен — проверка не выполнена"
+	else
+		sleep "$HOLD_WAIT"
+		lb=$(snap)
+		echo "до паузы: ${lb:-<пустой снимок>}"
+
+		adb -s "$D" shell 'input keyevent KEYCODE_MEDIA_PAUSE' >/dev/null
+		sleep "$PAUSE_LIMIT_WAIT"
+		lp=$(snap)
+		echo "через ${PAUSE_LIMIT_WAIT} с паузы: ${lp:-<пустой снимок>}"
+
+		adb -s "$D" shell 'input keyevent KEYCODE_MEDIA_PLAY' >/dev/null
+		sleep "$PAUSE_LIMIT_RESUME_WAIT"
+		lr=$(snap)
+		echo "через ${PAUSE_LIMIT_RESUME_WAIT} с после возобновления: ${lr:-<пустой снимок>}"
+
+		sh "$SDIR/play_clip.sh" stop
+	fi
+
+	if ! snap_ok "$lb" || ! snap_ok "$lp" || ! snap_ok "$lr"; then
+		skip "терпение к паузе: состояние снять не удалось (пустой снимок или пустой режим) — проверка не выполнена"
+	else
+		lhold=$(fld "$lb" 1)
+		if [ "$lhold" = "$ORIG_MODE" ]; then
+			# без состоявшегося удержания проверка предела бессмысленна
+			skip "терпение к паузе: удержание не поднялось (режим $lhold) — проверка не выполнена"
+		else
+			lpm=$(fld "$lp" 1)
+			lpb=$(fld "$lp" 4)
+			lrm=$(fld "$lr" 1)
+
+			if [ "$lpm" = "$ORIG_MODE" ]; then
+				ok "терпение к паузе: пауза дольше предела вернула $ORIG_MODE"
+			else
+				fail "терпение к паузе: через ${PAUSE_LIMIT_WAIT} с паузы режим $lpm, ожидался $ORIG_MODE"
+			fi
+
+			case "$lpb" in
+				*false*) ok "терпение к паузе: флаг backdoor снят ($lpb)" ;;
+				*)       fail "терпение к паузе: флаг backdoor не снят ($lpb)" ;;
+			esac
+
+			if [ "$lrm" = "$lhold" ]; then
+				ok "терпение к паузе: возобновление вернуло $lhold без нового замера"
+			else
+				fail "терпение к паузе: после возобновления режим $lrm, ожидался $lhold"
+			fi
+		fi
+	fi
+fi
+
 # Шаг 3: плеер со своим AFR. Он должен выставить режим сам, а демон — не
 # вмешиваться (в логе ATV14-пути отдельной строки про «режим уже подходит» нет,
 # поэтому признак — снятый флаг backdoor: режим выставлен не нами).
@@ -410,8 +484,14 @@ if [ "$API_TEST" = 1 ]; then
 	# 2) R34в: счётчик кадров нового инстанса декодера должен начинаться с нуля
 	frames ()
 	{
+		# Каналов декодера может быть несколько: наш и чужой «залипший»
+		# инстанс, оставшийся от другого приложения. Берём ПОСЛЕДНИЙ блок —
+		# самое свежее состояние, ровно как vdec_select() в демоне
+		# (там же — «из растущих самый свежий, иначе последний блок»).
+		# Чтение первого блока давало ложный FAIL (живой случай 2026-10-08:
+		# зомби-канал 612 против 12 у нового видео).
 		adb -s "$D" shell "grep -oE 'frame count *: *[0-9]+' /sys/class/vdec/vdec_status" |
-			sed -n 1p | tr -cd '0-9'
+			sed -n '$p' | tr -cd '0-9'
 	}
 
 	clip_a=$API_RESET_CLIP_A
@@ -459,6 +539,23 @@ if [ "$API_TEST" = 1 ]; then
 		[ -n "$lines0" ] || lines0=0
 
 		adb -s "$D" shell "am start -n $PLAYER -a android.intent.action.VIEW -d file://$file -t video/mp4" >/dev/null
+
+		# Подсказка живёт в демоне 1 с, а новое видео он видит только после
+		# дебаунсов (trigger.stop.debounce.ms + trigger.start.debounce.ms, в
+		# профиле 1500 + 500 мс). Отправка «сразу после am start» иногда
+		# истекала раньше, чем демон вообще начинал замер, — проверка падала
+		# без вины демона (живой случай 2026-10-08). Ждём строку о новом видео
+		# и только тогда шлём: решение по огибающей всё равно не раньше
+		# fps.measure.envelope.ms (20 с), так что подсказка остаётся «ранней».
+		i=0
+		while [ "$i" -lt 20 ]; do
+			if adb -s "$D" shell "tail -n +$((lines0 + 1)) $AFRD_LOG 2>/dev/null | grep -q 'видео ведёт приложение'" 2>/dev/null; then
+				break
+			fi
+			sleep 1
+			i=$((i + 1))
+		done
+
 		adb -s "$D" shell "echo 'frame_rate_hint 23976' | timeout $API_TIMEOUT nc -u -w1 127.0.0.1 50505" >/dev/null
 		sleep "$HOLD_WAIT"
 
@@ -473,9 +570,10 @@ if [ "$API_TEST" = 1 ]; then
 		else
 			fail "подсказка применена не с ожидаемой частотой 23.98 Гц: $hint"
 		fi
-		# режим печатаем информативно: подсказка живёт 1 с, и при неудачном
-		# стечении с дебаунсом 500 мс она может истечь до решения демона
-		echo "ИНФО: режим при подсказке 23976 на клипе $API_HINT_CLIP — $(fld "$s" 1) (ожидается 1080p24hz)"
+		# режим печатаем информативно: подсказку демон применяет, но через
+		# fps.recheck.delay.ms (4 с) перемеряет частоту по огибающей — на клипе
+		# long_50 замер честно даёт 50 Гц, и это не ошибка проверки
+		echo "ИНФО: режим при подсказке 23976 на клипе $API_HINT_CLIP — $(fld "$s" 1) (после перепроверки замера ожидается режим клипа)"
 
 		sh "$SDIR/play_clip.sh" stop
 		sleep "$STOP_WAIT"

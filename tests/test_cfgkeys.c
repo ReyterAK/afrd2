@@ -29,6 +29,14 @@ static void test_notes (void)
 	assert (cfgkeys_note ("mode.min.hz.list", CFGKEY_ATV14) == NULL);
 	assert (cfgkeys_note ("mode.min.hz.list", CFGKEY_LEGACY) == NULL);
 
+	/* switch.delay.off ожил на новом пути 2026-10-08 (предел удержания
+	 * режима на паузе); на старом пути смысл прежний — задержка возврата */
+	assert (cfgkeys_note ("switch.delay.off", CFGKEY_ATV14) == NULL);
+	assert (cfgkeys_note ("switch.delay.off", CFGKEY_LEGACY) == NULL);
+	/* соседние ключи задержек остались только на старом пути */
+	assert (cfgkeys_note ("switch.delay.on", CFGKEY_ATV14) != NULL);
+	assert (cfgkeys_note ("switch.delay.retry", CFGKEY_ATV14) != NULL);
+
 	/* ключи нового пути */
 	assert (cfgkeys_note ("trigger.poll.ms", CFGKEY_ATV14) == NULL);
 	assert (cfgkeys_note ("trigger.poll.ms", CFGKEY_LEGACY) != NULL);
