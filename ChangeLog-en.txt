@@ -6,6 +6,23 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
     First public build of the fork. Below are the differences from AFRd 0.3.2;
     later versions get ordinary change entries.
 
+    Android 10-11 (Amlogic, kernel 5.x) — the new code path:
+
+    * The mode is switched by the vendor SystemControl HAL (HIDL
+      vendor.amlogic.hardware.systemcontrol, setActiveDispMode) — the same
+      mechanism the built-in system AFR uses. The SurfaceFlinger transaction
+      path does not work on these versions, and on Android 11 calling it with a
+      single argument crashes SurfaceFlinger.
+    * The mode is chosen by NAME from disp_cap (there is no SurfaceFlinger mode
+      table here); the helper (app_process + dex) ships in the APK and in the
+      Magisk module.
+    * Fast decision by the declared frame rate is enabled by default: the mode is
+      applied immediately from the vdec_status "frame rate" field (the way the
+      system AFR does it — hence its speed), but the decision is verified by our
+      own measurement and corrected on mismatch. Key: fps.declare.fast.
+    * Without the vendor service or the helper the daemon falls back to the
+      passive mode with a warning — modes are untouched, API and stats work.
+
     Android 12-14 (kernel 5.x) — the new code path:
 
     * The HDMI mode is switched by the stock SurfaceFlinger mechanism, so it stays

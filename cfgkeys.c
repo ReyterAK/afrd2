@@ -41,18 +41,19 @@ static const struct
 	 * экране неотличимо от паузы (журнал §32.1). */
 	{ "switch.delay.off",		CFGKEY_BOTH, NULL },
 
+	/* Быстрое решение по заявленной частоте кадра: живёт в цикле нового пути
+	 * (на старом свой тайминг по uevent'ам, заявленную частоту он не читает).
+	 * Умолчание зависит от вида нового пути: на Android 10/11 включено, на
+	 * ATV14 выключено. */
+	{ "fps.declare.fast",		CFGKEY_ATV14, NULL },
+
+	/* только новый путь (Android 10-14) */
 	/* Вендорный путь смены режима (Android 10/11, Amlogic): путь к помощнику
 	 * и список режимов ТВ. Помощник раскладывают приложение и Magisk-модуль,
 	 * поэтому путь настраиваемый; список нужен, потому что таблицы режимов
 	 * SurfaceFlinger на 10/11 нет. */
-	{ "vendor.disp.cli",		CFGKEY_BOTH, NULL },
-	{ "vendor.disp.cap",		CFGKEY_BOTH, NULL },
-
-	/* Быстрое решение по заявленной частоте кадра: действует на обоих путях
-	 * (умолчание разное — на Android 10/11 включено, на ATV14 выключено). */
-	{ "fps.declare.fast",		CFGKEY_BOTH, NULL },
-
-	/* только новый путь (Android 10-14) */
+	{ "vendor.disp.cli",		CFGKEY_ATV14, NULL },
+	{ "vendor.disp.cap",		CFGKEY_ATV14, NULL },
 	{ "trigger.poll.ms",		CFGKEY_ATV14, NULL },
 	{ "trigger.start.debounce.ms",	CFGKEY_ATV14, NULL },
 	{ "trigger.stop.debounce.ms",	CFGKEY_ATV14, NULL },

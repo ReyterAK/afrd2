@@ -76,6 +76,9 @@ public class Config
         itemType.put ("fps.measure.envelope.early.ms", TYPE_INT);
         itemType.put ("fps.cadence.fix.ms", TYPE_INT);
         itemType.put ("fps.prefer.api", TYPE_BOOL);
+        // Быстрое решение по заявленной частоте кадра (Android 10/11 включено,
+        // ATV14 выключено умолчанием пути — см. afrd_run).
+        itemType.put ("fps.declare.fast", TYPE_BOOL);
         itemType.put ("fps.correct.enable", TYPE_BOOL);
         itemType.put ("fps.correct.list", TYPE_STR);
         itemType.put ("fps.correct.av1.offset", TYPE_STR);

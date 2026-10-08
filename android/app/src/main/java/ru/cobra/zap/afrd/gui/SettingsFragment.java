@@ -87,6 +87,7 @@ public class SettingsFragment extends PreferenceFragment
         "fps_recheck_delay_ms",
         "fps_cadence_fix_ms",
         "fps_prefer_api",
+        "fps_declare_fast",
         "pause_keep",
         "switch_restore_on_stop",
         /* калибровка по плееру */

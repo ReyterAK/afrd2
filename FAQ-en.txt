@@ -52,6 +52,11 @@
 ! frame rate switches in the box settings (on AmLogic it is usually
 ! called "Frame rate switch" / "auto frame rate switching").
 
+! On Android 10 and 11 this matters especially: there AFRd switches the mode
+! through the same vendor mechanism as the system AFR (the vendor SystemControl
+! HAL) - two mechanisms going through the same node, so a conflict is more
+! likely than on other versions.
+
 ! Auto framerate built into a video player is a separate case, see the
 ! next question.
 

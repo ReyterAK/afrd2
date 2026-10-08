@@ -94,6 +94,8 @@
     <string name="prefs_group_players">Плееры</string>
     <string name="prefs_group_mode">Выбор режима</string>
     <string name="prefs_group_atv14">Тонкая настройка Android 12+</string>
+    <string name="prefs_fps_declare_fast">Быстрое решение по заявленной частоте</string>
+    <string name="prefsum_fps_declare_fast">Применять режим сразу по частоте, которую заявил декодер (vdec_status: frame rate), — так делает встроенная системная АПЧ, поэтому она и переключает за 2-4 с. Решение предварительное: его проверяет собственный замер, и при расхождении режим исправляется (см. «Перепроверка частоты»). 0 — решать только по замеру (медленнее, но не зависит от честности драйвера). На Android 12-14 по умолчанию выключено, на Android 10/11 включено.</string>
     <string name="prefs_fps_prefer_api">Доверять подсказке плеера</string>
     <string name="prefsum_fps_prefer_api">Если плеер сам сообщает частоту через API AFRd2
         (frame_rate_hint), предпочитать её собственному замеру по счётчику кадров.</string>
