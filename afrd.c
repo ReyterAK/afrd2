@@ -47,6 +47,7 @@
 
 const char *g_hdmi_dev = NULL;
 const char *g_mode_path = NULL;
+const char *g_vendor_disp_cli = NULL;
 
 static const char *g_hdmi_state = NULL;
 static int g_uevent_sock = -1;
@@ -3436,6 +3437,9 @@ int afrd_init ()
 	g_hdmi_state = cfg_get_str ("hdmi.state", DEFAULT_HDMI_STATE);
 
 	g_mode_path = cfg_get_str ("mode.path", DEFAULT_VIDEO_MODE);
+	/* Путь к вендорному помощнику смены режима (Android 10/11). Пишут его
+	 * приложение и Magisk-модуль, раскладывая помощник в свои каталоги. */
+	g_vendor_disp_cli = cfg_get_str ("vendor.disp.cli", DEFAULT_VENDOR_DISP_CLI);
 	g_mode_prefer_exact = cfg_get_int ("mode.prefer.exact", DEFAULT_MODE_PREFER_EXACT);
 	g_mode_use_fract = cfg_get_int ("mode.use.fract", DEFAULT_MODE_USE_FRACT);
 	blacklist_rates_load ("mode.blacklist.rates");

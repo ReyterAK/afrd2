@@ -19,3 +19,6 @@
 
 # артефакты сборки host-тестов
 *.o
+
+# артефакт сборки вендорного помощника (собирается tools/droidlogic/build-dex.sh)
+/tools/droidlogic/afrd-disp.dex

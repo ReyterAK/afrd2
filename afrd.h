@@ -43,6 +43,16 @@
 #define DEFAULT_SWITCH_HDCP		2000
 #define DEFAULT_MODE_PREFER_EXACT	0
 #define DEFAULT_MODE_USE_FRACT		0
+/* Вендорный помощник смены режима (Android 10/11, Amlogic): app_process + dex.
+ * Пишут его приложение и Magisk-модуль, поэтому путь настраиваемый. */
+#define DEFAULT_VENDOR_DISP_CLI		"/data/local/tmp/afrd-disp.sh"
+/* Список режимов ТВ для нового пути на Android 10/11 (имена и частоты) —
+ * таблицы SurfaceFlinger там нет. */
+#define DEFAULT_VENDOR_DISP_CAP		"/sys/class/amhdmitx/amhdmitx0/disp_cap"
+/* Быстрое решение по заявленной частоте кадра (vdec_status: frame rate).
+ * На Android 10/11 включено (как у системного AFR), на ATV14 — выключено. */
+#define DEFAULT_FPS_DECLARE_FAST_ATV11	1
+#define DEFAULT_FPS_DECLARE_FAST_ATV14	0
 
 #define ARRAY_SIZE(x)			(sizeof (x) / sizeof (x [0]))
 
@@ -91,6 +101,9 @@ extern volatile int g_shutdown;
 extern const char *g_hdmi_dev;
 // sysfs path to current display mode
 extern const char *g_mode_path;
+// путь к вендорному помощнику смены режима (Android 10/11, Amlogic):
+// app_process + dex, метод setActiveDispMode(<имя режима>) — см. tools/droidlogic
+extern const char *g_vendor_disp_cli;
 
 // the list of supported video modes
 extern display_mode_t *g_modes;

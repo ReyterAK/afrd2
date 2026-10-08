@@ -6,12 +6,18 @@
 typedef enum
 {
 	SINK_LEGACY = 0,	/* запись имени режима в /sys/class/display/mode (Android 6-9) */
-	SINK_SF_BACKDOOR = 1,	/* service call SurfaceFlinger 1035 i32 <id> (Android 10-14) */
+	SINK_SF_BACKDOOR = 1,	/* service call SurfaceFlinger 1035 i32 <id> (Android 12-14) */
+	SINK_VENDOR_MODE = 2,	/* вендорный SystemControl Amlogic (Android 10/11):
+				 * app_process + dex, метод setActiveDispMode(<имя режима>) */
 } sink_kind_t;
 
-/* Строки команд (для тестов и для логов). Возврат: 0 = ок, -1 = не влезло. */
+/* Строка команды (для тестов и для логов). Возврат: 0 = ок, -1 = не влезло. */
 int sink_build_sf_set (char *buf, size_t n, int sf_mode_id);
 int sink_build_sf_reset (char *buf, size_t n);
+
+/* Строка вызова вендорного помощника (Android 10/11): "sh <cli> <имя режима>".
+ * Пустое имя режима или пустой путь к помощнику — отказ (применять нечего). */
+int sink_build_vendor_set (char *buf, size_t n, const char *cli, const char *mode_name);
 
 /* Применить режим. Возврат: 0 = ок, -1 = ошибка. */
 int sink_apply (sink_kind_t kind, const char *mode_path, int sf_mode_id,

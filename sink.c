@@ -15,8 +15,23 @@ int sink_build_sf_reset (char *buf, size_t n)
 	return (r < 0 || (size_t)r >= n) ? -1 : 0;
 }
 
+int sink_build_vendor_set (char *buf, size_t n, const char *cli, const char *mode_name)
+{
+	if (!cli || !*cli || !mode_name || !*mode_name)
+		return -1;
+
+	int r = snprintf (buf, n, "sh %s %s", cli, mode_name);
+	return (r < 0 || (size_t)r >= n) ? -1 : 0;
+}
+
 int sink_release_backdoor (sink_kind_t kind)
 {
+	/* Вендорный путь (Android 10/11): «флага удержания» нет — режим держит
+	 * вендорный сервис, а возврат делается обычным применением исходного
+	 * режима. Снимать нечего. */
+	if (kind == SINK_VENDOR_MODE)
+		return 0;
+
 	if (kind != SINK_SF_BACKDOOR)
 		return 0;
 
@@ -45,6 +60,31 @@ int sink_apply (sink_kind_t kind, const char *mode_path, int sf_mode_id,
 
 		trace (1, "Переключаю режим (legacy) на %s\n", legacy_mode_name);
 		return sysfs_write (mode_path, legacy_mode_name);
+	}
+
+	if (kind == SINK_VENDOR_MODE)
+	{
+		if (!legacy_mode_name || !*legacy_mode_name)
+			return -1;
+
+		/* Путь к помощнику берём из конфига тем же глобалом, что и вендорский
+		 * клиент цветового пространства на ATV14 (afrd.c: g_vendor_disp_cli). */
+		char cmd [256], out [256];
+		if (sink_build_vendor_set (cmd, sizeof (cmd), g_vendor_disp_cli, legacy_mode_name) != 0)
+			return -1;
+
+		trace (1, "Переключаю режим (вендорный SystemControl) на %s\n", legacy_mode_name);
+
+		/* Успех — код возврата помощника: он вернёт ненулевой, если сервис
+		 * недоступен или метод отверг режим (см. AfrdDispMode.java). */
+		int rc = exec_status (cmd, out, sizeof (out));
+		if (rc != 0)
+		{
+			trace (1, "вендорный SystemControl не применил режим %s (код %d: %s)\n",
+			       legacy_mode_name, rc, out);
+			return -1;
+		}
+		return 0;
 	}
 
 	char cmd [128], out [256];

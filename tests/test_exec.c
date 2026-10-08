@@ -25,6 +25,17 @@ int main (void)
 	assert (exec_capture ("printf 'abcdefghijklmnop'", out, 8) == 0);
 	assert (strcmp (out, "abcdefg") == 0);
 
+	/* exec_status отдаёт код возврата команды: он нужен вендорному помощнику,
+	 * который сообщает об отказе ненулевым кодом */
+	assert (exec_status ("exit 0", out, sizeof (out)) == 0);
+	assert (exec_status ("exit 3", out, sizeof (out)) == 3);
+	assert (exec_status ("echo hi; exit 7", out, sizeof (out)) == 7);
+	assert (strstr (out, "hi") != NULL);
+	/* убитый сигналом — не «код выхода», а отказ */
+	assert (exec_status ("kill -9 $$", out, sizeof (out)) == -1);
+	/* слишком длинная команда -> -1 */
+	assert (exec_status (long_cmd, out, sizeof (out)) == -1);
+
 	printf ("exec: OK\n");
 	return 0;
 }
