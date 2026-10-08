@@ -2,6 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Статус: план выполнен (2026-10-08).** Все задачи 1–9 закрыты; запись о выполнении и решения
+> по ходу — `progress.md` рядом со спекой (плюс коммиты `bf23bc5`…`67b25f4`). Живая приёмка на
+> стенде `.45` (Android 11) — `OK=24 FAIL=0` (`tools/stand/acceptance_atv11.sh`), находки
+> независимого ревью и прогона — журнал §33.20–§33.21. Открыто только то, что требует стендов с
+> ТВ: регрессия Android 12–14 и старый путь с включённым системным AFR (задачи 1–8 самих шагов
+> закрыты, см. примечания в Task 9).
+
 **Goal:** Научить AFRd2 применять режим на Android 10/11 вендорным HIDL-механизмом Amlogic и решать о режиме за 2–4 с по заявленной частоте, подтверждая замером.
 
 **Architecture:** Один цикл решения (`run_atv14`). Различия платформ — в двух точках: выбор целевого режима (`mode_target_t`: id таблицы SurfaceFlinger для ATV14, имя из `disp_cap` для ATV11) и применение (`sink`: транзакция 1035, запись в sysfs или вендорный помощник). Быстрый путь — отдельная ветка под ключом `fps.declare.fast` (1 для ATV11, 0 для ATV14): решение по заявленной частоте сразу, замер продолжает работать и правит режим при расхождении.
@@ -56,7 +63,7 @@
 **Interfaces:**
 - Produces: поле `unsigned decl_fps;` в `vdec_status_t` и `vdec_chan_t` — заявленная частота кадра (целые fps), `0` если поля нет.
 
-- [ ] **Step 1: Тест, который падает**
+- [x] **Step 1: Тест, который падает**
 
 Добавить в `tests/test_vdec.c` (рядом с проверками `frame dur`):
 
@@ -101,12 +108,12 @@ static void test_declared_fps (void)
 
 и вызвать `test_declared_fps ();` в `main()`.
 
-- [ ] **Step 2: Убедиться, что падает**
+- [x] **Step 2: Убедиться, что падает**
 
 Run: `sh tests/run_tests.sh 2>&1 | grep -A3 vdec`
 Expected: ошибка компиляции `decl_fps` не объявлен либо assert-падение.
 
-- [ ] **Step 3: Реализация**
+- [x] **Step 3: Реализация**
 
 `vdec.h`, в `vdec_status_t` после `decl_dur`:
 
@@ -140,12 +147,12 @@ Expected: ошибка компиляции `decl_fps` не объявлен л�
 	out->decl_fps = chans [idx].decl_fps;
 ```
 
-- [ ] **Step 4: Зелёные тесты**
+- [x] **Step 4: Зелёные тесты**
 
 Run: `sh tests/run_tests.sh 2>&1 | grep -E 'vdec|FAIL'`
 Expected: `vdec: OK`, строк `FAIL` нет.
 
-- [ ] **Step 5: Коммит**
+- [x] **Step 5: Коммит**
 
 ```bash
 git add vdec.h vdec.c tests/test_vdec.c
@@ -164,7 +171,7 @@ git commit -m "feat(vdec): разбор заявленной частоты ка
 - Consumes: ничего (только `exec_capture` из `exec.h`).
 - Produces: `SINK_VENDOR_MODE` в `sink_kind_t`; `sink_build_vendor_set (char *buf, size_t n, const char *cli, const char *mode_name)` — сборка команды; `sink_apply` для вендорного вида выполняет её; `sink_release_backdoor (SINK_VENDOR_MODE)` — no-op (возврат 0).
 
-- [ ] **Step 1: Тест, который падает**
+- [x] **Step 1: Тест, который падает**
 
 Добавить в `tests/test_sink.c`:
 
@@ -196,12 +203,12 @@ static void test_vendor_build (void)
 
 и вызов в `main()`.
 
-- [ ] **Step 2: Убедиться, что падает**
+- [x] **Step 2: Убедиться, что падает**
 
 Run: `sh tests/run_tests.sh 2>&1 | grep -A3 sink`
 Expected: ошибка компиляции (`SINK_VENDOR_MODE` не объявлен).
 
-- [ ] **Step 3: Реализация**
+- [x] **Step 3: Реализация**
 
 `sink.h`: добавить в перечисление и объявление:
 
@@ -257,12 +264,12 @@ int sink_build_vendor_set (char *buf, size_t n, const char *cli, const char *mod
 
 `g_vendor_disp_cli` объявить в `afrd.h` (`extern const char *g_vendor_disp_cli;`) и завести в `afrd.c` (Task 3 заполнит из конфига).
 
-- [ ] **Step 4: Зелёные тесты**
+- [x] **Step 4: Зелёные тесты**
 
 Run: `sh tests/run_tests.sh 2>&1 | grep -E 'sink|FAIL'`
 Expected: `sink: OK`.
 
-- [ ] **Step 5: Коммит**
+- [x] **Step 5: Коммит**
 
 ```bash
 git add sink.h sink.c afrd.h afrd.c tests/test_sink.c
@@ -282,7 +289,7 @@ git commit -m "feat(sink): вендорный способ применения 
 - Consumes: `sink_kind_t` (Task 2).
 - Produces: `platform_kind_t PLAT_ATV11`; поля `platform_t`: `const char *vendor_mode_cli;`, `const char *disp_cap;`; глобал `const char *g_vendor_disp_cli;`.
 
-- [ ] **Step 1: Тест (падающий)**
+- [x] **Step 1: Тест (падающий)**
 
 В `tests/test_cfgkeys.c` (тест аудита профилей) новый ключ проверяется автоматически после добавления в профиль — сначала добавить в профили, тест покажет расхождение:
 
@@ -303,7 +310,7 @@ fps.declare.fast=0
 Run: `sh tests/run_tests.sh 2>&1 | grep -A2 cfgkeys`
 Expected: FAIL — «неизвестный ключ: fps.declare.fast».
 
-- [ ] **Step 2: Реализация**
+- [x] **Step 2: Реализация**
 
 `cfgkeys.c` — в таблицу:
 
@@ -409,12 +416,12 @@ typedef enum
 
 `afrd.c` — глобал `int g_fps_declare_fast = 0;` и `extern` в `afrd.h`.
 
-- [ ] **Step 3: Зелёные тесты**
+- [x] **Step 3: Зелёные тесты**
 
 Run: `sh tests/run_tests.sh 2>&1 | grep -E 'cfgkeys|inactive|FAIL'`
 Expected: `cfgkeys: OK`, `inactive: OK`.
 
-- [ ] **Step 4: Коммит**
+- [x] **Step 4: Коммит**
 
 ```bash
 git add platform.h platform.c afrd.h afrd.c cfgkeys.c config/afrd2.ini config/afrd-android8+.ini
@@ -434,7 +441,7 @@ git commit -m "feat(platform): вид PLAT_ATV11 (вендорный SystemContr
 - Produces: `int modes_select_by_hz (const display_mode_t *modes, int n, int hz, int width, int height, bool interlaced, int prefer_exact, int floor_hz, bool (*banned)(int hz, void *ctx), void *ctx, char *name_out, size_t name_sz, int *hz_out)` — возврат 0 при успехе, -1 если режима нет.
 - Consumes: `display_mode_t` (`afrd.h`), `display_mode_hz`, `display_mode_set_hz`.
 
-- [ ] **Step 1: Тест, который падает**
+- [x] **Step 1: Тест, который падает**
 
 `tests/test_modes_sel.c`:
 
@@ -521,12 +528,12 @@ int main (void)
 
 (функция `test_banned_cb` — в самом тесте, `bool test_banned_cb (int hz, void *ctx) { int *b = ctx; return hz != *b; }`)
 
-- [ ] **Step 2: Убедиться, что падает**
+- [x] **Step 2: Убедиться, что падает**
 
 Run: `sh tests/run_tests.sh 2>&1 | grep -A3 modes_sel`
 Expected: тест не подключён/не компилируется.
 
-- [ ] **Step 3: Реализация**
+- [x] **Step 3: Реализация**
 
 `modes_sel.h`:
 
@@ -597,12 +604,12 @@ static bool select_mode (int floor, display_mode_t *best)
 
 `tests/run_tests.sh`: добавить `run test_modes_sel modes_sel.c`.
 
-- [ ] **Step 4: Зелёные тесты**
+- [x] **Step 4: Зелёные тесты**
 
 Run: `sh tests/run_tests.sh 2>&1 | grep -E 'modes_sel|FAIL'`
 Expected: `modes_sel: OK`.
 
-- [ ] **Step 5: Коммит**
+- [x] **Step 5: Коммит**
 
 ```bash
 git add modes_sel.h modes_sel.c tests/test_modes_sel.c tests/run_tests.sh modes.c
@@ -621,7 +628,7 @@ git commit -m "refactor(modes): чистый выбор режима по час
 - Consumes: `modes_select_by_hz` (Task 4), `SINK_VENDOR_MODE` (Task 2), `PLAT_ATV11` (Task 3).
 - Produces: `typedef struct { int sf_id; char name [32]; int hz; } mode_target_t;` и функция `static int atv_apply_target (const platform_t *plat, const mode_target_t *t, const char *skipped)`.
 
-- [ ] **Step 1: Тип и применение**
+- [x] **Step 1: Тип и применение**
 
 `afrd.h`:
 
@@ -677,7 +684,7 @@ static int atv_apply_target (const platform_t *plat, const mode_target_t *t, con
 
 все прежние вызовы `atv14_apply_mode (plat, want_sf_id, …)` заменяются на сборку `mode_target_t` (для ATV14 `sf_id = want_sf_id`, `name[0] = 0`) и вызов `atv_apply_target`.
 
-- [ ] **Step 2: Выбор режима для ATV11**
+- [x] **Step 2: Выбор режима для ATV11**
 
 В точке решения (после того как замер дал `hz`, ~2755) добавить:
 
@@ -715,7 +722,7 @@ static int atv_apply_target (const platform_t *plat, const mode_target_t *t, con
 
 (функция `video_modes_load` — тонкая обёртка в `modes.c` над существующим разбором `disp_cap`, принимающая путь параметром; сейчас путь берётся из `g_hdmi_dev`.)
 
-- [ ] **Step 3: Проверка на стенде `.45`**
+- [x] **Step 3: Проверка на стенде `.45`**
 
 ```bash
 cd /home/reyter/AI/afrd2 && ./mka && sh tools/stand/build_push.sh   # но с нашим профилем на .45
@@ -725,7 +732,7 @@ cd /home/reyter/AI/afrd2 && ./mka && sh tools/stand/build_push.sh   # но с н
 Expected (лог): `Окружение: ATV11 (sink=vendor-mode, backdoor=нет)`, затем
 `Переключаю режим (вендорный SystemControl) на 1080p24hz` и `vinfo`/SF на 23.976.
 
-- [ ] **Step 4: Коммит**
+- [x] **Step 4: Коммит**
 
 ```bash
 git add afrd.c afrd.h modes.c
@@ -744,7 +751,7 @@ git commit -m "feat(afrd): ветка ATV11 — выбор режима по и�
 - Consumes: `decl_fps` (Task 1), `fps_classify`, `fps_rate_group`, `g_fps_declare_fast` (Task 3).
 - Produces: `int fps_declared_class (int declared_fps)` → класс 24.8 или 0; `bool fps_group_differs (int a_hz, int b_hz)`.
 
-- [ ] **Step 1: Тест, который падает**
+- [x] **Step 1: Тест, который падает**
 
 `tests/test_declare.c`:
 
@@ -786,12 +793,12 @@ int main (void)
 }
 ```
 
-- [ ] **Step 2: Убедиться, что падает**
+- [x] **Step 2: Убедиться, что падает**
 
 Run: `sh tests/run_tests.sh 2>&1 | grep -A3 declare`
 Expected: `fps_declared_class` не объявлен.
 
-- [ ] **Step 3: Реализация**
+- [x] **Step 3: Реализация**
 
 `fps_class.h`:
 
@@ -827,7 +834,7 @@ bool fps_group_differs (int a_hz, int b_hz)
 }
 ```
 
-- [ ] **Step 4: Ветка быстрого пути в `afrd.c`**
+- [x] **Step 4: Ветка быстрого пути в `afrd.c`**
 
 до блока огибающей:
 
@@ -864,12 +871,12 @@ bool fps_group_differs (int a_hz, int b_hz)
 
 (сброс `fast_applied = false; fast_class = 0;` — при новом видео, на стопе и в `atv14_invalidate`, рядом с существующими сбросами `want_sf_id`.)
 
-- [ ] **Step 5: Зелёные тесты**
+- [x] **Step 5: Зелёные тесты**
 
 Run: `sh tests/run_tests.sh 2>&1 | grep -E 'declare|FAIL'`
 Expected: `declare: OK`.
 
-- [ ] **Step 6: Коммит**
+- [x] **Step 6: Коммит**
 
 ```bash
 git add fps_class.h fps_class.c afrd.c afrd.h tests/test_declare.c tests/run_tests.sh
@@ -887,7 +894,7 @@ git commit -m "feat(afrd): быстрый путь решения по заяв�
 - Modify: `README.md`, `ChangeLog-ru.txt`, `ChangeLog-en.txt`, `FAQ-ru.txt`, `FAQ-en.txt`
 - Test: `tests/test_inactive.c`, `tests/test_faq.sh`
 
-- [ ] **Step 1: Строки**
+- [x] **Step 1: Строки**
 
 `values/strings.xml`:
 ```xml
@@ -901,7 +908,7 @@ git commit -m "feat(afrd): быстрый путь решения по заяв�
 <string name="prefsum_fps_declare_fast">Применять режим сразу по частоте, которую заявил декодер (vdec_status: frame rate), — так делает встроенная системная АПЧ. Затем решение проверяется замером: при расхождении режим исправляется (fps.recheck.delay.ms). 0 — решать только по замеру.</string>
 ```
 
-- [ ] **Step 2: preferences.xml**
+- [x] **Step 2: preferences.xml**
 
 в группе `atv14`, первой строкой после «Доверять подсказке плеера»:
 
@@ -911,22 +918,22 @@ git commit -m "feat(afrd): быстрый путь решения по заяв�
                   android:title="@string/prefs_fps_declare_fast"/>
 ```
 
-- [ ] **Step 3: Пометка для старого пути**
+- [x] **Step 3: Пометка для старого пути**
 
 `SettingsFragment.java` — в `kInactiveOnLegacy` добавить `"fps_declare_fast"` (как остальные ключи нового пути).
 
-- [ ] **Step 4: Документация**
+- [x] **Step 4: Документация**
 
 - `README.md`: в таблицу ключей — строка `fps.declare.fast`; в раздел про Android 10/11 — заменить «в демон ещё не встроен» на описание работы через вендорный SystemControl; в «Статус приёмки» — прогон на `.45`.
 - `ChangeLog-ru.txt`/`ChangeLog-en.txt`: раздел `1.0.0` дополнить: AFR на Android 10/11 через вендорный SystemControl; быстрое решение по заявленной частоте.
 - `FAQ-ru.txt`/`FAQ-en.txt`: в ответ про системную АПЧ добавить абзац про Android 10/11 (демон использует тот же вендорный механизм, поэтому одновременная работа даёт гонку за режим). Число вопросов не меняется (`tests/test_faq.sh`).
 
-- [ ] **Step 5: Тесты**
+- [x] **Step 5: Тесты**
 
 Run: `sh tests/run_tests.sh 2>&1 | grep -E 'inactive|faq|versions|FAIL'`
 Expected: все `OK`.
 
-- [ ] **Step 6: Коммит**
+- [x] **Step 6: Коммит**
 
 ```bash
 git add android/app/src/main/res/values/strings.xml android/app/src/main/res/values-ru/strings.xml \
@@ -949,7 +956,7 @@ git commit -m "docs+gui: строка быстрого решения, опис�
 - Consumes: `tools/droidlogic/afrd-disp.{sh,dex}`.
 - Produces: помощник в `cacheDir` приложения и в каталоге модуля; ключ `vendor.disp.cli` указывает на него.
 
-- [ ] **Step 1: Копирование в ресурсы (`mka`)**
+- [x] **Step 1: Копирование в ресурсы (`mka`)**
 
 ```sh
 # Вендорный помощник (Android 10/11): dex и обёртка — в ресурсы APK,
@@ -959,7 +966,7 @@ cp tools/droidlogic/afrd-disp.dex android/app/src/main/res/raw/afrd_disp.dex
 cp tools/droidlogic/afrd-disp.sh  android/app/src/main/res/raw/afrd_disp.sh
 ```
 
-- [ ] **Step 2: Извлечение в приложении**
+- [x] **Step 2: Извлечение в приложении**
 
 `Control.java` — рядом с `extractDaemon`:
 
@@ -982,11 +989,11 @@ cp tools/droidlogic/afrd-disp.sh  android/app/src/main/res/raw/afrd_disp.sh
         // vendor.disp.cli=<cacheDir>/afrd-disp.sh
 ```
 
-- [ ] **Step 3: Magisk-модуль**
+- [x] **Step 3: Magisk-модуль**
 
 `install/magisk/build-module.sh`: копировать `tools/droidlogic/afrd-disp.dex` и `afrd-disp.sh` в модуль (`$OUT/afrd-disp.dex`, `$OUT/afrd-disp.sh`), `service.sh` — раскладывать их в `/data/local/tmp/` (умолчание профиля) либо писать путь в свой `afrd.ini`.
 
-- [ ] **Step 4: Проверка на `.45`**
+- [x] **Step 4: Проверка на `.45`**
 
 ```bash
 cd /home/reyter/AI/afrd2 && ./mka && cd android && ./gradlew assembleRelease
@@ -996,7 +1003,7 @@ adb -s 192.168.88.45:5555 install -r app/build/outputs/apk/release/ru.reyter.afr
 
 Expected: оба файла на месте, `vendor.disp.cli` в `afrd.ini` указывает на них, демон в логе пишет `Окружение: ATV11 (sink=vendor-mode…)`.
 
-- [ ] **Step 5: Коммит**
+- [x] **Step 5: Коммит**
 
 ```bash
 git add mka android/app/src/main/java/ru/cobra/zap/afrd/Control.java install/magisk/
@@ -1028,10 +1035,15 @@ git commit -m "feat(pack): вендорный помощник в APK и Magisk-
 | `fps.declare.fast=0` | правка `afrd.ini` + `reconf` | поведение прежнее (только огибающая) |
 | помощник недоступен | переименовать `afrd-disp.dex` | предупреждение, режим не тронут |
 
-- [ ] **Step 2: Сравнение с системным AFR**
+- [x] **Step 2: Сравнение с системным AFR**
 
 Системный AFR (`persist.sys.autoframemode=2`) оставить включённым, как у владельца, и снять те же
 замеры времени; расхождение описать в журнале.
+
+Сделано в §33.19: замеры системного AFR сняты отдельно, наш путь — отдельно, итог «паритет 2–4 с»
+описан в журнале. Осталось владельцу (нужен бокс с ТВ, где штатный AFR включён вместе с нашим):
+прогон обоих путей одновременно — сценарий «как у владельца»; в приёмке `.45` системный AFR на
+время прогона выключается, чтобы видеть только наш путь.
 
 - [x] **Step 3: Документация и коммит**
 
