@@ -46,6 +46,13 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       screen stayed at the video's rate).
     * The default of the "Fast decision by declared frame rate" setting no longer
       enables that path on Android 12-14: the value depends on the OS version.
+    * The daemon watchdog now works on the legacy path (Android 6-9) too: after a
+      crash (kill -9, kernel panic) the app restarts it and it returns the held
+      mode. Previously the heartbeat check existed only on the new path, and the
+      heartbeat itself was updated only in the new loop: on Android 6-9 the
+      daemon was not restarted, the mode stayed foreign until a reboot, and the
+      GUI reported "daemon enabled" from the dead process's status (live finding
+      2026-10-09).
     * `afrd -s`, the API and the app on the vendor path (Android 10/11) report real
       refresh rates
       (used to be 0 Hz and "mode not switched").

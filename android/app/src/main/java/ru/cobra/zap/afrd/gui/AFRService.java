@@ -236,15 +236,20 @@ public class AFRService extends Service
 
     private void checkDaemon ()
     {
-        /* R57: на ATV14 демон держит флаг backdoor SurfaceFlinger; если он
-         * умер, не сняв флаг (kill -9, паника ядра), приложения со своим AFR
-         * перестают менять режим. Процессы root приложению не видны (/proc
-         * смонтирован с hidepid=invisible), поэтому судим по «сердцебиению»
-         * в общей памяти: демон обновляет его каждый цикл, и CRC-штамп
-         * перестаёт меняться, когда он мёртв (файл shmem при этом остаётся
-         * на диске, так что mStatus.ok() смерть не замечает). */
-        if (Control.isAtv14 () && mHeartbeatSeen && mStatus.ok () &&
-            mStaleTicks >= STALE_TICKS_MAX)
+        /* R57: демон может умереть, не сняв удержанный режим (kill -9, паника
+         * ядра). Процессы root приложению не видны (/proc смонтирован с
+         * hidepid=invisible), поэтому судим по «сердцебиению» в общей памяти:
+         * демон обновляет его каждый цикл, и CRC-штамп перестаёт меняться,
+         * когда он мёртв (файл shmem при этом остаётся на диске, так что
+         * mStatus.ok() смерть не замечает).
+         *
+         * Проверка обязана работать на ОБОИХ путях. Раньше она была только для
+         * ATV14, а штамп на старом пути вообще не обновлялся: 2026-10-09 на
+         * стенде .76 (Android 9) после kill -9 демон не поднимался, режим
+         * оставался удержанным, а GUI показывал «Демон включён: ДА» по статусу
+         * мёртвого процесса. Теперь heartbeat растёт и в legacy-цикле
+         * (afrd.c: run_atv14 → stats_heartbeat, afrd_run → то же). */
+        if (mHeartbeatSeen && mStatus.ok () && mStaleTicks >= STALE_TICKS_MAX)
         {
             restartDaemon ("Daemon heartbeat stopped - restarting");
             return;
