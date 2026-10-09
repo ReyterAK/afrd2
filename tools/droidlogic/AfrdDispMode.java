@@ -16,21 +16,25 @@
  *
  *   CLASSPATH=<этот dex>:/system/framework/android.hidl.base-V1.0-java.jar:\
  *             /system/framework/android.hidl.manager-V1.0-java.jar:\
- *             /system_ext/priv-app/droidlogic-res/droidlogic-res.apk \
+ *             <droidlogic-res.apk> \
  *   app_process /system/bin AfrdDispMode <имя режима>
  *
- * HIDL-прокси (`vendor.amlogic.hardware.systemcontrol.V1_1.ISystemControl`)
- * лежит в `droidlogic-res.apk` этого же бокса, поэтому вызывается рефлексией —
- * своих HIDL-заголовков не требуется и ABI вендора не «прошивается» в демон.
+ * HIDL-прокси (`vendor.amlogic.hardware.systemcontrol.V1_1.ISystemControl`,
+ * на старых сборках — V1_0) лежит в `droidlogic-res.apk` вендора, поэтому
+ * вызывается рефлексией — своих HIDL-заголовков не требуется и ABI вендора не
+ * «прошивается» в демон. Путь к этому apk зависит от версии системы (раздел
+ * /system_ext появился только в Android 11), поэтому его перебирает обёртка
+ * afrd-disp.sh, а не этот класс.
  *
  * Коды возврата (демон считает успехом только 0):
  *   0 — режим применён и подтверждён чтением узла;
  *   2 — не передан режим (или пустой);
- *   3 — сервис SystemControl недоступен;
+ *   3 — сервис SystemControl недоступен (нет ни V1_1, ни V1_0);
  *   4 — HAL вернул успех, но режим не сменился (неизвестное имя режима:
  *       живая находка 2026-10-08 — на «999p999hz» HAL молчит, а режим остаётся
  *       прежним; без этой проверки демон счёл бы применение успешным);
  *   5 — узел режима не читается (проверить применение нечем).
+ *   6 — не найден droidlogic-res.apk (код возврата обёртки).
  *
  * Проверено живьём на Amlogic X4, Android 11 (ядро 5.4.125), стенд .45:
  *   AfrdDispMode 1080p24hz -> vinfo=1080p24hz, SF refresh-rate=23.976 fps, rc=0
@@ -77,11 +81,32 @@ public class AfrdDispMode
 
         String want = args [0];
 
-        Class<?> c = Class.forName ("vendor.amlogic.hardware.systemcontrol.V1_1.ISystemControl");
-        Object svc = c.getMethod ("getService").invoke (null);
+        /* Версия интерфейса зависит от сборки: на проверенной (Android 11) есть
+         * V1_1, но вендор мог оставить на 10 только V1_0 — тогда прежний
+         * Class.forName по одному имени падал бы. Пробуем по порядку. */
+        Class<?> c = null;
+        Object svc = null;
+        for (String ver : new String [] { "V1_1", "V1_0" })
+        {
+            try
+            {
+                Class<?> cand = Class.forName ("vendor.amlogic.hardware.systemcontrol." + ver + ".ISystemControl");
+                Object candSvc = cand.getMethod ("getService").invoke (null);
+                if (candSvc != null)
+                {
+                    c = cand;
+                    svc = candSvc;
+                    break;
+                }
+            }
+            catch (Exception e)
+            {
+                /* этой версии нет (или нет её классов) — пробуем следующую */
+            }
+        }
         if (svc == null)
         {
-            System.err.println ("systemcontrol service not found");
+            System.err.println ("systemcontrol service not found (tried V1_1, V1_0)");
             System.exit (3);
         }
 

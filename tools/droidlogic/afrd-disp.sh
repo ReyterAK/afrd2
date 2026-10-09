@@ -7,9 +7,15 @@
 # (приложению и Magisk-модулю удобнее положить их в свой каталог).
 #
 # Почему dex, а не нативный бинарь: HIDL-прокси SystemControl лежит в
-# /system_ext/priv-app/droidlogic-res/droidlogic-res.apk этой прошивки, и его
-# классы доступны штатному app_process (тем же способом работают cmd и dumpsys).
-# Своей сборки HIDL-клиента это не требует и не «прошивает» ABI вендора.
+# droidlogic-res.apk вендора (на проверенной сборке — в /system_ext/priv-app),
+# и его классы доступны штатному app_process (тем же способом работают cmd и
+# dumpsys). Своей сборки HIDL-клиента это не требует и не «прошивает» ABI
+# вендора.
+#
+# Коды возврата: 2 — не передан режим; 3 — сервис SystemControl недоступен;
+# 4 — HAL вернул успех, но режим не сменился; 5 — узел режима не читается;
+# 6 — не найден droidlogic-res.apk (некуда взять классы HIDL-прокси).
+# Успех — только 0.
 
 MODE=$1
 if [ -z "$MODE" ]; then
@@ -24,7 +30,26 @@ fi
 DIR=${0%/*}
 [ -n "$DIR" ] && [ "$DIR" != "$0" ] || DIR=.
 DEX=${AFRD_DISP_DEX:-$DIR/afrd-disp.dex}
-RES=${AFRD_DISP_RES:-/system_ext/priv-app/droidlogic-res/droidlogic-res.apk}
+
+# APK с классами HIDL-прокси вендора. Раздел /system_ext появился только в
+# Android 11, поэтому на 10 и в части OEM-сборок тот же apk лежит в /system,
+# /vendor или /product: перебираем кандидатов, а не полагаемся на один путь
+# (прежний жёсткий путь system_ext означал, что на Android 10 демон уходил в
+# пассивный режим). AFRD_DISP_RES задаёт один путь, AFRD_DISP_RES_DIRS — список
+# каталогов (последнее — для проверок подмены раскладки).
+RES=${AFRD_DISP_RES:-}
+if [ -z "$RES" ]; then
+	for d in ${AFRD_DISP_RES_DIRS:-/system_ext/priv-app/droidlogic-res /system/priv-app/droidlogic-res /vendor/priv-app/droidlogic-res /product/priv-app/droidlogic-res}; do
+		if [ -f "$d/droidlogic-res.apk" ]; then
+			RES="$d/droidlogic-res.apk"
+			break
+		fi
+	done
+fi
+if [ -z "$RES" ]; then
+	echo "droidlogic-res.apk not found (vendor HIDL proxy classes)" >&2
+	exit 6
+fi
 
 CLASSPATH="$DEX:/system/framework/android.hidl.base-V1.0-java.jar:/system/framework/android.hidl.manager-V1.0-java.jar:$RES"
 export CLASSPATH

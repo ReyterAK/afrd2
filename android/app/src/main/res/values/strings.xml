@@ -59,14 +59,14 @@
     <string name="prefsum_switch_delay_off">The delay in ms to wait before restoring original
         refresh rate after movie ends. Set to 0 to tell afrd not to restore original refresh
         rate.
-        On Android 12-14 - how long to keep the mode on pause; 0 - keep until the pause ends.
+        On Android 11-14 - how long to keep the mode on pause; 0 - keep until the pause ends.
     </string>
     <string name="prefs_switch_delay_retry">Detect FPS retry delay</string>
     <string name="prefsum_switch_delay_retry">The delay between retries if movie frame rate cannot
         be determined
     </string>
     <string name="prefs_switch_timeout">Frame rate wait timeout</string>
-    <string name="prefsum_switch_timeout">How long the daemon waits before giving up.\n\nAndroid 6-9: if the frame rate is not determined within this time, detection stops.\n\nAndroid 12-14: how long to wait for decoder data while the mode is held, otherwise it stays stuck until reboot.</string>
+    <string name="prefsum_switch_timeout">How long the daemon waits before giving up.\n\nAndroid 6-9: if the frame rate is not determined within this time, detection stops.\n\nAndroid 11-14: how long to wait for decoder data while the mode is held, otherwise it stays stuck until reboot.</string>
     <string name="prefs_switch_blackout">Screen off delay</string>
     <string name="prefsum_switch_blackout">The delay in ms to turn display off after movie starts.
         Set to 0 to disable this feature
@@ -97,12 +97,12 @@
     <string name="notif_stop_afrd">Disable AFR</string>
     <string name="notif_start_afrd">Enable AFR</string>
     <string name="settings_misc">Other</string>
-    <string name="not_applicable_atv14">(has no effect on Android 12-14)</string>
+    <string name="not_applicable_atv14">(has no effect on Android 11-14)</string>
     <string name="not_applicable_legacy">(does not work on Android 6-9)</string>
     <string name="prefs_group_main">General</string>
     <string name="prefs_group_players">Players</string>
     <string name="prefs_group_mode">Mode selection</string>
-    <string name="prefs_group_atv14">Fine tuning (Android 12+)</string>
+    <string name="prefs_group_atv14">Fine tuning (Android 11+)</string>
     <string name="prefs_fps_declare_fast">Fast decision by declared frame rate</string>
     <string name="prefsum_fps_declare_fast">Apply the mode immediately from the frame rate declared by the decoder (vdec_status: frame rate) — the way the built-in system AFR does, which is why it switches in 2-4 s. The decision is provisional: our own measurement verifies it, and on mismatch the mode is corrected (see "Frame rate recheck"). 0 — decide by measurement only (slower, but independent of the driver\'s honesty). Off by default on Android 12-14, on by default on Android 10/11.</string>
     <string name="prefs_fps_prefer_api">Trust the player hint</string>
@@ -181,7 +181,7 @@
         "24 fps detected as 25 Hz" is treated as the lesser evil than the reverse, so the correction
         is not raised to the measured 0.5; the envelope observation already removes most of the
         bias. Applied only when player calibration is enabled (see the switch above): with it off the
-        value is neither used nor logged. Android 12-14.</string>
+        value is neither used nor logged. Android 11-14.</string>
     <string name="prefs_fps_correct_av1_pkg">AV1 correction: package only</string>
     <string name="prefsum_fps_correct_av1_pkg">Limit the AV1 correction to one player package
         (fps.correct.av1.pkg). Empty — any player.</string>

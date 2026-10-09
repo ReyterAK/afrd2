@@ -6,13 +6,18 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
     First public build of the fork. Below are the differences from AFRd 0.3.2;
     later versions get ordinary change entries.
 
-    Android 10-11 (Amlogic, kernel 5.x) — the new code path:
+    Android 11 (Amlogic, kernel 5.x) — the vendor mode-switching path (11 is
+    the claimed version; on Android 10 the same path engages, but there is no
+    live verification):
 
     * The mode is switched by the vendor SystemControl HAL (HIDL
       vendor.amlogic.hardware.systemcontrol, setActiveDispMode) — the same
       mechanism the built-in system AFR uses. The SurfaceFlinger transaction
       path does not work on these versions, and on Android 11 calling it with a
-      single argument crashes SurfaceFlinger.
+      single argument crashes SurfaceFlinger. The vendor APK with the HIDL proxy
+      classes is looked up across /system_ext, /system, /vendor and /product,
+      and the interface version is tried from V1_1 down to V1_0 — the
+      /system_ext partition exists only since Android 11.
     * The mode is chosen by NAME from disp_cap (there is no SurfaceFlinger mode
       table here); the helper (app_process + dex) ships in the APK and in the
       Magisk module.
@@ -41,7 +46,8 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       screen stayed at the video's rate).
     * The default of the "Fast decision by declared frame rate" setting no longer
       enables that path on Android 12-14: the value depends on the OS version.
-    * `afrd -s`, the API and the app on Android 10-11 report real refresh rates
+    * `afrd -s`, the API and the app on the vendor path (Android 10/11) report real
+      refresh rates
       (used to be 0 Hz and "mode not switched").
     * The `vendor.disp.cap` key works again (the TV mode list is read from it);
       an unreadable list produces a single warning and the mode is left alone.

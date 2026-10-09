@@ -13,10 +13,14 @@
 /* Вендорский клиент SystemControl: через него на Android 10-14 применяется
  * цветовое пространство (sysfs-узел attr там только на чтение). */
 #define CS_CLI			"/vendor/bin/meson_display_client"
-/* Признаки вендорного механизма смены режима (Android 10/11, Amlogic): сам
- * сервис и apk с классами HIDL-прокси (его читает помощник через app_process). */
+/* Признак вендорного механизма смены режима (Android 10/11, Amlogic): сам сервис.
+ * Путь к apk с классами HIDL-прокси здесь НЕ проверяется: он зависит от версии
+ * системы (раздел /system_ext появился только в Android 11, а на 10 и в части
+ * OEM-сборок тот же apk лежит в /system, /vendor, /product), поэтому кандидатов
+ * перебирает помощник — он и есть авторитет. Его отказ стоит одно предупреждение
+ * на видео (повторов нет, см. afrd.c) и откатывает удержание, то есть поведение
+ * не хуже прежнего пассивного режима. */
 #define VENDOR_SYSTEMCONTROL	"/vendor/bin/systemcontrol"
-#define VENDOR_DROIDLOGIC_RES	"/system_ext/priv-app/droidlogic-res/droidlogic-res.apk"
 /* Вывод `dumpsys activity activities` нужен только одной строкой: приложение на
  * переднем плане. Поле называется по-разному — "topResumedActivity=..." (Android
  * 10-14) и "ResumedActivity: ..." (Android 6-9), но подстрока "ResumedActivity"
@@ -91,11 +95,10 @@ platform_t platform_detect (void)
 		 * операцию, и на сборке 11 вызов с одним int роняет SurfaceFlinger
 		 * (проверено живьём). Но режим переключается вендорным SystemControl
 		 * HIDL — им пользуется штатный системный AFR (журнал §33.18). Идём
-		 * этим путём только если помощник и вендорный сервис на месте; иначе
+		 * этим путём только если вендорный сервис и помощник на месте; иначе
 		 * остаётся прежний пассивный режим с предупреждением. */
 		if (!p.sf_backdoor &&
 		    (sysfs_exists (VENDOR_SYSTEMCONTROL) == 0) &&
-		    (sysfs_exists (VENDOR_DROIDLOGIC_RES) == 0) &&
 		    p.vendor_mode_cli && (sysfs_exists (p.vendor_mode_cli) == 0))
 		{
 			p.kind = PLAT_ATV11;

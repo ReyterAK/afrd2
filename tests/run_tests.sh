@@ -28,8 +28,9 @@ run test_reconf reconf.c
 run test_hdrinfo hdrinfo.c exec.c tests/stub.c
 
 # Проверки по исходникам и данным, а не по коду на C: согласованность версии
-# во всех местах, где она записана, формат ЧАВО, контракт запуска Magisk-модуля.
-for sh_test in tests/test_versions.sh tests/test_faq.sh tests/test_magisk_module.sh; do
+# во всех местах, где она записана, формат ЧАВО, контракт запуска Magisk-модуля,
+# выбор droidlogic-res.apk вендорной обёрткой.
+for sh_test in tests/test_versions.sh tests/test_faq.sh tests/test_magisk_module.sh tests/test_disp_helper.sh; do
 	sh "$sh_test" || status=1
 done
 
