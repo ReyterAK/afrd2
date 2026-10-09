@@ -7,8 +7,8 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
     later versions get ordinary change entries.
 
     Android 11 (Amlogic, kernel 5.x) — the vendor mode-switching path (11 is
-    the claimed version; on Android 10 the same path engages, but there is no
-    live verification):
+    the claimed version; Android 10 ships kernel 4.9 and therefore uses the
+    legacy path, but there is no live verification on 10):
 
     * The mode is switched by the vendor SystemControl HAL (HIDL
       vendor.amlogic.hardware.systemcontrol, setActiveDispMode) — the same
