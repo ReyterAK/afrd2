@@ -3409,6 +3409,16 @@ static void cfg_audit_warn (const char *msg, void *ctx)
 
 int afrd_run ()
 {
+	/* Статистику публикуем ДО платформенной разведки: shmem заводится пустым
+	 * (shmem_init в afrd_init), а `dumpsys SurfaceFlinger` внутри platform_detect
+	 * занимает секунды — и всё это время `afrd -s`, API `status` и GUI показывали
+	 * «демон выключен: нет» и 0.00 Гц у работающего демона. Приёмка 09.10 ловила
+	 * это сразу после перезагрузки конфига (пункт «помощник завис»: enabled=no,
+	 * тогда как демон жив и работал). Частоты здесь берутся из текущего режима
+	 * (/sys/class/display/mode); ATV14-цикл ниже уточняет их из таблицы
+	 * SurfaceFlinger. */
+	update_stats ();
+
 	g_plat = platform_detect ();
 
 	/* Платформа определяется здесь, а список режимов читается ещё в afrd_init
@@ -3488,8 +3498,6 @@ int afrd_run ()
 
 	// Check HDCP status regularily
 	mstime_arm (&g_ost_hdcp_check, 8000);
-
-	update_stats ();
 
 	while (!g_shutdown) {
 		/* Признак жизни для сторожа приложения (R57). Раньше штамп обновлялся
@@ -3841,6 +3849,22 @@ void afrd_fini ()
 	g_hdmi_state = NULL;
 	g_mode_path = NULL;
 	g_vdec_sysfs = NULL;
+
+	/* g_plat хранит указатели ВНУТРЬ образа конфига (disp_cap, vendor_mode_cli),
+	 * а cfg_free ниже этот образ освобождает. Без сброса следующая инициализация
+	 * успевала воспользоваться ими до platform_detect (afrd_init →
+	 * handle_hdmi_switch → modes_refresh_platform) и читала список режимов по
+	 * адресу освобождённой строки: в журнал попадал разбор чужого файла вместо
+	 * списка режимов (живая находка приёмки 09.10 на стенде .45 — сначала файл
+	 * помощника, затем dc_cap). Нулевая структура даёт ровно тот же путь, что и
+	 * на первом старте: legacy-ветка читает список из g_hdmi_dev, а afrd_run
+	 * перечитывает его по ключу платформы.
+	 *
+	 * Там же сбрасываем состояние ATV14-цикла: оно относится к экземпляру, а не
+	 * к конфигу, и после перезагрузки конфига публиковалось в API/GUI как
+	 * свежее (те же сутки: enabled и частоты от прошлого экземпляра). */
+	memset (&g_plat, 0, sizeof (g_plat));
+	memset (&g_atv14_state, 0, sizeof (g_atv14_state));
 
 	if (g_cfg) {
 		cfg_free (g_cfg);

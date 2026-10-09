@@ -55,7 +55,16 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       2026-10-09).
     * `afrd -s`, the API and the app on the vendor path (Android 10/11) report real
       refresh rates
-      (used to be 0 Hz and "mode not switched").
+      (used to be 0 Hz and "mode not switched"), and they do so right after
+      changing the settings: previously, for a few seconds after a config reload
+      they showed "daemon disabled" and 0 Hz — until the daemon finished its
+      platform probe (live finding of the 2026-10-09 acceptance run).
+    * A config reload (editing `afrd.ini` or changing the app settings) no longer
+      leaves the daemon holding addresses of freed strings from the previous
+      config: the TV mode list was read from such an address, and the log got a
+      parse of an unrelated file instead of the mode list (live finding of the
+      2026-10-09 acceptance run: first the mode-switch helper, then the colour
+      space list).
     * The `vendor.disp.cap` key works again (the TV mode list is read from it);
       an unreadable list produces a single warning and the mode is left alone.
 
