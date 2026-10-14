@@ -123,6 +123,40 @@
 ! 14 seconds). The observation window is configurable in "Settings for
 ! Android 11 and above" ("Observation before switching", "Early decision").
 
+! If you do not want to wait, on Android 11 and above there is a fast option -
+! see the question "Can the mode be switched faster than in 10-20 seconds?".
+
+? Can the mode be switched faster than in 10-20 seconds?
+
+! Yes, on Android 11 and above: enable "Fast decision by declared frame rate"
+! ("Settings" -> "Fine tuning (Android 11+)"). The mode is applied in 2-4 seconds
+! from the frame rate the decoder declares - exactly how the built-in system AFR
+! works: it does not measure the rate, it asks the decoder, which is why it is
+! fast.
+
+! The price is that the decision is provisional. Our own measurement keeps
+! running, and if the declared rate falls into a different class (24/25, 30/60),
+! the mode is corrected: you may see a second "blink" and a few seconds in a
+! wrong mode, and the log gets the line "declared X Hz, measurement gave Y Hz -
+! correcting the mode".
+
+! On Android 10 and 11 this key is already on (there it gives the behaviour of
+! the system AFR), on Android 12-14 it is off and is enabled deliberately: on
+! 5.x kernels the declared rate is sometimes garbage (on our test box an AV1
+! clip at 23.976 is reported by the driver as "30 fps"), so the first switch may
+! turn out wrong - the measurement will correct it.
+
+! The measurement itself cannot be sped up: over a short window 24 and 25 frames
+! per second are indistinguishable, so the fast decision relies on the declared
+! value, not on measurement. You can only shorten the observation window
+! ("Observation before switching" = 0 - the decision is taken from the first
+! sub-window, about 7 seconds), which costs accuracy at the 24/25 boundary:
+! 20 seconds is the measured optimum, at which 24 fps content is identified
+! correctly in 86% of cases.
+
+! On Android 6-9 there is nothing to wait for: the mode is switched right after
+! video starts, and these settings are not available in the interface.
+
 ? How to make the screen blink less often during playback?
 
 ! Turn off "Restore mode on stop" - this is the analogue of the old "Stop delay"
