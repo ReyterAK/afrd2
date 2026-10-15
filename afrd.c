@@ -981,16 +981,32 @@ static void modes_refresh_platform (void)
 	g_modes_unreadable = (g_modes_n <= 0);
 }
 
+/* Освобождение списка режимов ТВ и всего, что к нему привязано.
+ *
+ * Вынесено из handle_hdmi_switch: afrd_fini() освобождает список НАМЕРЕННО
+ * (перед переинициализацией при перезагрузке конфига), и печатать на этом пути
+ * «HDMI not active» нельзя — человек, читающий журнал, делает вывод о сбое HDMI.
+ * Ложное сообщение стояло в журнале рядом с «config file … changed, reloading»
+ * и уже один раз привело к разбору несуществующей поломки (журнал §42.1).
+ * Заодно убран hdcp_fini() при переинициализации: он обнуляет только кэш
+ * состояния, который hdcp_init() всё равно читает из sysfs заново. */
+static void modes_release (void)
+{
+	display_modes_fini ();
+	memset (&g_state.orig_mode, 0, sizeof (g_state.orig_mode));
+}
+
 static void handle_hdmi_switch (int state)
 {
 	if (state == -1)
 		state = sysfs_get_int (g_hdmi_state, NULL);
 
 	if (state <= 0) {
+		/* только настоящее событие HPD: «нет HDMI» здесь правда, а не
+		 * следствие переинициализации (см. modes_release) */
 		trace (1, "HDMI not active, clearing video mode list\n");
 		hdcp_fini ();
-		display_modes_fini ();
-		memset (&g_state.orig_mode, 0, sizeof (g_state.orig_mode));
+		modes_release ();
 	} else {
 		modes_refresh_platform ();
 		colorspace_refresh ();
@@ -3838,7 +3854,9 @@ int afrd_init ()
 
 void afrd_fini ()
 {
-	handle_hdmi_switch (0);
+	/* Освобождение намеренное (переинициализация), поэтому без сообщения
+	 * «HDMI not active» — см. modes_release(). */
+	modes_release ();
 	apisock_fini ();
 	colorspace_fini ();
 

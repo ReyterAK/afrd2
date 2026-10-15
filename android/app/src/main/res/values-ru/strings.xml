@@ -82,6 +82,7 @@
     </string>
 
     <string name="afrd_requires_su">AFRd2 требует прав Администратора для работы</string>
+    <string name="afrd_service_no_start">Система не разрешила запустить службу AFRd2 в фоне. Откройте приложение ещё раз при включённом экране — она запустится.</string>
     <string name="l_afrd_version">Версия демона AFRd2</string>
     <string name="l_afrd_enabled">Демон включён</string>
     <string name="only_amlogic">Это приложение поддерживает только устройства на базе процессоров

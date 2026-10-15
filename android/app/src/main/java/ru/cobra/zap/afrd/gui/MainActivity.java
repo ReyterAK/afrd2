@@ -417,6 +417,21 @@ public class MainActivity extends Activity
         prefs.edit ().putLong ("afrd_ver", mPackageInfo.lastUpdateTime).apply ();
     }
 
+    /* Проверка root идёт в фоне: `su` на первом запуске ждёт диалог Magisk, и это
+     * заблокировало бы основной поток. Но сам старт службы обязан выполняться из
+     * ВИДИМОГО состояния — с Android 8 фоновый старт запрещён, Context.startService
+     * отвечает IllegalStateException, и приложение падало (живая находка 15.10 на
+     * спящем боксе ATV9: `Background start not allowed` → FATAL EXCEPTION →
+     * Force finishing activity). Поэтому:
+     *   - проверка идёт в фоне, а её ответ возвращается в основной поток (mAppHandler),
+     *     то есть startService вызывается всегда в основном потоке;
+     *   - кроме этого, старт повторяется из onResume — активность там заведомо видима,
+     *     и это же снимает случай, когда проверка ответила, пока активность была не на
+     *     экране (страховка на API 34, где фоновый старт ограничен сильнее);
+     *   - сам вызов обёрнут try/catch: отказ системы не должен ронять приложение. */
+    private boolean mSuAvailable = false;
+    private boolean mServiceStarted = false;
+
     private void prepareSuperuser ()
     {
         AsyncTask.execute (new Runnable ()
@@ -424,15 +439,60 @@ public class MainActivity extends Activity
             @Override
             public void run ()
             {
-                if (!RootShell.suAvailable ())
-                {
-                    showToast (R.string.afrd_requires_su, true);
-                    return;
-                }
+                final boolean su = RootShell.suAvailable ();
 
-                startService (new Intent (getApplicationContext (), AFRService.class));
+                mAppHandler.post (new Runnable ()
+                {
+                    @Override
+                    public void run ()
+                    {
+                        mSuAvailable = su;
+
+                        if (!su)
+                        {
+                            showToast (R.string.afrd_requires_su, true);
+                            return;
+                        }
+
+                        startAfrdService ();
+                    }
+                });
             }
         });
+    }
+
+    @Override
+    protected void onResume ()
+    {
+        super.onResume ();
+
+        /* Активность видима — фонового запрета на старт службы нет. Обычно к
+         * этому моменту root ещё проверяется, и старт сделает ответ проверки;
+         * сюда попадаем, когда приложение открыли повторно, а root уже
+         * подтверждён (mSuAvailable) — тогда старт идёт прямо отсюда. */
+        if (mSuAvailable)
+            startAfrdService ();
+    }
+
+    /* Запуск службы-сторожа ровно один раз за жизнь активности. */
+    private void startAfrdService ()
+    {
+        if (mServiceStarted)
+            return;
+
+        mServiceStarted = true;
+
+        try
+        {
+            startService (new Intent (getApplicationContext (), AFRService.class));
+        }
+        catch (IllegalStateException exc)
+        {
+            /* сюда попадает и ForegroundServiceStartNotAllowedException (API 31+) */
+            mServiceStarted = false;
+            jfun.logExc ("startAfrdService", exc);
+            showToast (R.string.afrd_service_no_start, true);
+        }
     }
 
     private void showMessage (String title, String msg, DialogInterface.OnClickListener onOk)

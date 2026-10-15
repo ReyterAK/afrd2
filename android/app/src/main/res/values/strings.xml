@@ -84,6 +84,7 @@
     </string>
 
     <string name="afrd_requires_su">AFRd2 requires Superuser privileges to run</string>
+    <string name="afrd_service_no_start">The system refused to start the AFRd2 service in the background. Open the app again with the screen on — it will start then.</string>
     <string name="l_afrd_version">AFRd2 daemon version</string>
     <string name="l_afrd_enabled">Daemon is enabled</string>
     <string name="l_off">Off</string>

@@ -80,7 +80,9 @@ public class jfun
         return new String (Arrays.copyOfRange (data, ofs, cur));
     }
 
-    static void logExc (String func, Exception exc)
+    /* public: журналирование исключений нужно и из gui-пакета (старт службы в
+     * MainActivity), а не только внутри ru.cobra.zap.afrd. */
+    public static void logExc (String func, Exception exc)
     {
         Log.e ("afrd", String.format ("Exception in %s: %s", func, exc.getMessage ()));
     }
