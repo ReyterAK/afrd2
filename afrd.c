@@ -789,6 +789,20 @@ giveup:			trace (1, "Timeout detecting movie frame rate, giving up\n");
 		g_state.hz = display_mode_hz (&tmp);
 	}
 
+	/* Текущий режим перечитываем ПЕРЕД решением: его мог сменить кто-то
+	 * другой — штатная АПЧ Amlogic, плеер со своим автоподбором, пользователь
+	 * через sysfs, — а uevent смены режима на ядре 4.9
+	 * (vout/extcon/setmode) мы не разбираем («Unrecognized uevent»).
+	 * Без перечитывания кэш g_current_mode сообщает режим, которого на экране
+	 * уже нет, и решение «режим и так подходящий» пропускает переключение:
+	 * живой замер 2026-10-15 на стенде .76 — режим выставлен извне в
+	 * 1080p25hz, демон считал текущим 1080p60hz и на 60-фпс ролике ответил
+	 * «Skipping mode switch since current refresh is close enough», оставив
+	 * видео на 25 Гц. Заодно это влияет на геометрию (width/height/interlaced)
+	 * в select_mode: после смены разрешения извне режим выбирался бы для
+	 * прежнего. */
+	display_mode_get_current ();
+
 	trace (1, "Current mode is "DISPMODE_FMT"\n",
 		DISPMODE_ARGS (g_current_mode, display_mode_hz (&g_current_mode)));
 	trace (1, "Looking for display mode closest to %dx%d@"HZ_FMT"Hz\n",

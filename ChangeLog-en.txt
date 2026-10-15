@@ -1,6 +1,42 @@
 AFRd2 — a fork of AFRd (based on AFRd 0.3.2 by Andrey Zabolotnyi,
 anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
+1.0.1 Thu Oct 15 2026
+
+    * "Blacklisted refresh rates" (mode.blacklist.rates) are now picked from the
+      rates your TV supports instead of typed as numbers: the daemon compares the
+      blacklisted rate with the mode rate numerically, so 23.976 and 24 are
+      different entries and guessing the right one from a hint was impossible.
+      The list is built from the TV modes (disp_cap) and the SurfaceFlinger mode
+      table; rates already present in the setting but absent on this TV are shown
+      and not lost.
+
+    * "HDMI format (color space)" (cs.select) is now a choice of three items
+      instead of a line with regular expressions: "Auto (4:2:0 on 4K only)",
+      "RGB instead of YUV", "YUV 4:4:4". The 4K bandwidth rule is kept in every
+      item (at 4K 50/60 Hz neither 4:4:4 nor RGB fits the HDMI link). A custom
+      value left over from older versions is shown as a separate item and is not
+      overwritten.
+
+    * The daemon re-reads the current display mode before deciding on a switch.
+      It used to trust its own cache, while the mode could be changed by someone
+      else (the built-in Amlogic AFR, a player with its own frame rate matching,
+      a manual sysfs write): the mode-change uevent on kernel 4.9
+      (vout/extcon/setmode) is unknown to the daemon. The result was visible to
+      the eye - a 60 fps clip stayed at 25 Hz because the daemon believed the
+      current mode was 60 Hz and wrote "Skipping mode switch since current
+      refresh is close enough" to the log (live measurement 2026-10-15, ATV9
+      stand). The decision now also accounts for the current resolution: after an
+      external resolution change the mode used to be picked for the previous one.
+
+    * FAQ and README: descriptions of the two new picker items; the answers about
+      green-ish image and blacklisted rates are rewritten for them.
+
+    * The bundle now includes docs/integration-rom.md - for the case when the
+      daemon is built into a firmware (minimal setting set, different keys for
+      Android 9 and 11-14, firmware requirements, API, acceptance steps). The
+      document is not part of the build.
+
 1.0.0 Thu Oct 08 2026
 
     First public build of the fork. Below are the differences from AFRd 0.3.2;
