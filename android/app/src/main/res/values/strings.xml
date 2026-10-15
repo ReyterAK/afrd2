@@ -41,16 +41,27 @@
         integer refresh rates, or both
     </string>
     <string name="prefs_mode_blacklist_rates">Blacklisted refresh rates</string>
-    <string name="prefsum_mode_blacklist_rates">Enter numeric refresh rates separated by spacs, e.g.
-        23.976 25
+    <string name="prefsum_mode_blacklist_rates">Refresh rates not to be used; pick from the rates your
+        TV supports. 23.976 and 24 are different rates — pick the one you need
     </string>
     <string name="prefs_mode_extra">Extra supported video modes</string>
     <string name="prefsum_mode_extra">Additional video modes if your TV provides incomplete EDID
         info (such as 1080p25hz etc)
     </string>
-    <string name="prefs_cs_select">Color space selection rules</string>
-    <string name="prefsum_cs_select">The rules to select color space depending on video mode name
+    <string name="prefs_cs_select">HDMI format (color space)</string>
+    <string name="prefsum_cs_select">Which format to send to the TV. RGB helps with green-ish image
+        and black screens, but does not fit the HDMI bandwidth at 4K 50/60Hz — there 4:2:0 is kept
     </string>
+    <string name="cs_policy_auto">Auto (4:2:0 on 4K only)</string>
+    <string name="cs_policy_rgb">RGB instead of YUV</string>
+    <string name="cs_policy_yuv444">YUV 4:4:4</string>
+    <string name="cs_policy_other">Custom rules: %s</string>
+    <string name="rates_title">Blacklisted refresh rates</string>
+    <string name="rates_summary">Blacklisted: %s</string>
+    <string name="rates_no_tv_list">Could not read the TV mode list — standard rates are shown.
+        Check the ones not to be used</string>
+    <string name="rates_truncated">The daemon keeps only %2$d rates: %1$d did not fit and was removed
+        from the setting</string>
     <string name="prefs_switch_delay_on">PLAY switch delay</string>
     <string name="prefsum_switch_delay_on">The delay in ms to wait after movie starts before
         detecting movie framerate

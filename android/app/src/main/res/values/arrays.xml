@@ -10,6 +10,21 @@
         <item>1</item>
         <item>2</item>
     </string-array>
+    <!-- Формат HDMI (cs.select): подписи и значения. Значения должны совпадать
+         с CsPolicy.VALUES — иначе строка настроек покажет не то, что записано
+         (сверяет tests/CsPolicyTest.java). Правило защиты полосы 4K стоит в
+         каждом пункте: 4:4:4/RGB на 3840x2160 при 50/60 Гц в полосу HDMI не
+         пролезает. -->
+    <string-array name="cs_policy">
+        <item>@string/cs_policy_auto</item>
+        <item>@string/cs_policy_rgb</item>
+        <item>@string/cs_policy_yuv444</item>
+    </string-array>
+    <string-array name="cs_policy_value">
+        <item>2160p[4-9].*=420</item>
+        <item>2160p[4-9].*=420 .*=rgb</item>
+        <item>2160p[4-9].*=420 .*=444</item>
+    </string-array>
     <string-array name="menu_main">
         <item>@string/menu_status</item>
         <item>@string/menu_log</item>

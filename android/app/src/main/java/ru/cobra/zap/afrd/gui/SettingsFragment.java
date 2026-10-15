@@ -8,9 +8,12 @@
 package ru.cobra.zap.afrd.gui;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.preference.EditTextPreference;
 import android.preference.ListPreference;
@@ -22,15 +25,24 @@ import android.preference.PreferenceScreen;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Toast;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Vector;
 
 import ru.cobra.zap.afrd.Apps;
 import ru.cobra.zap.afrd.Control;
+import ru.cobra.zap.afrd.CsPolicy;
 import ru.cobra.zap.afrd.PkgValues;
+import ru.cobra.zap.afrd.RateList;
+import ru.cobra.zap.afrd.TvModes;
 import ru.cobra.zap.xprefs.XAppsPreference;
+import ru.cobra.zap.xprefs.XListPreference;
+import ru.cobra.zap.xprefs.XRatesPreference;
 
 /**
  * This fragment implements a editor for AFRd settings.
@@ -241,6 +253,176 @@ public class SettingsFragment extends PreferenceFragment
         return sb.toString ();
     }
 
+    /* Настройка «Запрещённые частоты развёртки»: значение — частоты через
+     * пробел (mode.blacklist.rates), выбираются из частот, которые поддерживает
+     * ТВ. Ввод текста тут был бы ловушкой: демон сравнивает частоту запрета с
+     * частотой режима численно (допуск ±1 в 1/256 Гц), поэтому 23.976 и 24 —
+     * разные записи, и угадать нужную из подсказки нельзя. */
+    private final Map<String, CharSequence> mRatesHint = new HashMap<> ();
+
+    private void setupRatesPref ()
+    {
+        Preference p = findPreference ("mode_blacklist_rates");
+        if (!(p instanceof XRatesPreference))
+            return;
+
+        final XRatesPreference pref = (XRatesPreference) p;
+        mRatesHint.put (pref.getKey (), pref.getSummary ());
+        pref.setPickListener (new XRatesPreference.OnPickListener ()
+        {
+            @Override
+            public void onPickRates (XRatesPreference p)
+            {
+                readRatesAndPick (p);
+            }
+        });
+
+        setRatesSummary (pref);
+    }
+
+    private void setRatesSummary (XRatesPreference pref)
+    {
+        List<String> rates = RateList.parse (pref.getRates ());
+        StringBuilder sb = new StringBuilder ();
+        for (String r : rates)
+        {
+            if (sb.length () > 0)
+                sb.append (", ");
+            sb.append (r);
+        }
+
+        CharSequence hint = mRatesHint.get (pref.getKey ());
+        /* Пустой список — состояние по умолчанию: возвращаем пояснение из XML,
+         * иначе Preference скрывает summary вместе с ним. */
+        pref.setSummary (rates.isEmpty () ? hint
+            : getString (R.string.rates_summary, sb.toString ()));
+    }
+
+    /* Список частот берём у самого бокса (режимы ТВ): запрет частоты, которой
+     * на этом ТВ нет, ничего не отсекает. Чтение узла EDID и дампа
+     * SurfaceFlinger идёт под su, поэтому — в фоне. */
+    private void readRatesAndPick (final XRatesPreference pref)
+    {
+        new AsyncTask<Void, Void, String> ()
+        {
+            @Override
+            protected String doInBackground (Void... args)
+            {
+                return TvModes.read ();
+            }
+
+            @Override
+            protected void onPostExecute (String text)
+            {
+                showRatesDialog (pref, text);
+            }
+        }.execute ();
+    }
+
+    private void showRatesDialog (final XRatesPreference pref, String text)
+    {
+        if (!isAdded () || (getActivity () == null))
+            return;
+
+        List<String> tv = RateList.fromSources (text);
+        boolean known = !tv.isEmpty ();
+        if (!known)
+            tv = Arrays.asList (RateList.CANON);
+
+        final List<String> items = RateList.displayList (tv, pref.getRates ());
+        final boolean [] checked = new boolean [items.size ()];
+        List<String> selected = RateList.parse (pref.getRates ());
+        for (int i = 0; i < items.size (); i++)
+            checked [i] = selected.contains (items.get (i));
+
+        AlertDialog.Builder b = new AlertDialog.Builder (getActivity ())
+            .setTitle (R.string.rates_title)
+            .setMultiChoiceItems (items.toArray (new CharSequence [0]), checked,
+                new DialogInterface.OnMultiChoiceClickListener ()
+                {
+                    @Override
+                    public void onClick (DialogInterface dialog, int which, boolean isChecked)
+                    {
+                        checked [which] = isChecked;
+                    }
+                })
+            .setPositiveButton (android.R.string.ok, new DialogInterface.OnClickListener ()
+            {
+                @Override
+                public void onClick (DialogInterface dialog, int which)
+                {
+                    List<String> sel = new ArrayList<> ();
+                    for (int i = 0; i < items.size (); i++)
+                        if (checked [i])
+                            sel.add (items.get (i));
+
+                    /* Демон хранит десять частот: лишние он выбрасывает молча,
+                     * поэтому хвост отрезаем здесь и говорим об этом. */
+                    List<String> kept = RateList.trim (sel);
+                    int dropped = sel.size () - kept.size ();
+                    if (dropped > 0)
+                        Toast.makeText (getActivity (), getString (R.string.rates_truncated,
+                            dropped, RateList.MAX_ENTRIES), Toast.LENGTH_LONG).show ();
+
+                    pref.setRates (RateList.format (kept), true);
+                    setRatesSummary (pref);
+
+                    /* Как у остальных настроек: применяем сразу (демон
+                     * перечитывает конфиг по изменению файла). */
+                    if (mMain != null)
+                        mMain.applyPrefs ();
+                }
+            })
+            .setNegativeButton (android.R.string.cancel, null);
+
+        if (!known)
+            b.setMessage (R.string.rates_no_tv_list);
+
+        b.show ();
+    }
+
+    /* Подписи пунктов «Формат HDMI» — по порядку значений CsPolicy.VALUES. */
+    private static final int [] kCsLabels =
+    {
+        R.string.cs_policy_auto, R.string.cs_policy_rgb, R.string.cs_policy_yuv444,
+    };
+
+    /* Настройка «Формат HDMI»: пользователь выбирает политику, а в cs.select
+     * уходит правило (значения — CsPolicy.VALUES, те же, что в arrays.xml).
+     * Раньше это было текстовое поле с регулярными выражениями: чтобы поменять
+     * формат, надо было знать и синтаксис правил, и то, что правило защиты
+     * полосы 4K трогать нельзя. */
+    private void setupCsPref ()
+    {
+        Preference p = findPreference ("cs_select");
+        if (!(p instanceof XListPreference))
+            return;
+
+        XListPreference pref = (XListPreference) p;
+        String value = pref.getValue ();
+        int idx = CsPolicy.indexOf (value);
+
+        List<CharSequence> entries = new ArrayList<> ();
+        List<CharSequence> values = new ArrayList<> ();
+        for (int i = 0; i < CsPolicy.VALUES.length; i++)
+        {
+            entries.add (getString (kCsLabels [i]));
+            values.add (CsPolicy.VALUES [i]);
+        }
+
+        /* Значение не из списка (правка ini руками или текст, оставшийся от
+         * прежней версии с полем ввода) показываем отдельным пунктом: иначе
+         * строка настроек выглядела бы пустой, а выбор молча затирал бы правку. */
+        if ((idx < 0) && (value != null) && !value.isEmpty ())
+        {
+            entries.add (getString (R.string.cs_policy_other, value));
+            values.add (value);
+        }
+
+        pref.setEntries (entries.toArray (new CharSequence [0]));
+        pref.setEntryValues (values.toArray (new CharSequence [0]));
+    }
+
     @Override
     public void onActivityResult (int requestCode, int resultCode, Intent data)
     {
@@ -283,9 +465,12 @@ public class SettingsFragment extends PreferenceFragment
             try
             {
                 addPreferencesFromResource (R.xml.preferences);
-                /* Сначала сводки списков приложений, затем пометки: иначе
-                 * setAppsSummary() затрёт дописанную пометку. */
+                /* Сначала сводки и списки выбора, затем пометки: иначе
+                 * setAppsSummary()/setRatesSummary() затрут дописанную
+                 * пометку о недействующей настройке. */
                 setupAppsPrefs ();
+                setupRatesPref ();
+                setupCsPref ();
                 markInapplicable (getPreferenceScreen ());
                 break;
             }

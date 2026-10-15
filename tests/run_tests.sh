@@ -42,9 +42,14 @@ mkdir -p out/host-tests/java
 "$JAVAC" -d out/host-tests/java \
 	android/app/src/main/java/ru/cobra/zap/afrd/PkgValues.java \
 	android/app/src/main/java/ru/cobra/zap/afrd/Seed.java \
-	tests/PkgValuesTest.java tests/SeedTest.java && {
+	android/app/src/main/java/ru/cobra/zap/afrd/RateList.java \
+	android/app/src/main/java/ru/cobra/zap/afrd/CsPolicy.java \
+	tests/PkgValuesTest.java tests/SeedTest.java \
+	tests/RateListTest.java tests/CsPolicyTest.java && {
 	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.PkgValuesTest &&
-	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.SeedTest
+	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.SeedTest &&
+	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.RateListTest &&
+	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.CsPolicyTest
 } || status=1
 
 exit $status

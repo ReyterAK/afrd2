@@ -40,17 +40,28 @@
     <string name="prefsum_mode_use_fract">Включить использование дробных частот (23.976, 29.97,
         59.94Гц), целочисленных, или всех
     </string>
-    <string name="prefs_mode_blacklist_rates">Список запрещённых частот</string>
-    <string name="prefsum_mode_blacklist_rates">Список частот вертикальной развёртки, которые не
-        следует использовать, например: 23.976 25
+    <string name="prefs_mode_blacklist_rates">Запрещённые частоты развёртки</string>
+    <string name="prefsum_mode_blacklist_rates">Частоты, которые не следует использовать: выбираются
+        из поддерживаемых Вашим ТВ. 23.976 и 24 — разные частоты, отмечайте нужную
     </string>
     <string name="prefs_mode_extra">Дополнительные видеорежимы</string>
     <string name="prefsum_mode_extra">Если Ваш ТВ предоставляет неполную информацию EDID, можно
         ввести дополнительные поддерживаемые видеорежимы, например: 1080p25hz и т.п.
     </string>
-    <string name="prefs_cs_select">Правила выбора цветового пространства</string>
-    <string name="prefsum_cs_select">Правила для выбора цветового пространства по имени видеорежима
+    <string name="prefs_cs_select">Формат HDMI (цветовое пространство)</string>
+    <string name="prefsum_cs_select">Какой формат подавать в телевизор. RGB помогает при «зелени» и
+        чёрных экранах, но на 4K при 50/60 Гц в полосу HDMI не проходит — там остаётся 4:2:0
     </string>
+    <string name="cs_policy_auto">Авто (4:2:0 только на 4K)</string>
+    <string name="cs_policy_rgb">RGB вместо YUV</string>
+    <string name="cs_policy_yuv444">YUV 4:4:4</string>
+    <string name="cs_policy_other">Свои правила: %s</string>
+    <string name="rates_title">Запрещённые частоты развёртки</string>
+    <string name="rates_summary">Запрещены: %s</string>
+    <string name="rates_no_tv_list">Список режимов ТВ прочитать не удалось — показаны стандартные
+        частоты. Отметьте те, которые не следует использовать</string>
+    <string name="rates_truncated">Демон хранит только %2$d частот: %1$d не поместилось и убрано из
+        настройки</string>
     <string name="prefs_switch_delay_on">Задержка СТАРТ</string>
     <string name="prefsum_switch_delay_on">Задержка в мс перед запуском определения частоты видео
     </string>

@@ -66,8 +66,7 @@
                         android:entryValues="@array/mode_use_fract_value" android:key="mode_use_fract"
                         android:summary="@string/prefsum_mode_use_fract"
                         android:title="@string/prefs_mode_use_fract"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:key="mode_blacklist_rates" android:selectAllOnFocus="false"
-                            android:singleLine="true"
+        <ru.cobra.zap.xprefs.XRatesPreference android:key="mode_blacklist_rates"
                             android:summary="@string/prefsum_mode_blacklist_rates"
                             android:title="@string/prefs_mode_blacklist_rates"/>
     </PreferenceScreen>
@@ -83,8 +82,9 @@
         <ru.cobra.zap.xprefs.XEditTextPreference android:key="mode_extra" android:selectAllOnFocus="false"
                             android:singleLine="true" android:summary="@string/prefsum_mode_extra"
                             android:title="@string/prefs_mode_extra"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="2160p[4-9].*=420 .*=444" android:key="cs_select"
-                            android:selectAllOnFocus="false" android:singleLine="true"
+        <ru.cobra.zap.xprefs.XListPreference android:defaultValue="2160p[4-9].*=420"
+                            android:entries="@array/cs_policy"
+                            android:entryValues="@array/cs_policy_value" android:key="cs_select"
                             android:summary="@string/prefsum_cs_select"
                             android:title="@string/prefs_cs_select"/>
         <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="/data/local/afrd.log" android:key="log_file"

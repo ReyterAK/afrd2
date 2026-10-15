@@ -207,15 +207,14 @@
 ? I heard this can help with "greenish image" / "black screens" /
 ? bad karma etc.
 
-! Open "Settings" -> "Other" -> "Color space selection rules".
-! Every rule has the form "mode_name=value". If the value contains a rule
-! with "444" (as in the Android 6-9 profiles, where it is the last one:
-! ".*=444"), replace "444" in it with "rgb". If there is no such rule (the
-! Android 11-14 profile has only "2160p[4-9].*=420"), add your own at the
-! end, e.g. ".*=rgb" - then RGB will be used instead of YUV444.
+! Open "Settings" -> "Other" -> "HDMI format (color space)" and choose
+! "RGB instead of YUV" - YUV444 will be replaced with RGB. The "Auto" item
+! returns the previous behaviour. The 4K bandwidth rule (4:2:0 is kept there)
+! is preserved in every item.
 
-! Don't touch the "420" rule - an RGB stream cannot be transmitted at 4k
-! resolution and 40 Hz or above over an HDMI link.
+! At 4k resolution and 40 Hz or above an RGB stream cannot be transmitted
+! over an HDMI link - 4:2:0 is kept there in every item; that is a property
+! of the link, not a setting.
 
 ! On Android 11 and above this works too: the daemon applies the selected
 ! format after every mode switch (through the built-in service). The exception
@@ -225,8 +224,10 @@
 ? I use the "Prefer exact refresh rates" option but, still, I want to use
 ? 60Hz refresh instead of 30Hz. How can I do it?
 
-! Open "Settings" -> "Other" -> "Blacklisted refresh rates" and add the
-! refresh rate of 30 (and, possibly, 29.97) Hz to the list.
+! Open "Settings" -> "Mode selection" -> "Blacklisted refresh rates" and
+! check 30 (and, possibly, 29.97): the list shows the rates your TV supports.
+! Note that 23.976 and 24 are different rates - check the one that bothers
+! you.
 
 ? At start of video display turns off even if framerate does not change.
 ? Why after video start the screen goes to black for some time, even if
