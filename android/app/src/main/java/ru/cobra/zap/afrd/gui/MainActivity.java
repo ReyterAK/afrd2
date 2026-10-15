@@ -20,6 +20,7 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Resources;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.preference.Preference;
@@ -474,6 +475,19 @@ public class MainActivity extends Activity
             startAfrdService ();
     }
 
+    @Override
+    public void onWindowFocusChanged (boolean hasFocus)
+    {
+        super.onWindowFocusChanged (hasFocus);
+
+        /* Повтор после отказа системы: у спящего бокса окно фокуса не имеет, и
+         * система считает uid фоновым. Когда экран включается, окно фокус
+         * получает — здесь и повторяем. Без этого отказ оставлял приложение без
+         * службы и без демона до следующего открытия. */
+        if (hasFocus && mSuAvailable)
+            startAfrdService ();
+    }
+
     /* Запуск службы-сторожа ровно один раз за жизнь активности. */
     private void startAfrdService ()
     {
@@ -484,11 +498,20 @@ public class MainActivity extends Activity
 
         try
         {
-            startService (new Intent (getApplicationContext (), AFRService.class));
+            /* На API 26+ — startForegroundService, как в BootCompleteReceiver:
+             * AFRService.onCreate сразу вызывает startForeground (в
+             * updateNotification), поэтому пятисекундный срок соблюдён. */
+            Intent intent = new Intent (getApplicationContext (), AFRService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                startForegroundService (intent);
+            else
+                startService (intent);
         }
         catch (IllegalStateException exc)
         {
-            /* сюда попадает и ForegroundServiceStartNotAllowedException (API 31+) */
+            /* сюда попадает и ForegroundServiceStartNotAllowedException (API 31+):
+             * система отказала в старте из фона — скажем об этом и повторим,
+             * когда окно получит фокус (onWindowFocusChanged). */
             mServiceStarted = false;
             jfun.logExc ("startAfrdService", exc);
             showToast (R.string.afrd_service_no_start, true);
