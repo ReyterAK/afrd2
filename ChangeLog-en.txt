@@ -29,8 +29,18 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       stand). The decision now also accounts for the current resolution: after an
       external resolution change the mode used to be picked for the previous one.
 
-    * FAQ and README: descriptions of the two new picker items; the answers about
-      green-ish image and blacklisted rates are rewritten for them.
+    * FAQ: two new questions. "Can the mode be switched faster than in 10-20
+      seconds?" - about the fast decision by the declared frame rate (this
+      question did not make it into the published 1.0.0 build). "Should I choose
+      the APK or the Magisk module?" - the difference in the wrapper and the
+      scenarios where the module is preferable. The answers about green-ish
+      image / black screens and about blacklisted refresh rates are rewritten for
+      the two new picker items instead of text fields.
+
+    * README: a "Integration into firmware" section; a "What to choose" paragraph
+      (APK, Magisk module, a daemon built into the firmware - and why two of them
+      must not be kept at the same time); descriptions of the two new picker
+      items.
 
     * The bundle now includes docs/integration-rom.md - for the case when the
       daemon is built into a firmware (minimal setting set, different keys for
