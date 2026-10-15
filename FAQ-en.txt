@@ -298,3 +298,58 @@
 ! mode is switched by the vendor SystemControl (the helper ships with AFRd2).
 ! If the firmware has neither, the daemon switches to the passive mode: only
 ! the API and statistics work, the mode is not switched.
+
+? Should I choose the APK or the Magisk module?
+
+! They switch the rate in exactly the same way: the same daemon is inside both
+! the module and the application, and on Android 11-14 the same settings profile
+! is used. The difference is the wrapper, so choose by convenience and by the
+! way your box is used.
+
+! The APK is an application with an interface: settings on screen, a status page
+! (current mode, measured frame rate, statistics), the FAQ, and clear error
+! messages. The application picks the daemon build matching your firmware's
+! architecture and unpacks the mode-switching helper (Android 10/11) itself,
+! and it watches the daemon by the liveness mark in shared memory - so it
+! restarts it both when the daemon has crashed and when it has hung.
+
+! The Magisk module is the daemon only, with no interface: settings are edited
+! in the text file afrd.ini inside the module (/data/adb/modules/afrd2/). The
+! daemon is started not by Android but by Magisk, so the module also starts
+! frame rate matching where the application no longer can: after the
+! application has been force-stopped (Android does not deliver the boot message
+! to a stopped application) or after its data has been cleared. The module
+! keeps the daemon supervised and restarts it after a crash (a hang it does not
+! detect - the application does). The architecture (armeabi-v7a for 32-bit
+! firmware or arm64-v8a for 64-bit) is chosen manually: you need the module
+! matching your firmware.
+
+! The module is preferable if:
+! - the box is "set and forget": settings are edited once in afrd.ini and there
+!   is nothing to show on screen;
+! - the application is not needed, while its background service with a
+!   permanent notification gets in the way (or the firmware vendor kills it, or
+!   you "freeze" applications yourself) - without the application there is
+!   neither a service nor a notification;
+! - several people use the box and nobody wants or needs to change settings -
+!   and frame rate matching cannot be turned off from the screen by accident;
+! - frame rate matching must keep working regardless of the application state:
+!   after a force-stop, after its data has been cleared, or after the APK has
+!   been uninstalled;
+! - you do not want an extra APK in the system: the module is installed, updated
+!   and removed through Magisk, and only the module directory remains.
+
+! The APK is preferable if:
+! - you are tuning the settings for your box and players (skip lists, pause
+!   tolerance, observation window, measurement calibration) - on screen this is
+!   easier than editing a text file;
+! - you want the status page and the FAQ at hand;
+! - you prefer not to choose the architecture manually - the application picks
+!   the right build itself and re-extracts the helper if the system has cleared
+!   the cache;
+! - you run Android 6-10: the module is claimed for Android 11-14 (it carries
+!   that profile), on older versions take the APK.
+
+! The two must not be kept at the same time: after a reboot two daemons would
+! start. Before moving to the module the application must be stopped or
+! disabled.
