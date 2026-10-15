@@ -9,7 +9,12 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       different entries and guessing the right one from a hint was impossible.
       The list is built from the TV modes (disp_cap) and the SurfaceFlinger mode
       table; rates already present in the setting but absent on this TV are shown
-      and not lost.
+      and not lost. The list also contains fractional variants of the rates found
+      in mode names (23.976, 29.97, 59.94): on the legacy path a mode name covers
+      both variants ("1080p24hz" is either 24.000 or 23.976, the fraction is set
+      by frac_rate_policy), while the setting entries are different - without the
+      fractional variant a blacklist of "24" did not filter out the 23.976 mode
+      (live acceptance 2026-10-15, Android 9 stand).
 
     * "HDMI format (color space)" (cs.select) is now a choice of three items
       instead of a line with regular expressions: "Auto (4:2:0 on 4K only)",
@@ -46,6 +51,23 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       daemon is built into a firmware (minimal setting set, different keys for
       Android 9 and 11-14, firmware requirements, API, acceptance steps). The
       document is not part of the build.
+
+    * Fixed the app crash on launch on a sleeping box (Android 8-9). The root
+      check ran in a background task and the service start was called from it:
+      while `su` waited for the Magisk dialog, the system came to treat the app
+      as background and answered "Background start not allowed". The exception
+      was not caught, so the app died with FATAL EXCEPTION. Now the check result
+      is delivered to the main thread, the service is started via
+      startForegroundService (the same way as on boot), a system refusal no
+      longer crashes the app, and the start is retried once the window gets
+      focus (a sleeping box has none).
+
+    * Log: "HDMI not active, clearing video mode list" is printed only on a real
+      HDMI event. It used to be printed on the deliberate mode-list release
+      during a config reload as well, and next to "config file ... changed,
+      reloading" it read as an HDMI failure (a non-existent fault was already
+      investigated because of it). The release now lives in a separate function;
+      a redundant HDCP state reset on re-init is gone too.
 
 1.0.0 Thu Oct 08 2026
 
