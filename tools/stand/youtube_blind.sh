@@ -36,7 +36,7 @@ D=${ADB_DEV:-${D:-192.168.88.76:5555}}
 DIR=${YTBLIND_DIR:-/tmp/ytblind}
 BASE_HZ=${BASE_HZ:-50}
 SECS=${SECS:-35}
-ORDER=${YTBLIND_ORDER:-5 1 3 4 6 2}
+ORDER=${YTBLIND_ORDER:-6 1 4 3 5 2}
 
 PKG=com.google.android.youtube.tv
 SVC=ru.reyter.afrd2/ru.cobra.zap.afrd.gui.AFRService
@@ -69,9 +69,27 @@ rate_of () {
 		END { if (d > 0) printf "%.3f", n / d; else print "n/a" }'
 }
 
-# Счётчик декодированных кадров: по нему видно, идёт ли воспроизведение и с
-# какой частотой плеер реально подаёт кадры (не путать с подачей на экран).
-frames_of () { suroot "grep -m1 'frame count' /sys/class/vdec/vdec_status" | tr -dc '0-9'; }
+# Признак живого декодера. `frame count` на этом стенде не растёт (проверено
+# 16.10: при играющем ролике в vdec_status `frame count : 0` и пустое
+# `device name`, а при остановленном плеере весь блок исчезает — «No vdec»).
+# Поэтому играющим считаем состояние, когда блок канала есть и объявленная
+# частота кадров больше нуля. Частота при этом ненадёжна как «частота клипа»
+# (известное свойство поля, §4г): 25-фпс ролик ARTE отдаёт «30 к/с, dur 3200»,
+# поэтому в протоколе это справочная величина, а не идентификация ролика —
+# идентификация по URL, который запускает сам скрипт.
+dec_line () { suroot "cat /sys/class/vdec/vdec_status"; }
+
+dec_fps () { # объявленная частота кадров (fps) или 0
+	dec_line | awk -F: '/frame rate/ { gsub (/[^0-9]/, "", $2); print $2 + 0; found = 1 }
+		END { if (!found) print 0 }'
+}
+
+dec_dur () { # длительность кадра (мкс т.е. 1/96000 с) или 0
+	dec_line | awk -F: '/frame dur/ { gsub (/[^0-9]/, "", $2); print $2 + 0; found = 1 }
+		END { if (!found) print 0 }'
+}
+
+dec_playing () { [ "$(dec_fps)" -gt 0 ] 2>/dev/null && [ "$(dec_dur)" -gt 0 ] 2>/dev/null; }
 
 daemon_of () { dev 'pidof afrd'; }
 
@@ -109,7 +127,7 @@ plan_line () {
 	case "$1" in
 	1)	echo "LXb3EKWsInQ 60 0 60" ;;
 	2)	echo "aqz-KE-bpKQ 50 8 60" ;;
-	3)	echo "QPGnVP1PiMo 24 8 60" ;;
+	3)	echo "ydurPHaIU24 24 8 60" ;;
 	4)	echo "Q7NZK6h9Tvo 60 2 50" ;;
 	5)	echo "zhApeaHMvfs 60 0 60" ;;
 	6)	echo "LXb3EKWsInQ 50 8 60" ;;
@@ -121,7 +139,7 @@ plan_expect () { # ключ: печатать только после верди
 	case "$1" in
 	1)	echo "60.0 к/с, режим 60 Гц с самого старта — ожидание: ПЛАВНО (1:1)" ;;
 	2)	echo "60.0 к/с, старт под 50 Гц, подъём до 60 Гц на 8-й с — ожидание: РЫВКИ (зажим 50 к/с на 60 Гц)" ;;
-	3)	echo "30.0 к/с, старт под 24 Гц, подъём до 60 Гц на 8-й с — ожидание: РЫВКИ (зажим ~24 к/с)" ;;
+	3)	echo "29.97 к/с, старт под 24 Гц, подъём до 60 Гц на 8-й с — ожидание: РЫВКИ (зажим ~24 к/с)" ;;
 	4)	echo "25.0 к/с, старт под 60 Гц, спуск до 50 Гц на 2-й с — ожидание: ПЛАВНО (ровное 2:2)" ;;
 	5)	echo "23.976 к/с, режим 60 Гц всё время — ожидание: ПЛАВНО (3:2, ваш вердикт 02.10)" ;;
 	6)	echo "60.0 к/с, старт под 50 Гц, подъём до 60 Гц на 8-й с — ожидание: РЫВКИ" ;;
@@ -133,7 +151,7 @@ plan_title () {
 	case "$1" in
 	1|6)	echo "Costa Rica in 4K 60fps HDR (LXb3EKWsInQ)" ;;
 	2)	echo "Big Buck Bunny 60fps 4K (aqz-KE-bpKQ)" ;;
-	3)	echo "China Isn't Catching Up (QPGnVP1PiMo)" ;;
+	3)	echo "Tower: Horizontal Panning, 4K (ydurPHaIU24)" ;;
 	4)	echo "Madagascar: AI Trainers / ARTE (Q7NZK6h9Tvo)" ;;
 	5)	echo "JUMANJI: OPEN WORLD — трейлер (zhApeaHMvfs)" ;;
 	esac
@@ -147,17 +165,43 @@ cmd_daemon () { # stop|start|state
 	case "${1:-state}" in
 	stop)
 		dev "am stopservice -n $SVC" >/dev/null
-		sleep 3
+		sleep 2
 		p=$(daemon_of)
 		if [ -n "$p" ]; then
-			say "daemon stop: служба снята, но pid $p жив (сторож вернул демон?)"
-			return 3
+			# Служба приложения возвращает демон за ≤15 с (§27.1), поэтому её
+			# снятия недостаточно: останавливаем процесс приложения (иначе
+			# сторож поднимет демон в середине фазы), затем сам демон.
+			say "daemon stop: служба снята, но pid $p жив — снимаю приложение и демон"
+			dev "am force-stop ru.reyter.afrd2" >/dev/null
+			sleep 2
+			p=$(daemon_of)
+			if [ -n "$p" ]; then
+				suroot "kill -9 $p" >/dev/null
+				sleep 2
+				p=$(daemon_of)
+			fi
+			if [ -n "$p" ]; then
+				say "daemon stop: демон не снимается (pid $p)"
+				return 3
+			fi
 		fi
 		say "daemon stop: демона нет"
 		;;
 	start)
 		dev "am start-foreground-service -n $SVC" >/dev/null
 		sleep 5
+		if [ -z "$(daemon_of)" ]; then
+			# Приложение могло быть снято командой `daemon stop` (иначе сторож
+			# возвращает демон в середину фазы): стартуем его активность,
+			# дальше службу поднимает само приложение.
+			say "daemon start: служба не поднялась — запускаю приложение"
+			dev "am start -n ru.reyter.afrd2/ru.cobra.zap.afrd.gui.MainActivity" >/dev/null
+			i=0
+			while [ -z "$(daemon_of)" ] && [ "$i" -lt 20 ]; do
+				sleep 2
+				i=$((i + 2))
+			done
+		fi
 		say "daemon start: pid $(daemon_of)"
 		;;
 	*)	say "daemon state: pid $(daemon_of)" ;;
@@ -200,22 +244,17 @@ cmd_rollback () {
 
 # --- предъявление ------------------------------------------------------------
 
-wait_playing () { # ждём роста счётчика кадров, до 40 с
+wait_playing () { # ждём появления живого декодера, до 40 с
 	i=0
-	prev=$(frames_of)
-	[ -z "$prev" ] && prev=0
 	while [ "$i" -lt 40 ]; do
 		sleep 2
 		i=$((i + 2))
-		cur=$(frames_of)
-		[ -z "$cur" ] && cur=0
-		if [ "$cur" -gt "$prev" ]; then
-			say "воспроизведение идёт (t+${i}s, декодировано $cur кадров)"
+		if dec_playing; then
+			say "воспроизведение идёт (t+${i}s, декодер: $(dec_fps) к/с, frame dur $(dec_dur))"
 			return 0
 		fi
-		prev=$cur
 	done
-	say "кадры не растут 40 с — плеер не начал играть (реклама? каталог? сеть?)"
+	say "декодера нет 40 с — плеер не начал играть (реклама? каталог? сеть?)"
 	return 1
 }
 
@@ -252,8 +291,9 @@ cmd_run () { # <номер предъявления>
 	while [ "$elapsed" -lt "$SECS" ]; do
 		m=$(mode_of)
 		r=$(rate_of)
-		f=$(frames_of)
-		say "П$P t+${elapsed}s режим=$m vinfo=${r}Гц кадров=$f"
+		df=$(dec_fps)
+		dd=$(dec_dur)
+		say "П$P t+${elapsed}s режим=$m vinfo=${r}Гц декодер=${df}к/с dur=$dd"
 		if [ "$at" != 0 ] && [ "$switched" = 0 ] && [ "$elapsed" -ge "$at" ]; then
 			cmd_mode "$target" >/dev/null
 			say "П$P t+${elapsed}s: СМЕНА РЕЖИМА на $target Гц (ядро $(mode_of), vinfo $(rate_of) Гц)"
@@ -288,24 +328,26 @@ cmd_report () {
 		print
 	}' "$EV" 2>/dev/null
 	echo
-	echo "=== частота декодера по предъявлениям (кадров/с) ==="
+	echo "=== частота по декодеру (объявленная плеером) ==="
 	awk '
 		/ПРЕДЪЯВЛЕНИЕ [0-9]+: старт/ {
-			p = $0; sub (/^.*ПРЕДЪЯВЛЕНИЕ /, "", p); sub (/:.*/, "", p)
-			first = 0; last = 0; t0 = 0; t1 = 0
+			p = $0; sub (/^.*ПРЕДЪЯВЛЕНИЕ /, "", p); sub (/:.*/, "", p); delete c
 		}
 		/ t\+[0-9]+s / {
-			v = $0; sub (/^.* t\+/, "", v); sub (/s .*/, "", v); t = v + 0
-			v = $0; sub (/^.*кадров=/, "", v); sub (/[^0-9].*/, "", v); f = v + 0
-			if (first == 0) { first = f; t0 = t }
-			last = f; t1 = t
+			v = $0; sub (/^.*декодер=/, "", v); sub (/к\/с.*/, "", v)
+			if (v != "") c [v]++
 		}
 		/КОНЕЦ ПРЕДЪЯВЛЕНИЯ/ {
-			if (last > first && t1 > t0)
-				printf "  предъявление %s: %.2f к/с (за %d с)\n", p, (last - first) / (t1 - t0), t1 - t0
+			s = ""
+			for (k in c) s = s sprintf (" %s к/с (%d замеров)", k, c [k])
+			printf "  предъявление %s:%s\n", p, (s == "" ? " н/д" : s)
 		}
 	' "$EV" 2>/dev/null
-	echo "  (для справки: 60-к/с ролик должен дать ~60, 30-к/с ~30, 25-к/с ~25, 23.976 ~24)"
+	echo "  (это частота, которую объявляет плеер по SPS — то есть какой ролик играет:"
+	echo "   Costa Rica 60, Big Buck Bunny 60, ARTE 25, Smart Invention 30, JUMANJI 24)"
+	echo
+	echo "=== режим экрана по секундам (ключ к вердиктам) ==="
+	grep -E ' t\+[0-9]+s режим=' "$EV" 2>/dev/null | sed 's/^\([0-9:]*\) .*\(П[0-9]*\) t+\([0-9]*\)s режим=\([^ ]*\) vinfo=\([^ ]*\)Гц.*/\1 \2 t+\3s \4 (\5 Гц)/'
 	echo
 	echo "=== журнал демона (последние строки) ==="
 	suroot "tail -n 5 /data/local/afrd.log" 2>/dev/null
