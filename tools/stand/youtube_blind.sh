@@ -52,6 +52,10 @@ COLD_TIMEOUT=${COLD_TIMEOUT:-50}
 ORDER=${YTBLIND_ORDER:-3 5 1 6 4 2}
 
 PKG=com.google.android.youtube.tv
+# Фоновые плееры, которые держат экран/аудиофокус между перезапусками YouTube
+# (OTT Navigator на `.50` давал «Ошибка. Видео недоступно»). Закрываются перед
+# каждым предъявлением.
+OTHER_PLAYERS=${OTHER_PLAYERS:-studio.scillarium.ottnavigator org.videolan.vlc com.brouken.player}
 SVC=ru.reyter.afrd2/ru.cobra.zap.afrd.gui.AFRService
 
 EV="$DIR/events.txt"
@@ -152,11 +156,11 @@ sf_id_for () { # <Гц> -> id режима 1920x1080 с этой частото�
 
 sf_release_backdoor () {
 	dev 'service call SurfaceFlinger 1035 i32 -1' >/dev/null
-	i=0
-	while [ "$i" -lt 6 ]; do
+	_i=0
+	while [ "$_i" -lt 6 ]; do
 		[ "$(sf_flag)" = false ] && return 0
 		sleep 0.5
-		i=$((i + 1))
+		_i=$((_i + 1))
 	done
 	say "флаг backdoor не снялся (flag=$(sf_flag))"
 	return 3
@@ -186,9 +190,12 @@ rate_of () {
 dec_line () { suroot "cat /sys/class/vdec/vdec_status"; }
 
 snap () { # -> MODE SYNC CNT FPS DUR
-	meta=$(dev 'cat /sys/class/display/mode; grep -m1 sync_duration_num /sys/class/display/vinfo')
+	meta=$(dev 'cat /sys/class/display/mode; grep -m1 -E "sync_duration_(num|den)" /sys/class/display/vinfo')
 	MODE=$(printf '%s\n' "$meta" | sed -n '1p')
-	SYNC=$(printf '%s\n' "$meta" | awk '/sync_duration_num/ { print $2 + 0 }')
+	SNUM=$(printf '%s\n' "$meta" | awk '/sync_duration_num/ { print $2 + 0 }')
+	SDEN=$(printf '%s\n' "$meta" | awk '/sync_duration_den/ { print $2 + 0 }')
+	[ -z "$SDEN" ] || [ "$SDEN" = 0 ] && SDEN=1000
+	SYNC=$SNUM
 	v=$(dec_line)
 	CNT=$(printf '%s\n' "$v" | awk -F: '/frame count/ { gsub (/[^0-9]/, "", $2); s += $2 + 0 }
 		END { print s + 0 }')
@@ -243,30 +250,35 @@ cmd_mode () { # <Гц>
 	[ -z "$r" ] && { echo "не разобрать частоту $1" >&2; return 1; }
 
 	if [ "${SINK:-}" = sf ]; then
-		id=$(sf_id_for "$r")
-		if [ -z "$id" ]; then
+		# Имена с подчёркиванием: `id`/`i`/`got` — глобальные переменные shell,
+		# и раньше `cmd_mode` затирала `id` вызывающего (в `cmd_run` это ID
+		# ролика). Из-за этого в YouTube уходил URL вида `youtu.be/2`, и плеер
+		# показывал «Ошибка. Видео недоступно» (найдено трассировкой 17.10).
+		_mid=$(sf_id_for "$r")
+		if [ -z "$_mid" ]; then
 			say "режим $r Гц (1920x1080) не найден в таблице SurfaceFlinger"
 			return 3
 		fi
-		dev "service call SurfaceFlinger 1035 i32 $id" >/dev/null
-		i=0
-		while [ "$i" -lt 10 ]; do
+		dev "service call SurfaceFlinger 1035 i32 $_mid" >/dev/null
+		_i=0
+		_got=
+		while [ "$_i" -lt 10 ]; do
 			sleep 0.5
-			got=$(rate_of)
-			if awk -v a="$got" -v b="$r" 'BEGIN { exit !(a + 0 > 0 && a - b < 0.1 && b - a < 0.1) }'; then
+			_got=$(rate_of)
+			if awk -v a="$_got" -v b="$r" 'BEGIN { exit !(a + 0 > 0 && a - b < 0.1 && b - a < 0.1) }'; then
 				return 0
 			fi
-			i=$((i + 1))
+			_i=$((_i + 1))
 		done
-		say "режим не применился: просили $r Гц (id $id), vinfo $got Гц, SF $(sf_active_hz) Гц"
+		say "режим не применился: просили $r Гц (id $_mid), vinfo $_got Гц, SF $(sf_active_hz) Гц"
 		return 3
 	fi
 
-	m=$(hz_to_mode "$r")
-	suroot "echo $m > /sys/class/display/mode" >/dev/null
-	got=$(mode_of)
-	if [ "$got" != "$m" ]; then
-		say "режим не применился: просили $m, ядро отдаёт $got"
+	_m=$(hz_to_mode "$r")
+	suroot "echo $_m > /sys/class/display/mode" >/dev/null
+	_got=$(mode_of)
+	if [ "$_got" != "$_m" ]; then
+		say "режим не применился: просили $_m, ядро отдаёт $_got"
 		return 3
 	fi
 }
@@ -480,14 +492,44 @@ capture_lat () { # <файл> — дамп подачи видео-слоя + с
 	return 0
 }
 
-player_running () { [ -n "$(dev "pidof $PKG")" ]; }
-
-start_clip () { # <видео-id> — открывает ролик поверх запущенного приложения
-	dev "am start -a android.intent.action.VIEW -d 'https://www.youtube.com/watch?v=$1'" >/dev/null
+kill_other_players () {
+	for p in $OTHER_PLAYERS; do
+		[ -n "$(dev "pidof $p")" ] && dev "am force-stop $p" >/dev/null
+	done
 }
 
-launch_app () {
-	dev "am start -n $PKG/com.google.android.apps.youtube.tv.activity.MainActivity" >/dev/null
+# Запуск ролика «начисто»: приложение закрывается, а VIEW-интент поднимает его
+# сразу с нужным роликом (LaunchState=COLD, проверено 17.10). Так исключается
+# гонка «интент пришёл, пока главный экран ещё грузится» — она давала и
+# потерянные deep link, и «Ошибка. Видео недоступно» на экране.
+start_video () { # <видео-id>; 0 — картинка пошла
+	_sv_id=$1
+	_sv_k=0
+	while [ "$_sv_k" -lt 3 ]; do
+		_sv_k=$((_sv_k + 1))
+		# Экран ошибки «Видео недоступно» переживает повторный cold start:
+		# BACK сбрасывает навигационное состояние, после него VIEW открывает
+		# ролик с первой попытки (проверено 17.10). Дёшево и безвредно.
+		dev 'input keyevent 4' >/dev/null
+		dev "am force-stop $PKG" >/dev/null
+		sleep 2
+		snap
+		_sv_base=$CNT
+		logonly "П$P: попытка $_sv_k, база=$_sv_base, режим=$(mode_of)"
+		# Форма ссылки имеет значение: `youtube.com/watch?v=` на этой сборке
+		# открывает только главный экран (проверено 17.10, трижды), а
+		# `youtu.be/<id>` сразу запускает ролик — 3/3.
+		am_out=$(dev "am start -W -a android.intent.action.VIEW -d 'https://youtu.be/$_sv_id'")
+		logonly "П$P: am start -> $(printf '%s' "$am_out" | tr '\n' ' ' | cut -c1-200)"
+		if wait_start "$_sv_base" 30; then
+			[ "$_sv_k" -gt 1 ] && say "П$P: ролик открылся с попытки $_sv_k"
+			return 0
+		fi
+		dev "screencap -p /sdcard/blind_fail.png" >/dev/null 2>&1
+		adb -s "$D" pull /sdcard/blind_fail.png "$DIR/fail_P${P}_$_sv_k.png" >/dev/null 2>&1
+		say "П$P: попытка $_sv_k — картинки нет (снимок экрана: $DIR/fail_P${P}_$_sv_k.png)"
+	done
+	return 1
 }
 
 pause_player () { # ставит ролик на паузу, чтобы вердикт не звучал фоном
@@ -504,29 +546,6 @@ pause_player () { # ставит ролик на паузу, чтобы верд
 		return 1
 	fi
 	touch "$PAUSED_FILE"
-	return 0
-}
-
-ensure_stopped () { # предыдущий ролик не должен играть под новым
-	snap
-	[ "$CNT" = 0 ] && return 0
-	c0=$CNT
-	sleep 2
-	snap
-	if [ "$CNT" -gt $((c0 + 3)) ]; then
-		dev 'input keyevent 127' >/dev/null
-		sleep 2
-		snap
-		c2=$CNT
-		sleep 2
-		snap
-		if [ "$CNT" -gt $((c2 + 3)) ]; then
-			dev "am force-stop $PKG" >/dev/null
-			sleep 2
-			say "П$P: предыдущий ролик не встал на паузу — плеер перезапускаю"
-			return 1
-		fi
-	fi
 	return 0
 }
 
@@ -551,7 +570,10 @@ wait_start () { # <базовый счётчик> <таймаут>; 0 — кар
 		if [ -z "$wbase" ] && [ "$CNT" -ge $((prev + 12)) ]; then
 			return 0
 		fi
-		[ "$t" -gt 0 ] && [ $((t % 5)) -eq 0 ] && say "П$P: ждём картинку… ${t} с"
+		[ "$t" -gt 0 ] && [ $((t % 5)) -eq 0 ] && {
+			echo "П$P: ждём картинку… ${t} с"
+			logonly "П$P wait t+${t}s cnt=$CNT fps=$FPS dur=$DUR wbase=${wbase:-–}"
+		}
 		prev=$CNT
 		sleep 1
 	done
@@ -568,7 +590,7 @@ cmd_run () { # <номер предъявления>
 		return 1
 	fi
 	set -- $(plan_line "$item")
-	id=$1
+	vid=$1
 	start=$2
 	at=$3
 	target=$4
@@ -580,40 +602,14 @@ cmd_run () { # <номер предъявления>
 		cmd_daemon stop || return 3
 	fi
 
-	if ! player_running; then
-		say "П$P: плеер не запущен — холодный старт (до 20 с)"
-		launch_app
-		sleep 8
-	fi
-
-	# Предыдущее предъявление ставило ролик на паузу — лишние проверки не нужны.
-	if [ -f "$PAUSED_FILE" ]; then
-		rm -f "$PAUSED_FILE"
-	else
-		ensure_stopped || { launch_app; sleep 6; }
-	fi
+	kill_other_players
 
 	cmd_mode "$start" || return 3
-	snap
-	base=$CNT
-
 	say "П$P: режим $start Гц готов; открываю ролик"
-	start_clip "$id"
 
-	if ! wait_start "$base" "$START_TIMEOUT"; then
-		say "П$P: за ${START_TIMEOUT} с картинки нет — перезапускаю плеер начисто"
-		dev "am force-stop $PKG" >/dev/null
-		sleep 3
-		launch_app
-		sleep 6
-		cmd_mode "$start" || return 3
-		snap
-		base=$CNT
-		start_clip "$id"
-		if ! wait_start "$base" "$COLD_TIMEOUT"; then
-			say "П$P: ВИДЕО НЕ ПОШЛО. Предъявление не состоялось — проверьте экран."
-			return 3
-		fi
+	if ! start_video "$vid"; then
+		say "П$P: ВИДЕО НЕ ПОШЛО — предъявление пропущено"
+		return 3
 	fi
 
 	# Окно просмотра — по настенным часам, а не по числу итераций: раньше
@@ -651,6 +647,15 @@ cmd_run () { # <номер предъявления>
 			return 3
 		fi
 
+		# Режим мог вернуться сам (фреймворк/HWC): на `.50` это наблюдалось
+		# 17.10 (60 → 50 Гц посреди предъявления). Пишем в протокол, вердикт
+		# по такому предъявлению будет помечен.
+		want=$(norm_hz "$start")
+		[ "$at" != 0 ] && [ "$switched" = 1 ] && want=$(norm_hz "$target")
+		cur=$(awk -v n="$SNUM" -v d="$SDEN" 'BEGIN { printf "%.3f", (d > 0) ? n / d : 0 }')
+		awk -v a="$cur" -v b="$want" 'BEGIN { exit !(a + 0 > 0 && (a - b > 0.1 || b - a > 0.1)) }' &&
+			say "П$P t+${t}s: РЕЖИМ СМЕНИЛСЯ САМ ($cur Гц вместо $want) — предъявление помечено"
+
 		if [ "$pre_taken" = 0 ] && [ "$t" -ge "$pre_at" ]; then
 			capture_lat "$LATDIR/P$P.pre" >/dev/null
 			pre_taken=1
@@ -679,6 +684,50 @@ cmd_run () { # <номер предъявления>
 	echo
 	echo "  П$P — вердикт: плавно или рывки?"
 	echo "    sh $0 mark $P smooth|jerky|ad"
+}
+
+lat_verdict () { # <номер> — числовой вердикт по срезу после смены режима
+	f="$LATDIR/P$1.post"
+	[ -f "$f" ] || { echo nodata; return; }
+	nom=$(plan_fps "$(item_of "$1")")
+	awk -v nom="$nom" '
+		NR > 1 && NF == 3 && $2 + 0 > 0 && $2 + 0 < 1e17 { n++; t[n] = $2 + 0 }
+		END {
+			if (n < 3) { print "nodata"; exit }
+			m = 0; sum = 0
+			for (i = 2; i <= n; i++) {
+				d = (t[i] - t[i-1]) / 1e6
+				if (d <= 0) continue
+				m++; sum += d
+			}
+			if (m < 2) { print "nodata"; exit }
+			fps = 1000.0 / (sum / m)
+			if (nom > 0 && fps < 0.95 * nom) print "jerky"
+			else print "smooth"
+		}' "$f"
+}
+
+cmd_auto () { # автономный прогон всех предъявлений (без оператора)
+	need_stand
+	N=$(echo "$ORDER" | wc -w)
+	echo "=== автономный прогон: $N предъявлений по ${SECS} с, демон снят ==="
+	P=1
+	while [ "$P" -le "$N" ]; do
+		say "П$P: старт предъявления (условия не печатаются)"
+		if ! cmd_run "$P" >/dev/null 2>&1; then
+			# один повтор: сорванное предъявление не должно стоить всего прогона
+			say "П$P: срыв — повтор"
+			cmd_run "$P" >/dev/null 2>&1
+		fi
+		if [ -f "$LATDIR/P$P.post" ]; then
+			v=$(lat_verdict "$P")
+			say "ВЕРДИКТ $P: $v (числовой; режим $(mode_of), vinfo $(rate_of) Гц)"
+		else
+			say "ВЕРДИКТ $P: skipped (срез подачи не снят — ролик не открылся)"
+		fi
+		P=$((P + 1))
+	done
+	say "автономный прогон завершён"
 }
 
 cmd_mark () {
@@ -814,6 +863,7 @@ status)		need_stand
 prep)		cmd_prep ;;
 rollback)	cmd_rollback ;;
 run)		shift; cmd_run "$@" ;;
+auto)		cmd_auto ;;
 mark)		shift; cmd_mark "$@" ;;
 report)		cmd_report ;;
 key)		cmd_key ;;
@@ -824,6 +874,7 @@ usage: $0 <команда>
 
   prep                   снять демон, записать пред-состояние, поставить базовый режим
   run <1..N>             выполнить предъявление N (условия задаёт план)
+  auto                   прогнать все предъявления подряд без оператора
   mark <N> smooth|jerky|ad   вердикт владельца по предъявлению N
   report                 вердикты, что делал скрипт, числовая опора по подаче
   key                    условия и ожидания — ЧИТАТЬ ПОСЛЕ ВЕРДИКТОВ
