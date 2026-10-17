@@ -35,7 +35,7 @@
 #   D=... sh tools/stand/youtube_blind.sh rollback
 #
 # Переменные: D (ADB_DEV), BASE_HZ (режим в конце, по умолчанию 50), SECS
-# (сколько играть предъявление, по умолчанию 35), YTBLIND_DIR (протокол на
+# (сколько смотреть предъявление по часам, по умолчанию 40), YTBLIND_DIR (протокол на
 # хосте, по умолчанию /tmp/ytblind), YTBLIND_ORDER (порядок пунктов плана).
 #
 # Код возврата: 0 — ок, 1 — ошибка ввода, 2 — стенд недоступен, 3 — проверка
@@ -46,8 +46,10 @@ set -u
 D=${ADB_DEV:-${D:-192.168.88.76:5555}}
 DIR=${YTBLIND_DIR:-/tmp/ytblind}
 BASE_HZ=${BASE_HZ:-50}
-SECS=${SECS:-35}
-ORDER=${YTBLIND_ORDER:-6 1 4 3 5 2}
+SECS=${SECS:-40}
+START_TIMEOUT=${START_TIMEOUT:-20}
+COLD_TIMEOUT=${COLD_TIMEOUT:-50}
+ORDER=${YTBLIND_ORDER:-3 5 1 6 4 2}
 
 PKG=com.google.android.youtube.tv
 SVC=ru.reyter.afrd2/ru.cobra.zap.afrd.gui.AFRService
@@ -56,6 +58,7 @@ EV="$DIR/events.txt"
 PRE_FILE="$DIR/pre-state.txt"
 SINK_FILE="$DIR/sink.txt"
 LATDIR="$DIR/lat"
+PAUSED_FILE="$DIR/paused"
 mkdir -p "$DIR" "$LATDIR" || exit 1
 
 SINK=${YTBLIND_SINK:-}
@@ -64,6 +67,10 @@ say () {
 	echo "$@"
 	echo "$(date '+%H:%M:%S') $*" >> "$EV"
 }
+
+# В протокол — каждую секунду, в консоль — не чаще раза в 5 с: иначе оператор
+# у ТВ видит поток строк вместо понятных отметок.
+logonly () { echo "$(date '+%H:%M:%S') $*" >> "$EV"; }
 
 dev () { adb -s "$D" shell "$@" 2>/dev/null | tr -d '\r'; }
 suroot () { adb -s "$D" shell "su -c \"$1\"" 2>/dev/null | tr -d '\r'; }
@@ -165,41 +172,38 @@ rate_of () {
 		END { if (d > 0) printf "%.3f", n / d; else print "n/a" }'
 }
 
-# Признак живого декодера.
-# ATV9 (.48): `frame count` не растёт (16.10: при играющем ролике `frame count : 0`
-# и пустое `device name`, при остановленном плеере блок исчезает — «No vdec»),
-# там играющим считаем канал с объявленной частотой > 0 и frame dur > 0.
-# ATV14 (.50): счётчик растёт, зато бывает залипший канал (§18.4), поэтому рост
-# счётчика — основной признак, а «fps > 0» — только если счётчиков нет вовсе.
-# Сама объявленная частота ненадёжна как частота клипа (§4г) — в протоколе она
-# справочная, идентификация ролика — по URL, который запускает скрипт.
+# --- снимок состояния за 2 вызова adb ---------------------------------------
+#
+# Раньше на каждую секунду замера уходило 4–6 вызовов adb (mode, vinfo, трижды
+# vdec_status), итерация занимала 2–5 с, а `wait_playing` мог молча ждать
+# 60–120 с. Здесь один вызов читает mode+sync, второй — vdec_status; всё
+# остальное разбирается локально.
+#
+# `frame count` — основной признак живой подачи на ATV14. На ATV9 счётчик не
+# растёт, там признак — объявленные `frame rate`/`frame dur` (см. §45.5).
+# Сама объявленная частота как частота контента ненадёжна (§4г), поэтому в
+# протоколе она справочная.
 dec_line () { suroot "cat /sys/class/vdec/vdec_status"; }
 
-dec_fps () { # максимальная объявленная частота по каналам (fps) или 0
-	dec_line | awk -F: '/frame rate/ { gsub (/[^0-9]/, "", $2); if ($2 + 0 > m) m = $2 + 0 }
-		END { print m + 0 }'
+snap () { # -> MODE SYNC CNT FPS DUR
+	meta=$(dev 'cat /sys/class/display/mode; grep -m1 sync_duration_num /sys/class/display/vinfo')
+	MODE=$(printf '%s\n' "$meta" | sed -n '1p')
+	SYNC=$(printf '%s\n' "$meta" | awk '/sync_duration_num/ { print $2 + 0 }')
+	v=$(dec_line)
+	CNT=$(printf '%s\n' "$v" | awk -F: '/frame count/ { gsub (/[^0-9]/, "", $2); s += $2 + 0 }
+		END { print s + 0 }')
+	FPS=$(printf '%s\n' "$v" | awk -F: '/frame rate/ { gsub (/[^0-9]/, "", $2); if ($2 + 0 > m) m = $2 + 0 }
+		END { print m + 0 }')
+	DUR=$(printf '%s\n' "$v" | awk -F: '/frame dur/ { gsub (/[^0-9]/, "", $2); if ($2 + 0 > m) m = $2 + 0 }
+		END { print m + 0 }')
+	[ -z "$SYNC" ] && SYNC=0
 }
 
-dec_dur () { # максимальный frame dur (1/96000 с) или 0
-	dec_line | awk -F: '/frame dur/ { gsub (/[^0-9]/, "", $2); if ($2 + 0 > m) m = $2 + 0 }
-		END { print m + 0 }'
-}
+now () { date +%s; }
 
-dec_count () { # сумма frame count по каналам
-	dec_line | awk -F: '/frame count/ { gsub (/[^0-9]/, "", $2); s += $2 + 0 }
-		END { print s + 0 }'
-}
-
-dec_playing () {
-	c0=$(dec_count)
-	sleep 2
-	c1=$(dec_count)
-	if [ "$c1" -gt "$c0" ] 2>/dev/null; then
-		return 0
-	fi
-	# каналов со счётчиком нет (ATV9) — тогда по объявленной частоте
-	[ "$c1" = 0 ] && [ "$(dec_fps)" -gt 0 ] 2>/dev/null && [ "$(dec_dur)" -gt 0 ] 2>/dev/null
-}
+dec_fps () { snap; echo "$FPS"; }
+dec_dur () { snap; echo "$DUR"; }
+dec_count () { snap; echo "$CNT"; }
 
 daemon_of () { dev 'pidof afrd'; }
 
@@ -275,45 +279,45 @@ cmd_mode () { # <Гц>
 plan_line () {
 	case "$1" in
 	1)	echo "LXb3EKWsInQ 60 0 60" ;;
-	2)	echo "aqz-KE-bpKQ 50 8 60" ;;
-	3)	echo "ydurPHaIU24 24 8 60" ;;
+	2)	echo "aqz-KE-bpKQ 60 0 60" ;;
+	3)	echo "aqz-KE-bpKQ 50 8 60" ;;
 	4)	echo "Q7NZK6h9Tvo 60 2 50" ;;
 	5)	echo "zhApeaHMvfs 60 0 60" ;;
-	6)	echo "LXb3EKWsInQ 50 8 60" ;;
+	6)	echo "ydurPHaIU24 24 8 60" ;;
 	*)	return 1 ;;
 	esac
 }
 
 plan_expect () { # ключ: печатать только после вердиктов
 	case "$1" in
-	1)	echo "60.0 к/с, режим 60 Гц с самого старта — ожидание: ПЛАВНО (1:1)" ;;
-	2)	echo "60.0 к/с, старт под 50 Гц, подъём до 60 Гц на 8-й с — ожидание: РЫВКИ (зажим 50 к/с на 60 Гц)" ;;
-	3)	echo "29.97 к/с, старт под 24 Гц, подъём до 60 Гц на 8-й с — ожидание: РЫВКИ (зажим ~24 к/с)" ;;
+	1)	echo "59.94 к/с, режим 60 Гц с самого старта — ожидание: ПЛАВНО (1:1)" ;;
+	2)	echo "60.0 к/с, режим 60 Гц с самого старта — ожидание: ПЛАВНО (1:1)" ;;
+	3)	echo "60.0 к/с, старт под 50 Гц, подъём до 60 Гц на 8-й с — ожидание: РЫВКИ (зажим 50 к/с на 60 Гц)" ;;
 	4)	echo "25.0 к/с, старт под 60 Гц, спуск до 50 Гц на 2-й с — ожидание: ПЛАВНО (ровное 2:2)" ;;
 	5)	echo "23.976 к/с, режим 60 Гц всё время — ожидание: ПЛАВНО (3:2, ваш вердикт 02.10)" ;;
-	6)	echo "60.0 к/с, старт под 50 Гц, подъём до 60 Гц на 8-й с — ожидание: РЫВКИ" ;;
+	6)	echo "29.97 к/с, старт под 24 Гц, подъём до 60 Гц на 8-й с — ожидание: РЫВКИ (зажим ~24 к/с)" ;;
 	*)	return 1 ;;
 	esac
 }
 
 plan_fps () { # номинальная частота контента (для числовой сверки)
 	case "$1" in
-	1|6)	echo 59.94 ;;
-	2)	echo 60.000 ;;
-	3)	echo 29.97 ;;
+	1)	echo 59.94 ;;
+	2|3)	echo 60.000 ;;
 	4)	echo 25.000 ;;
 	5)	echo 23.976 ;;
+	6)	echo 29.97 ;;
 	*)	return 1 ;;
 	esac
 }
 
 plan_title () {
 	case "$1" in
-	1|6)	echo "Costa Rica in 4K 60fps HDR (LXb3EKWsInQ)" ;;
-	2)	echo "Big Buck Bunny 60fps 4K (aqz-KE-bpKQ)" ;;
-	3)	echo "Tower: Horizontal Panning, 4K (ydurPHaIU24)" ;;
+	1)	echo "Costa Rica in 4K 60fps HDR (LXb3EKWsInQ)" ;;
+	2|3)	echo "Big Buck Bunny 60fps 4K (aqz-KE-bpKQ)" ;;
 	4)	echo "Madagascar: AI Trainers / ARTE (Q7NZK6h9Tvo)" ;;
 	5)	echo "JUMANJI: OPEN WORLD — трейлер (zhApeaHMvfs)" ;;
+	6)	echo "Tower: Horizontal Panning, 4K (ydurPHaIU24)" ;;
 	esac
 }
 
@@ -405,7 +409,14 @@ cmd_prep () {
 	dev "am force-stop $PKG" >/dev/null
 	[ "$SECS" -lt 16 ] && say "ВНИМАНИЕ: SECS=$SECS — смена режима на 8-й секунде не покроется замером (нужно ≥ 16)"
 	cmd_mode "$BASE_HZ" || return 3
-	say "prep: режим $BASE_HZ Гц ($(state_desc)), плеер остановлен"
+
+	# Прогрев плеера: холодный старт YouTube TV на этом боксе занимал до 60 с,
+	# и это выглядело как «непонятная пауза» перед роликом. Держим приложение
+	# запущенным; каждый следующий ролик открывается поверх (2–5 с).
+	say "prep: прогреваю YouTube TV (10 с) — это единственная длинная пауза"
+	dev "am start -n $PKG/com.google.android.apps.youtube.tv.activity.MainActivity" >/dev/null
+	sleep 10
+	say "prep: плеер запущен (pid $(dev "pidof $PKG")), режим $BASE_HZ Гц ($(state_desc))"
 	echo
 	echo "  Порядок прогона (условия владельцу не сообщать):"
 	P=1
@@ -414,8 +425,10 @@ cmd_prep () {
 		P=$((P + 1))
 	done
 	echo
+	echo "  Каждое предъявление: старт → «пошло» → смотрите $SECS с → стоп → вердикт."
+	echo "  Между предъявлениями пауза ~10 с (переключение ролика), она объявляется."
 	echo "  Дальше по одному: run <номер> → вердикт владельца → mark <номер> smooth|jerky"
-	echo "  Реклама перед роликом → mark <номер> ad (предъявление повторяем)."
+	echo "  Если ролик не пошёл — скрипт скажет об этом сам; реклама → mark <номер> ad."
 }
 
 cmd_rollback () {
@@ -467,17 +480,81 @@ capture_lat () { # <файл> — дамп подачи видео-слоя + с
 	return 0
 }
 
-wait_playing () { # ждём появления живого декодера, до 40 с
-	i=0
-	while [ "$i" -lt 40 ]; do
+player_running () { [ -n "$(dev "pidof $PKG")" ]; }
+
+start_clip () { # <видео-id> — открывает ролик поверх запущенного приложения
+	dev "am start -a android.intent.action.VIEW -d 'https://www.youtube.com/watch?v=$1'" >/dev/null
+}
+
+launch_app () {
+	dev "am start -n $PKG/com.google.android.apps.youtube.tv.activity.MainActivity" >/dev/null
+}
+
+pause_player () { # ставит ролик на паузу, чтобы вердикт не звучал фоном
+	dev 'input keyevent 127' >/dev/null   # KEYCODE_MEDIA_PAUSE
+	sleep 1
+	snap
+	c1=$CNT
+	sleep 2
+	snap
+	if [ "$CNT" -gt $((c1 + 2)) ]; then
+		dev "am force-stop $PKG" >/dev/null
+		say "П$P: пауза не сработала — плеер остановлен (следующий старт будет холодным)"
+		rm -f "$PAUSED_FILE"
+		return 1
+	fi
+	touch "$PAUSED_FILE"
+	return 0
+}
+
+ensure_stopped () { # предыдущий ролик не должен играть под новым
+	snap
+	[ "$CNT" = 0 ] && return 0
+	c0=$CNT
+	sleep 2
+	snap
+	if [ "$CNT" -gt $((c0 + 3)) ]; then
+		dev 'input keyevent 127' >/dev/null
 		sleep 2
-		i=$((i + 2))
-		if dec_playing; then
-			say "воспроизведение идёт (t+${i}s, декодер: $(dec_fps) к/с, frame dur $(dec_dur), кадров $(dec_count))"
+		snap
+		c2=$CNT
+		sleep 2
+		snap
+		if [ "$CNT" -gt $((c2 + 3)) ]; then
+			dev "am force-stop $PKG" >/dev/null
+			sleep 2
+			say "П$P: предыдущий ролик не встал на паузу — плеер перезапускаю"
+			return 1
+		fi
+	fi
+	return 0
+}
+
+wait_start () { # <базовый счётчик> <таймаут>; 0 — картинка пошла
+	base=$1
+	tmo=$2
+	t0=$(now)
+	wbase=
+	prev=$base
+	while [ $(( $(now) - t0 )) -lt "$tmo" ]; do
+		snap
+		t=$(( $(now) - t0 ))
+		# новый инстанс декодера: счётчик упал ниже базового (или база ноль)
+		if [ -z "$wbase" ] && { [ "$CNT" -lt "$base" ] || [ "$base" -eq 0 ]; }; then
+			wbase=$CNT
+			prev=$CNT
+		fi
+		if [ -n "$wbase" ] && [ "$CNT" -ge $((wbase + 3)) ]; then
 			return 0
 		fi
+		# запасной признак: инстанс не сменился, но кадры идут
+		if [ -z "$wbase" ] && [ "$CNT" -ge $((prev + 12)) ]; then
+			return 0
+		fi
+		[ "$t" -gt 0 ] && [ $((t % 5)) -eq 0 ] && say "П$P: ждём картинку… ${t} с"
+		prev=$CNT
+		sleep 1
 	done
-	say "декодера нет 40 с — плеер не начал играть (реклама? каталог? сеть?)"
 	return 1
 }
 
@@ -499,65 +576,108 @@ cmd_run () { # <номер предъявления>
 
 	pid=$(daemon_of)
 	if [ -n "$pid" ]; then
-		say "предъявление $P: демон жив (pid $pid) — снимаю"
+		say "П$P: демон жив (pid $pid) — снимаю"
 		cmd_daemon stop || return 3
 	fi
 
-	dev "am force-stop $PKG" >/dev/null
+	if ! player_running; then
+		say "П$P: плеер не запущен — холодный старт (до 20 с)"
+		launch_app
+		sleep 8
+	fi
+
+	# Предыдущее предъявление ставило ролик на паузу — лишние проверки не нужны.
+	if [ -f "$PAUSED_FILE" ]; then
+		rm -f "$PAUSED_FILE"
+	else
+		ensure_stopped || { launch_app; sleep 6; }
+	fi
+
 	cmd_mode "$start" || return 3
-	say "ПРЕДЪЯВЛЕНИЕ $P: старт под $start Гц ($(state_desc))"
-	dev "am start -a android.intent.action.VIEW -d 'https://www.youtube.com/watch?v=$id'" | head -2
-	say "ПРЕДЪЯВЛЕНИЕ $P: запущен https://www.youtube.com/watch?v=$id"
+	snap
+	base=$CNT
 
-	wait_playing || { say "ПРЕДЪЯВЛЕНИЕ $P: не начало играть — предъявление повторить"; return 3; }
+	say "П$P: режим $start Гц готов; открываю ролик"
+	start_clip "$id"
 
-	# Числовые срезы: до смены режима и за 5 с до конца. Считаются только в
-	# `report` — во время прогона их не печатаем, иначе слепота ломается.
+	if ! wait_start "$base" "$START_TIMEOUT"; then
+		say "П$P: за ${START_TIMEOUT} с картинки нет — перезапускаю плеер начисто"
+		dev "am force-stop $PKG" >/dev/null
+		sleep 3
+		launch_app
+		sleep 6
+		cmd_mode "$start" || return 3
+		snap
+		base=$CNT
+		start_clip "$id"
+		if ! wait_start "$base" "$COLD_TIMEOUT"; then
+			say "П$P: ВИДЕО НЕ ПОШЛО. Предъявление не состоялось — проверьте экран."
+			return 3
+		fi
+	fi
+
+	# Окно просмотра — по настенным часам, а не по числу итераций: раньше
+	# итерация занимала 2–5 с, и «35» превращалось в 1.5–2 минуты, а обрыв
+	# ролика обрывал предъявление без предупреждения.
+	t0=$(now)
+	switched=0
+	pre_taken=0
+	post_taken=0
+	last_cnt=$CNT
+	last_move=$t0
 	if [ "$at" != 0 ]; then
 		pre_at=$((at - 2)); [ "$pre_at" -lt 1 ] && pre_at=1
 	else
 		pre_at=5
 	fi
 	post_at=$((SECS - 5))
-	if [ "$at" != 0 ] && [ "$post_at" -le "$at" ]; then
-		post_at=$((at + 3))
-		say "П$P: SECS=$SECS маловат — срез «после» смещён на t+$post_at"
-		if [ "$post_at" -ge "$SECS" ]; then
-			say "П$P: SECS=$SECS не покрывает смену режима (нужно ≥ $((at + 8))) — прогон остановлен"
-			return 1
-		fi
-	fi
+	[ "$at" != 0 ] && [ "$post_at" -le "$at" ] && post_at=$((at + 3))
 
-	elapsed=0
-	switched=0
-	while [ "$elapsed" -lt "$SECS" ]; do
-		m=$(mode_of)
-		r=$(rate_of)
-		df=$(dec_fps)
-		dd=$(dec_dur)
-		say "П$P t+${elapsed}s режим=$m vinfo=${r}Гц декодер=${df}к/с dur=$dd"
-		# Срез «до смены» обязан сниматься ДО переключения (при at=2 иначе
-		# попал бы уже новый режим).
-		[ "$elapsed" = "$pre_at" ] && capture_lat "$LATDIR/P$P.pre" >/dev/null
-		if [ "$at" != 0 ] && [ "$switched" = 0 ] && [ "$elapsed" -ge "$at" ]; then
+	say "П$P: пошло. Смотрите ${SECS} секунд."
+	while :; do
+		snap
+		t=$(( $(now) - t0 ))
+		[ "$t" -ge "$SECS" ] && break
+
+		logonly "П$P t+${t}s режим=$MODE sync=$SYNC декодер=${FPS}к/с dur=$DUR кадров=$CNT"
+		[ $((t % 5)) -eq 0 ] && echo "  П$P: ${t} / ${SECS} с"
+
+		if [ "$CNT" -gt "$last_cnt" ]; then
+			last_cnt=$CNT
+			last_move=$(now)
+		elif [ $(( $(now) - last_move )) -ge 6 ] && [ "$FPS" = 0 ] && [ "$DUR" = 0 ]; then
+			say "П$P: ролик остановился на ${t} с — предъявление недействительно, повторю"
+			pause_player >/dev/null
+			return 3
+		fi
+
+		if [ "$pre_taken" = 0 ] && [ "$t" -ge "$pre_at" ]; then
+			capture_lat "$LATDIR/P$P.pre" >/dev/null
+			pre_taken=1
+		fi
+		if [ "$at" != 0 ] && [ "$switched" = 0 ] && [ "$t" -ge "$at" ]; then
 			if cmd_mode "$target"; then
-				say "П$P t+${elapsed}s: СМЕНА РЕЖИМА на $target Гц ($(state_desc))"
+				say "П$P t+${t}s: СМЕНА РЕЖИМА на $target Гц ($(state_desc))"
 				switched=1
 			else
-				say "П$P t+${elapsed}s: СМЕНА РЕЖИМА НЕ УДАЛАСЬ — предъявление повторить"
-				dev "am force-stop $PKG" >/dev/null
+				say "П$P: СМЕНА РЕЖИМА НЕ УДАЛАСЬ — предъявление недействительно"
+				pause_player >/dev/null
 				return 3
 			fi
 		fi
-		[ "$elapsed" = "$post_at" ] && capture_lat "$LATDIR/P$P.post" >/dev/null
+		if [ "$post_taken" = 0 ] && [ "$t" -ge "$post_at" ]; then
+			capture_lat "$LATDIR/P$P.post" >/dev/null
+			post_taken=1
+		fi
 		sleep 1
-		elapsed=$((elapsed + 1))
 	done
 
-	say "КОНЕЦ ПРЕДЪЯВЛЕНИЯ $P ($(state_desc))"
-	[ "$at" != 0 ] && [ "$switched" = 0 ] && say "П$P: смена режима так и не выполнилась — предъявление недействительно"
+	dur=$(( $(now) - t0 ))
+	pause_player >/dev/null
+	say "П$P: стоп, смотрели ${dur} с ($(state_desc))"
+	[ "$at" != 0 ] && [ "$switched" = 0 ] && say "П$P: смена режима не выполнилась — предъявление недействительно"
 	echo
-	echo "  Спросите владельца: пункт $P — плавно или рывки? Затем:"
+	echo "  П$P — вердикт: плавно или рывки?"
 	echo "    sh $0 mark $P smooth|jerky|ad"
 }
 
@@ -576,20 +696,19 @@ cmd_report () {
 	[ -f "$EV" ] && grep 'ВЕРДИКТ' "$EV" || echo "(нет)"
 	echo
 	echo "=== что делал скрипт (по предъявлениям) ==="
-	awk '/ПРЕДЪЯВЛЕНИЕ/ || /СМЕНА РЕЖИМА/ || /КОНЕЦ ПРЕДЪЯВЛЕНИЯ/ || /воспроизведение идёт/ || /не начало играть/ {
-		print
-	}' "$EV" 2>/dev/null
+	awk '/П[0-9]+: (режим|открываю|пошло|стоп|ролик остановился|ВИДЕО НЕ ПОШЛО)/ ||
+	     /СМЕНА РЕЖИМА/ || /СМЕНА РЕЖИМА НЕ УДАЛАСЬ/ { print }' "$EV" 2>/dev/null
 	echo
 	echo "=== частота по декодеру (объявленная плеером) ==="
 	awk '
-		/ПРЕДЪЯВЛЕНИЕ [0-9]+: старт/ {
-			p = $0; sub (/^.*ПРЕДЪЯВЛЕНИЕ /, "", p); sub (/:.*/, "", p); delete c
+		/ П[0-9]+: пошло/ {
+			p = $0; sub (/^.* П/, "", p); sub (/:.*/, "", p); delete c
 		}
 		/ t\+[0-9]+s / {
 			v = $0; sub (/^.*декодер=/, "", v); sub (/к\/с.*/, "", v)
 			if (v != "") c [v]++
 		}
-		/КОНЕЦ ПРЕДЪЯВЛЕНИЯ/ {
+		/ П[0-9]+: стоп/ {
 			s = ""
 			for (k in c) s = s sprintf (" %s к/с (%d замеров)", k, c [k])
 			printf "  предъявление %s:%s\n", p, (s == "" ? " н/д" : s)
@@ -599,7 +718,7 @@ cmd_report () {
 	echo "   Costa Rica 60, Big Buck Bunny 60, ARTE 25, Tower 30, JUMANJI 24)"
 	echo
 	echo "=== условия, как их выполнил скрипт ==="
-	awk '/ПРЕДЪЯВЛЕНИЕ [0-9]+: старт/ || / t\+[0-9]+s: СМЕНА РЕЖИМА/ {
+	awk '/ П[0-9]+: режим .* готов/ || / t\+[0-9]+s: СМЕНА РЕЖИМА/ {
 		sub (/^[0-9:]+ /, "")
 		print "  " $0
 	}' "$EV" 2>/dev/null
@@ -679,12 +798,10 @@ cmd_key () {
 		printf "     %s — предъявление %d\n" "$pid_i" "$P"
 		P=$((P + 1))
 	done | sort | awk '{ c [$1] = c [$1] " " $4 } END { for (k in c) if (split (c [k], s, " ") > 1) printf "     %s:%s\n", k, c [k] }'
-	echo "  Как читать: совпало во всех предъявлениях — зажим виден глазом и слепота"
-	echo "  соблюдена. Расхождение вердиктов у одного и того же клипа (разные условия)"
-	echo "  — оценка опирается на подачу, а не на содержимое. Всё «плавно» там, где"
-	echo "  ожидались рывки, — гипотеза зажима на ATV9 не подтверждается глазом (тогда"
-	echo "  пересматриваем и сам чёрный список). Рывки ровно вдвое (как 15 к/с вместо"
-	echo "  30) — это не зажим, а дисплейная половинная подача (§21.9)."
+	echo "  Как читать: контрольные пары (2 и 3 — один клип, разные условия) должны"
+	echo "  разойтись, если зажим есть. Совпадение вердиктов у пары — зажима нет или"
+	echo "  он не виден глазом. Рывки ровно вдвое (как 15 к/с вместо 30) — это не"
+	echo "  зажим, а дисплейная половинная подача (§21.9)."
 }
 
 case "${1:-}" in
@@ -717,7 +834,8 @@ usage: $0 <команда>
 Путь смены режима выбирается сам: Android ≤9 — sysfs, Android 12-14 —
 транзакция SurfaceFlinger 1035; Android 10/11 не поддержан.
 
-Переменные: D=$D  BASE_HZ=$BASE_HZ  SECS=$SECS  YTBLIND_DIR=$DIR
+Переменные: D=$D  BASE_HZ=$BASE_HZ  SECS=$SECS (окно просмотра по часам)
+            START_TIMEOUT=$START_TIMEOUT  COLD_TIMEOUT=$COLD_TIMEOUT  YTBLIND_DIR=$DIR
             YTBLIND_SINK=sysfs|sf (принудительно), YTBLIND_ORDER="$ORDER"
 EOF
 	exit 1
