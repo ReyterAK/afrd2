@@ -11,6 +11,7 @@
 #
 # Путь смены режима выбирается по стенду, как в `platform.c` демона:
 #   legacy (Android 6-9): запись в `/sys/class/display/mode`;
+#   Android 10/11: вендорный SystemControl через `afrd-disp.sh` приложения;
 #   ATV14 (sdk 31+, узел `switch/hdmi` отсутствует): транзакция **1035**
 #     SurfaceFlinger (`setActiveModeFromBackdoor`) с id из таблицы режимов;
 #     узел `mode` там только отражает состояние (§4е). Флаг backdoor ставится
@@ -52,10 +53,13 @@ COLD_TIMEOUT=${COLD_TIMEOUT:-50}
 ORDER=${YTBLIND_ORDER:-3 5 1 6 4 2}
 
 PKG=com.google.android.youtube.tv
+# Явный компонент обязателен на стендах, где установлен второй клиент (SmartTube):
+# иначе VIEW-интент уходит в резолвер и ролик открывает не тот плеер.
+PKG_ACT=${PKG_ACT:-com.google.android.youtube.tv/com.google.android.apps.youtube.tv.activity.ShellActivity}
 # Фоновые плееры, которые держат экран/аудиофокус между перезапусками YouTube
 # (OTT Navigator на `.50` давал «Ошибка. Видео недоступно»). Закрываются перед
 # каждым предъявлением.
-OTHER_PLAYERS=${OTHER_PLAYERS:-studio.scillarium.ottnavigator org.videolan.vlc com.brouken.player}
+OTHER_PLAYERS=${OTHER_PLAYERS:-studio.scillarium.ottnavigator org.videolan.vlc com.brouken.player com.teamsmart.videomanager.tv}
 SVC=ru.reyter.afrd2/ru.cobra.zap.afrd.gui.AFRService
 
 EV="$DIR/events.txt"
@@ -66,6 +70,8 @@ PAUSED_FILE="$DIR/paused"
 mkdir -p "$DIR" "$LATDIR" || exit 1
 
 SINK=${YTBLIND_SINK:-}
+# Помощник вендорного пути (Android 10/11): его кладёт приложение AFRd2 в cache.
+VENDOR_CLI=${VENDOR_CLI:-/data/user/0/ru.reyter.afrd2/cache/afrd-disp.sh}
 
 say () {
 	echo "$@"
@@ -104,8 +110,14 @@ detect_sink () { # печатает sysfs|sf; при отказе — причи
 		return 0
 	fi
 	if [ "$sdk" -le 30 ]; then
-		echo "Android 10/11 (sdk $sdk): режим задаёт вендорный SystemControl," \
-		     "транзакция 1035 там не та — этот прогон не поддержан" >&2
+		# Android 10/11 (Amlogic): режим задаёт вендорный HAL SystemControl,
+		# а транзакция 1035 с одним int там — другая операция (§33.18).
+		# Помощник кладёт приложение в свой cache (afrd-disp.sh + dex).
+		if suroot "test -f $VENDOR_CLI" >/dev/null 2>&1; then
+			echo vendor
+			return 0
+		fi
+		echo "Android 10/11 (sdk $sdk): нет вендорного помощника $VENDOR_CLI" >&2
 		return 3
 	fi
 	# Проба backdoor: неверный id -> BAD_VALUE "Invalid argument", флаг снят.
@@ -133,7 +145,11 @@ load_sink () {
 }
 
 sf_active_hz () {
-	dev "dumpsys SurfaceFlinger 2>/dev/null | grep -m1 -o 'activeMode=[0-9.]*'" | sed 's/^ *activeMode=//'
+	_v=$(dev "dumpsys SurfaceFlinger 2>/dev/null | grep -m1 -o 'activeMode=[0-9.]*'" | sed 's/^ *activeMode=//')
+	[ -n "$_v" ] && { echo "$_v"; return; }
+	# Android 10/11: строки activeMode нет, частота активного режима — refresh-rate
+	dev "dumpsys SurfaceFlinger 2>/dev/null | grep -m1 'refresh-rate'" |
+		awk -F: '{ gsub (/[^0-9.]/, "", $2); printf "%.2f", $2 + 0 }'
 }
 
 sf_flag () {
@@ -190,7 +206,7 @@ rate_of () {
 dec_line () { suroot "cat /sys/class/vdec/vdec_status"; }
 
 snap () { # -> MODE SYNC CNT FPS DUR
-	meta=$(dev 'cat /sys/class/display/mode; grep -m1 -E "sync_duration_(num|den)" /sys/class/display/vinfo')
+	meta=$(dev 'cat /sys/class/display/mode; grep -E "sync_duration_(num|den)" /sys/class/display/vinfo')
 	MODE=$(printf '%s\n' "$meta" | sed -n '1p')
 	SNUM=$(printf '%s\n' "$meta" | awk '/sync_duration_num/ { print $2 + 0 }')
 	SDEN=$(printf '%s\n' "$meta" | awk '/sync_duration_den/ { print $2 + 0 }')
@@ -215,11 +231,11 @@ dec_count () { snap; echo "$CNT"; }
 daemon_of () { dev 'pidof afrd'; }
 
 state_desc () { # краткое состояние режима (SF-поля — только где они есть)
-	if [ "${SINK:-}" = sf ]; then
-		echo "ядро $(mode_of), vinfo $(rate_of) Гц, SF $(sf_active_hz) Гц, backdoor=$(sf_flag)"
-	else
-		echo "ядро $(mode_of), vinfo $(rate_of) Гц"
-	fi
+	case "${SINK:-}" in
+	sf)     echo "ядро $(mode_of), vinfo $(rate_of) Гц, SF $(sf_active_hz) Гц, backdoor=$(sf_flag)" ;;
+	vendor) echo "ядро $(mode_of), vinfo $(rate_of) Гц, SF $(sf_active_hz) Гц (SystemControl)" ;;
+	*)      echo "ядро $(mode_of), vinfo $(rate_of) Гц" ;;
+	esac
 }
 
 norm_hz () { # любая частота -> ближайший класс режима
@@ -272,6 +288,18 @@ cmd_mode () { # <Гц>
 		done
 		say "режим не применился: просили $r Гц (id $_mid), vinfo $_got Гц, SF $(sf_active_hz) Гц"
 		return 3
+	fi
+
+	if [ "${SINK:-}" = vendor ]; then
+		_m=$(hz_to_mode "$r")
+		[ -z "$_m" ] && { echo "не знаю режим для $r Гц" >&2; return 1; }
+		_out=$(suroot "sh $VENDOR_CLI $_m 2>&1")
+		_rc=$(suroot "sh $VENDOR_CLI $_m >/dev/null 2>&1; echo \$?")
+		if [ "$_rc" != 0 ]; then
+			say "вендорный SystemControl отказал ($_m, rc=$_rc): #$_out"
+			return 3
+		fi
+		return 0
 	fi
 
 	_m=$(hz_to_mode "$r")
@@ -426,7 +454,7 @@ cmd_prep () {
 	# и это выглядело как «непонятная пауза» перед роликом. Держим приложение
 	# запущенным; каждый следующий ролик открывается поверх (2–5 с).
 	say "prep: прогреваю YouTube TV (10 с) — это единственная длинная пауза"
-	dev "am start -n $PKG/com.google.android.apps.youtube.tv.activity.MainActivity" >/dev/null
+	dev "am start -n $PKG_ACT" >/dev/null
 	sleep 10
 	say "prep: плеер запущен (pid $(dev "pidof $PKG")), режим $BASE_HZ Гц ($(state_desc))"
 	echo
@@ -469,9 +497,15 @@ cmd_rollback () {
 # --- предъявление ------------------------------------------------------------
 
 video_layer () {
-	L=$(dev "dumpsys SurfaceFlinger --list 2>/dev/null | grep -E 'SurfaceView\\[' | grep -i blast | head -1")
-	[ -z "$L" ] && L=$(dev "dumpsys SurfaceFlinger --list 2>/dev/null | grep -E 'SurfaceView\\[' | head -1")
-	echo "$L"
+	# ATV14: `SurfaceView[...](BLAST)#0`; Android 10/11: `SurfaceView - pkg/activity#0`.
+	_l=$(dev "dumpsys SurfaceFlinger --list 2>/dev/null | grep -E 'SurfaceView\\[' | grep -i blast | head -1")
+	if [ -z "$_l" ]; then
+		_l=$(dev "dumpsys SurfaceFlinger --list 2>/dev/null | grep -E '^ *SurfaceView - ' | head -1" | sed 's/^ *//')
+	fi
+	if [ -z "$_l" ]; then
+		_l=$(dev "dumpsys SurfaceFlinger --list 2>/dev/null | grep -E 'SurfaceView\\[' | head -1")
+	fi
+	printf '%s' "$_l"
 }
 
 capture_lat () { # <файл> — дамп подачи видео-слоя + строка состояния
@@ -519,7 +553,7 @@ start_video () { # <видео-id>; 0 — картинка пошла
 		# Форма ссылки имеет значение: `youtube.com/watch?v=` на этой сборке
 		# открывает только главный экран (проверено 17.10, трижды), а
 		# `youtu.be/<id>` сразу запускает ролик — 3/3.
-		am_out=$(dev "am start -W -a android.intent.action.VIEW -d 'https://youtu.be/$_sv_id'")
+		am_out=$(dev "am start -W -n $PKG_ACT -a android.intent.action.VIEW -d 'https://youtu.be/$_sv_id'")
 		logonly "П$P: am start -> $(printf '%s' "$am_out" | tr '\n' ' ' | cut -c1-200)"
 		if wait_start "$_sv_base" 30; then
 			[ "$_sv_k" -gt 1 ] && say "П$P: ролик открылся с попытки $_sv_k"
