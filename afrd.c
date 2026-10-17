@@ -53,6 +53,12 @@ const char *g_vendor_disp_cli = NULL;
  * в afrd_run — умолчание зависит от пути (на Android 10/11 включено). */
 int g_fps_declare_fast = 0;
 
+/* Подъём режима до максимума при старте видео (switch.bump). Нужен на
+ * Android 11+: плеер фиксирует «потолок» частоты в начале сессии проигрывания,
+ * и если в этот момент дисплей медленнее контента, темп не поднимется никогда
+ * (журнал §47.6). Значение читается в afrd_run. */
+static int g_switch_bump = 0;
+
 static const char *g_hdmi_state = NULL;
 static int g_uevent_sock = -1;
 static const char *g_vdec_sysfs = NULL;
@@ -1232,6 +1238,120 @@ static bool atv14_rate_allowed (int hz, void *ctx)
 
 /* Пакет на переднем плане (определение ниже, нужно для mode.min.hz.list). */
 static char g_cur_pkg [PKG_NAME_LEN];
+
+/* ATV14-путь: подъём режима до максимума (switch.bump); определение ниже. */
+static int atv14_bump (const platform_t *plat, int *orig_sf_id, int *cur_sf_id,
+                       int *want_sf_id, bool *held);
+/* Зависимости atv14_bump — определения ниже в этом файле. */
+static int atv_current_target (const platform_t *plat, int *w, int *h);
+static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skipped);
+static int atv14_mode_hz (const platform_t *plat, int id);
+
+/* Максимальная частота, которую ТВ поддерживает для этой геометрии, — цель
+ * подъёма при старте видео (switch.bump). Частоты из mode.blacklist.rates не
+ * рассматриваются: поднимать режим в заведомо запрещённый нельзя.
+ *
+ * Возврат: id режима (ATV14) или индекс в списке ТВ (Android 10/11), -1 — нет. */
+static int bump_target_mode (const platform_t *plat, int w, int h)
+{
+	int best = -1, best_hz = 0;
+
+	if (plat->sink == SINK_VENDOR_MODE)
+	{
+		for (int i = 0; i < g_modes_n; i++)
+		{
+			display_mode_t *m = &g_modes [i];
+			if ((m->width != w) || (m->height != h))
+				continue;
+
+			int hz = display_mode_hz (m);
+			if (rate_is_blacklisted (hz))
+				continue;
+
+			if (hz > best_hz)
+			{
+				best_hz = hz;
+				best = i;
+			}
+		}
+
+		return best;
+	}
+
+	for (int i = 0; i < g_sf_modes_n; i++)
+	{
+		const sf_mode_t *m = &g_sf_modes [i];
+		if ((m->width != w) || (m->height != h))
+			continue;
+		if (rate_is_blacklisted (m->hz))
+			continue;
+
+		if (m->hz > best_hz)
+		{
+			best_hz = m->hz;
+			best = m->id;
+		}
+	}
+
+	return best;
+}
+
+/* Подъём режима до максимума, поддержанного ТВ (switch.bump).
+ *
+ * Зачем. На Android 11+ плеер фиксирует «потолок» частоты в начале сессии
+ * проигрывания: если в этот момент дисплей медленнее контента, темп не
+ * поднимется уже никогда (журнал §47.6). Поэтому при каждом начале видео —
+ * и когда декодер только появился, и когда он перезапустился под следующим
+ * роликом (счётчик сброшен) — режим поднимается до максимума; обычный замер
+ * затем опускает его до нужной частоты (вниз плеер следует сам).
+ *
+ * Возврат: 0 — режим поднят, -1 — поднимать нечего/не удалось. */
+static int atv14_bump (const platform_t *plat, int *orig_sf_id, int *cur_sf_id,
+                       int *want_sf_id, bool *held)
+{
+	if (!g_switch_bump || (plat->sink == SINK_LEGACY))
+		return -1;
+
+	int bw = 0, bh = 0;
+	int cur = atv_current_target (plat, &bw, &bh);
+	int bump = bump_target_mode (plat, bw, bh);
+
+	if ((cur < 0) || (bump < 0) || (bump == cur))
+		return -1;		/* уже на максимуме — молча */
+
+	bool took_holding = false;
+	if (!*held && (*orig_sf_id < 0))
+	{
+		*orig_sf_id = cur;
+		*held = true;
+		took_holding = true;
+	}
+
+	if (atv14_apply_mode (plat, bump, "bump до максимума") != 0)
+	{
+		/* Не поднялось — ведём себя как раньше: удержание, взятое только
+		 * ради bump, снимаем. */
+		if (took_holding)
+		{
+			*held = false;
+			*orig_sf_id = -1;
+		}
+		trace (1, "bump: режим не применился — работаю по замеру\n");
+		return -1;
+	}
+
+	/* Цели нет: режим уже применён, а замер частоты запускается только при
+	 * want_sf_id < 0 (иначе он пропускался и ролик оставался в максимуме). */
+	*want_sf_id = -1;
+	*cur_sf_id = bump;
+	/* Возврат после видео — на максимум, а не на прежний режим: иначе
+	 * следующий ролик начнётся с низкого «потолка», и зажим вернётся. */
+	*orig_sf_id = bump;
+	trace (0, "bump: режим поднят до максимума (" HZ_FMT " Гц → " HZ_FMT
+	       " Гц) до первого кадра плеера\n",
+	       HZ_ARGS (atv14_mode_hz (plat, cur)), HZ_ARGS (atv14_mode_hz (plat, bump)));
+	return 0;
+}
 
 /* Самый быстрый режим с нужной геометрией и частотой не ниже floor; -1 — нет.
  * Нужен для плееров с mode.min.hz.list: если ровного кратного для частоты
@@ -2472,6 +2592,16 @@ static int run_atv14 (const platform_t *plat)
 
 		bool new_video = v0.active;
 
+		/* Провал декодера при смене ролика длится ~650 мс (замер §47.7), а
+		 * смена режима — ~380 мс. Дебаунс старта (500 мс) съедал это окно,
+		 * поэтому при включённом switch.bump подъём до максимума делается
+		 * СРАЗУ, не дожидаясь подтверждения «видео кончилось»: поднять режим
+		 * безопасно даже при ложном срабатывании — следующий замер вернёт
+		 * нужную частоту. Без этого смена ролика (в т.ч. автовоспроизведение)
+		 * наследовала низкий «потолок» предыдущего ролика. */
+		if (!new_video && g_switch_bump && (plat->sink != SINK_LEGACY) && video)
+			atv14_bump (plat, &orig_sf_id, &cur_sf_id, &want_sf_id, &held);
+
 		if (new_video != video)
 		{
 			msleep (new_video ? start_deb : stop_deb);
@@ -2493,6 +2623,8 @@ static int run_atv14 (const platform_t *plat)
 				 * остался и счётчик стоит) */
 				if (new_video)
 				{
+					atv14_bump (plat, &orig_sf_id, &cur_sf_id, &want_sf_id, &held);
+
 					stuck_reset (&stuck);
 					pkg_probe_us = 0;
 					pause_logged = false;
@@ -2527,6 +2659,12 @@ static int run_atv14 (const platform_t *plat)
 			if (have_prev_frames && (v0.frames < prev_frames))
 			{
 				trace (1, "счётчик кадров сброшен — новое видео, мерю заново\n");
+
+				/* Следующий ролик в том же плеере начинается с перезапуска
+				 * декодера, а не с паузы: поднимаем режим до максимума и
+				 * здесь, иначе он унаследует низкий «потолок» предыдущего
+				 * ролика (журнал §47.6). */
+				atv14_bump (plat, &orig_sf_id, &cur_sf_id, &want_sf_id, &held);
 
 				want_sf_id = -1;
 				measure_failed = false;
@@ -3378,8 +3516,11 @@ static int run_atv14 (const platform_t *plat)
 		{
 			/* Возврат по настоящему стопу (декодер исчез) отключается ключом
 			 * switch.restore.on.stop; возврат по паузе (pause.keep==0)
-			 * выполняется всегда. Флаг backdoor снимаем в любом случае. */
-			if (restore_on_stop || v0.active)
+			 * выполняется всегда. Флаг backdoor снимаем в любом случае.
+			 * При switch.bump=1 возврат делается всегда: цель в этом режиме —
+			 * максимальная частота, с которой следующий ролик начнётся без
+			 * низкого «потолка» (журнал §47.6). */
+			if (restore_on_stop || v0.active || g_switch_bump)
 			{
 				int rc = atv14_apply_mode (plat, orig_sf_id,
 				                           "возврат пропущен, флаг backdoor снят");
@@ -3488,6 +3629,12 @@ int afrd_run ()
 				       "(быстрое решение по заявленной частоте)\n", def);
 		}
 	}
+
+	/* Подъём режима до максимума при старте видео: на Android 11+ это
+	 * единственный способ не дать плееру зафиксировать низкий «потолок»
+	 * частоты (журнал §47.6). На старом пути зажима нет — там ключ не
+	 * действует (CFGKEY_ATV14), умолчание 0. */
+	g_switch_bump = cfg_get_int ("switch.bump", (g_plat.kind == PLAT_LEGACY) ? 0 : 1);
 
 	/* «Громкие ключи»: настройка, которая на выбранном пути не действует,
 	 * должна быть названа в логе, а не молча проигнорирована (именно так

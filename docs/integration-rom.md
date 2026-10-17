@@ -113,6 +113,7 @@ afrd -D /etc/afrd.ini      # -D: уйти в фон, записать pid
 | Удвоение частоты (25→50, 30→60) | `mode.prefer.exact` = **`0`** / `1` | то же | то же | вкл |
 | Дробные частоты (23.976) | `mode.use.fract` = `0` авто / `1` только дробные / `2` только целые | то же | то же | авто (`0`) |
 | Быстрое решение по заявленной частоте | **пункта нет** | `fps.declare.fast` | `fps.declare.fast` | 11 → вкл, 14 → выкл |
+| Подъём режима до максимума при старте видео | **пункта нет** | `switch.bump` | `switch.bump` | вкл |
 | Вести журнал | `log.enable` | `log.enable` | `log.enable` | выкл (`0`) |
 
 Три вещи, на которых легко ошибиться:
@@ -285,6 +286,7 @@ AFRd2 — форк AFRd (Andrey Zabolotnyi) под **GPL-3**. Размещени
 | `switch.timeout` | оба пути (6–14) | — |
 | `switch.delay.off` | оба пути (6–14) | — |
 | `fps.declare.fast` | Android 10–14 | — |
+| `switch.bump` | Android 10–14 | — |
 | `vendor.disp.cli` | Android 10–14 | — |
 | `vendor.disp.cap` | Android 10–14 | — |
 | `trigger.poll.ms` | Android 10–14 | — |
