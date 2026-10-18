@@ -170,18 +170,22 @@ double fps_correct_factor (const char *package)
 static struct
 {
 	double	offset;
+	double	pct;		/* относительная поправка, % (fps.correct.av1.pct) */
 	char	pkg [PKG_NAME_LEN];
 } k_av1;
 
 void fps_correct_clear_av1 (void)
 {
 	k_av1.offset = 0.0;
+	k_av1.pct = 0.0;
 	k_av1.pkg [0] = 0;
 }
 
 void fps_correct_set_av1 (double offset_fps, const char *package)
 {
-	fps_correct_clear_av1 ();
+	/* Не сбрасываем pct: обе поправки задаются разными ключами и должны
+	 * сосуществовать (иначе вторая вызываемая затирала бы первую —
+	 * живая находка 18.10: pct не применялась). */
 	if (offset_fps <= 0.0)
 		return;
 
@@ -229,6 +233,50 @@ static bool contains_ci (const char *hay, const char *needle)
 	}
 
 	return false;
+}
+
+void fps_correct_set_av1_pct (double pct, const char *package)
+{
+	if (pct <= 0.0)
+		return;
+
+	/* Диапазон как у поправок по плееру: 0.1..49.9 %, иначе запись считается
+	 * ошибочной (защита от опечатки «570» вместо «5.7»). */
+	if (pct > 49.9)
+		return;
+
+	k_av1.pct = pct;
+	if (package)
+	{
+		while ((*package == ' ') || (*package == '\t'))
+			package++;
+
+		size_t len = strcspn (package, " \t");
+		if (len >= sizeof (k_av1.pkg))
+		{
+			fps_correct_clear_av1 ();
+			return;
+		}
+		if (len)
+		{
+			memcpy (k_av1.pkg, package, len);
+			k_av1.pkg [len] = 0;
+		}
+	}
+}
+
+double fps_correct_av1_factor (const char *device, const char *package)
+{
+	if (k_av1.pct <= 0.0)
+		return 1.0;
+
+	if (k_av1.pkg [0] && (!package || (strcmp (k_av1.pkg, package) != 0)))
+		return 1.0;
+
+	if (!contains_ci (device, "av1"))
+		return 1.0;
+
+	return 1.0 + k_av1.pct / 100.0;
 }
 
 double fps_correct_av1_offset (const char *device, const char *package)

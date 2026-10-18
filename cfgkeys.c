@@ -89,6 +89,9 @@ static const struct
 	{ "fps.correct.enable",		CFGKEY_ATV14, NULL },
 	{ "fps.correct.list",		CFGKEY_ATV14, NULL },
 	{ "fps.correct.av1.offset",	CFGKEY_ATV14, NULL },
+	/* Относительная поправка AV1 (проценты): на Android 10/11 завышение
+	 * пропорционально частоте (журнал §49.18). */
+	{ "fps.correct.av1.pct",	CFGKEY_ATV14, NULL },
 	{ "fps.correct.av1.pkg",	CFGKEY_ATV14, NULL },
 
 	/* заменены огибающей (наблюдение 20 с): ключ известен, но на новом пути

@@ -16,6 +16,15 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       50.34 -> 60.00 fps, an 83 ms delivery gap; on the vendor path (Android 10/11)
       the same operation costs 1.5-2.5 s, so there the key defaults to off.
 
+    * Relative AV1 counter correction (fps.correct.av1.pct). On Android 10/11 the
+      overcount is proportional to the rate: live measurement 18.10 -
+      23.976 -> 25.40 (+5.9 %), 59.94 -> 63.30 (+5.6 %). The previous additive
+      correction (fps.correct.av1.offset) cannot fix that: 24 fps needs -1.4 fps,
+      60 fps needs -3.4. The new key sets a percentage and divides the measured
+      rate, so one value fits all rates; it applies to the AV1 decoder only. Off
+      by default (needs calibration per platform): with 5.7 % a 24 fps AV1 video
+      on X4 measures 23.98 and goes to 1080p24hz, while 60 fps measures 60.00.
+
     * Mode bump when a player comes to the foreground (switch.bump.on.app, on by
       default). On Android 10/11 the player remembers the display rate when the
       surface is created (~1.1 s after the video starts), while the decoder

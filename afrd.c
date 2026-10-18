@@ -2760,6 +2760,11 @@ static int run_atv14 (const platform_t *plat)
 		/* Поправка AV1 задаётся отдельным ключом и ставится после
 		 * fps_correct_load: load() начинается с fps_correct_clear(), который
 		 * сбрасывает и её (см. fps_class.h). */
+		const char *av1_pct_val = cfg_get_str ("fps.correct.av1.pct", NULL);
+		if (av1_pct_val && av1_pct_val [0])
+			fps_correct_set_av1_pct (atof (av1_pct_val),
+			                         cfg_get_str ("fps.correct.av1.pkg", NULL));
+
 		const char *av1_val = cfg_get_str ("fps.correct.av1.offset", NULL);
 		const char *av1_pkg = cfg_get_str ("fps.correct.av1.pkg", NULL);
 		double av1_off_cfg = av1_val ? atof (av1_val) : 0.0;
@@ -3489,6 +3494,12 @@ static int run_atv14 (const platform_t *plat)
 				double av1_off = correct_enable
 				                 ? fps_correct_av1_offset (v0.device, g_cur_pkg) : 0.0;
 
+				/* Относительная поправка AV1 (fps.correct.av1.pct) умножается
+				 * на поправку плеера: обе — делители измеренной частоты. */
+				double av1_fac = correct_enable
+				                 ? fps_correct_av1_factor (v0.device, g_cur_pkg) : 1.0;
+				double env_corr = video_corr * av1_fac;
+
 				/* Раннее решение: горизонтом для отбора подокон служит вся
 				 * накопленная выборка (иначе подтверждающее подокно длиной
 				 * sub не помещается между концом опорного окна и «ранним
@@ -3500,9 +3511,9 @@ static int run_atv14 (const platform_t *plat)
 				unsigned long long env_used_us = env_early ? env_early_us : env_us;
 				bool env_decided = env_early
 					? fps_env_decide_early (&env, env_span_us, env_skip_us, env_sub_us,
-					                        video_corr, av1_off, &env_hz)
+					                        env_corr, av1_off, &env_hz)
 					: fps_env_decide (&env, env_us, env_skip_us, env_sub_us,
-					                  video_corr, av1_off, &env_hz);
+					                  env_corr, av1_off, &env_hz);
 
 				if (env_early && env_decided)
 					trace (1, "раннее решение огибающей: подокна согласны (%d мс наблюдения)\n",

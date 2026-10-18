@@ -280,6 +280,54 @@ static void t_correct_av1(void)
 	assert(fps_correct_av1_offset ("amvdec_av1_v4l", NULL) == 0.0);
 }
 
+/* Относительная поправка AV1 (fps.correct.av1.pct): пропорциональное завышение,
+ * живой замер 18.10 — 23.976 -> 25.40 (+5.9 %), 59.94 -> 63.30 (+5.6 %). Одна
+ * величина лечит обе частоты, в отличие от аддитивной. */
+static void t_correct_av1_pct(void)
+{
+	fps_correct_clear();
+
+	/* по умолчанию выключена */
+	assert(fps_correct_av1_factor("amvdec_av1_v4l", NULL) == 1.0);
+
+	fps_correct_set_av1_pct(5.7, NULL);
+	assert(fabs(fps_correct_av1_factor("amvdec_av1_v4l", NULL) - 1.057) < 1e-9);
+
+	/* 24 -> 24, 60 -> 60 после деления (сравниваем ГРУППЫ: 23.976 и 24.000 —
+	 * одна группа режимов, различие задаёт mode.use.fract) */
+	assert(fps_rate_group(fps_classify(25.40 / fps_correct_av1_factor("amvdec_av1_v4l", NULL))) ==
+	       fps_rate_group(fps_classify(23.976)));
+	assert(fps_rate_group(fps_classify(63.30 / fps_correct_av1_factor("amvdec_av1_v4l", NULL))) ==
+	       fps_rate_group(fps_classify(59.94)));
+
+	/* только AV1-декодер */
+	assert(fps_correct_av1_factor("amvdec_h264_v4l", NULL) == 1.0);
+
+	/* ограничение по пакету */
+	fps_correct_set_av1_pct(5.7, "com.google.android.youtube.tv");
+	assert(fps_correct_av1_factor("amvdec_av1_v4l", "com.google.android.youtube.tv") > 1.0);
+	assert(fps_correct_av1_factor("amvdec_av1_v4l", "org.videolan.vlc") == 1.0);
+	assert(fps_correct_av1_factor("amvdec_av1_v4l", NULL) == 1.0);
+
+	/* аддитивная и относительная сосуществуют: вызов одной не затирает другую.
+	 * clear() нужен, потому что выше поправка была ограничена пакетом. */
+	fps_correct_clear();
+	fps_correct_set_av1(0.5, NULL);
+	fps_correct_set_av1_pct(5.7, NULL);
+	assert(fabs(fps_correct_av1_offset("amvdec_av1_v4l", NULL) - 0.5) < 1e-9);
+	assert(fabs(fps_correct_av1_factor("amvdec_av1_v4l", NULL) - 1.057) < 1e-9);
+
+	/* опечатка «570» вместо «5.7» не принимается */
+	fps_correct_clear();
+	fps_correct_set_av1_pct(570.0, NULL);
+	assert(fps_correct_av1_factor("amvdec_av1_v4l", NULL) == 1.0);
+
+	/* clear сбрасывает обе */
+	fps_correct_set_av1_pct(5.7, NULL);
+	fps_correct_clear();
+	assert(fps_correct_av1_factor("amvdec_av1_v4l", NULL) == 1.0);
+}
+
 int main(void)
 {
 	t_classify();
@@ -293,6 +341,7 @@ int main(void)
 	t_correct_list();
 	t_corrected();
 	t_correct_av1();
+	t_correct_av1_pct();
 	printf("fps_class: OK\n");
 	return 0;
 }
