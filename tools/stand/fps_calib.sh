@@ -21,7 +21,9 @@ NOM=${2:?номинал, например 23.976}
 SECS=${3:-30}
 POLL=${4:-300}
 
-ACT=com.droidlogic.exoplayer2.demo/com.droidlogic.videoplayer.MoviePlayer
+# Плеер можно переопределить: на разных боксах штатный разный.
+# По умолчанию — Amlogic ExoPlayer demo (стоковые прошивки).
+ACT=${CALIB_ACT:-com.droidlogic.exoplayer2.demo/com.droidlogic.videoplayer.MoviePlayer}
 
 now_ms () { awk '{ printf "%d", $1 * 1000 }' /proc/uptime; }
 cnt () {
@@ -36,7 +38,12 @@ dec () {
 am force-stop "${ACT%%/*}" >/dev/null 2>&1
 am start -n "$ACT" -a android.intent.action.VIEW -t video/mp4 \
 	-d "file://$FILE" >/dev/null 2>&1
-sleep 5
+# Некоторые плееры открывают файл на паузе (Just Player на .50): без этого
+# счётчик кадров стоит и замер пуст.
+sleep 2
+input keyevent KEYCODE_MEDIA_PLAY >/dev/null 2>&1
+input keyevent KEYCODE_MEDIA_PLAY >/dev/null 2>&1
+sleep 3
 
 DEV=$(dec)
 if [ -z "$DEV" ]; then
