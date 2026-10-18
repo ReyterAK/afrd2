@@ -3,6 +3,19 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
 1.0.1 Thu Oct 15 2026
 
+    * Frame-rate "clamping" in players on Android 11+ (journal §47). A player
+      remembers the display refresh rate at the start of a playback session and
+      does not re-read it when the mode is changed externally: a video started at
+      50 Hz kept delivering ~50 fps after the mode was raised to 60 (measured by
+      layer presentation, ATV14 and ATV11). The daemon now raises the mode to the
+      TV's maximum before the first frame (switch.bump, including immediately when
+      the decoder channel disappears on a roll change) and, if the switch still
+      landed on a live video, resets the ceiling by bumping the display density by
+      one and restoring it (switch.ceiling.reset): the player re-reads the mode and
+      the delivery recovers without restarting playback. Measured on ATV14:
+      50.34 -> 60.00 fps, an 83 ms delivery gap; on the vendor path (Android 10/11)
+      the same operation costs 1.5-2.5 s, so there the key defaults to off.
+
     * "Blacklisted refresh rates" (mode.blacklist.rates) are now picked from the
       rates your TV supports instead of typed as numbers: the daemon compares the
       blacklisted rate with the mode rate numerically, so 23.976 and 24 are

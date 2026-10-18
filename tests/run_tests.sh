@@ -26,6 +26,7 @@ run test_sink sink.c exec.c tests/stub.c
 run test_vdec vdec.c fps_class.c
 run test_reconf reconf.c
 run test_hdrinfo hdrinfo.c exec.c tests/stub.c
+run test_ceiling ceiling.c
 
 # Проверки по исходникам и данным, а не по коду на C: согласованность версии
 # во всех местах, где она записана, формат ЧАВО, контракт запуска Magisk-модуля,

@@ -24,6 +24,7 @@
 #include "pkgdet.h"
 #include "pause.h"
 #include "stuck.h"
+#include "ceiling.h"
 
 #define __USE_GNU
 #include <math.h>
@@ -58,6 +59,18 @@ int g_fps_declare_fast = 0;
  * и если в этот момент дисплей медленнее контента, темп не поднимется никогда
  * (журнал §47.6). Значение читается в afrd_run. */
 static int g_switch_bump = 0;
+
+/* Сброс «потолка» частоты у плеера (switch.ceiling.reset, Android 12-14).
+ * Плеер запоминает частоту дисплея в начале сессии проигрывания и внешнюю
+ * смену режима не перечитывает; потолок обновляется только сменой
+ * конфигурации экрана — её и делаем изменением плотности на единицу с
+ * немедленным возвратом (журнал §47.9). */
+static int g_ceiling_reset = 0;
+static int g_ceiling_resets = 0;	/* сбросов на текущем видео */
+static int g_ceiling_hz = 0;		/* частота, до которой потолок поднят */
+static unsigned long long g_ceiling_us = 0;	/* время последней попытки */
+static bool g_ceiling_restart_expected = false;	/* ждём перезапуск декодера */
+static int g_ceiling_mode_id = -1;	/* режим, при котором сбрасывали потолок */
 
 static const char *g_hdmi_state = NULL;
 static int g_uevent_sock = -1;
@@ -1264,6 +1277,13 @@ static int bump_target_mode (const platform_t *plat, int w, int h)
 			if ((m->width != w) || (m->height != h))
 				continue;
 
+			/* Чересстрочные режимы не поднимаем: 1080i60 и 1080p60 имеют
+			 * одну частоту, и без этой проверки «максимум» выбирал 1080i
+			 * (живая находка 2026-10-18 на ATV11: ролик 60 к/с уходил в
+			 * 1080i60hz). Чересстрочность для видео непригодна. */
+			if (m->interlaced)
+				continue;
+
 			int hz = display_mode_hz (m);
 			if (rate_is_blacklisted (hz))
 				continue;
@@ -2073,6 +2093,168 @@ static int atv14_mode_hz (const platform_t *plat, int id)
 	return sfmodes_current_hz (g_sf_modes, g_sf_modes_n, id);
 }
 
+/* Сброс «потолка» частоты у плеера (switch.ceiling.reset, журнал §47.9).
+ *
+ * Плеер на Android 11+ фиксирует частоту дисплея в начале сессии проигрывания
+ * и планирует кадры по min (потолок, текущий режим). Внешняя смена режима
+ * (backdoor 1035, SystemControl) потолок не поднимает: если ролик начался под
+ * 50 Гц, то после подъёма до 60 он продолжает отдавать 50 к/с. Потолок
+ * перечитывается при смене КОНФИГУРАЦИИ экрана; самое дешёвое такое событие —
+ * изменение плотности на единицу с немедленным возвратом.
+ *
+ * Замер (ATV14, .50, клип 60.000 к/с): подача 50.34 -> 60.00 к/с, провал
+ * подачи 83 мс (три прогона). На ATV11 (.42) та же операция стоит 1.5-2.5 с,
+ * поэтому умолчание зависит от приёмника: на backdoor-пути включено, на
+ * вендорном — выключено.
+ *
+ * Возврат: 0 — потолок сброшен, -1 — нет (журнал уже написан). */
+/* Вернуть прежнюю плотность. Повтор обязателен: exec по таймауту убивает всю
+ * группу процессов, и второй шаг мог не выполниться (нашло ревью). Возврат:
+ * 0 — плотность восстановлена, -1 — нет (журнал уже написан). */
+static int ceiling_restore (int had_override, int prev)
+{
+	char cmd [64];
+	if (ceiling_build_restore (cmd, sizeof (cmd), had_override, prev) != 0)
+		return -1;
+
+	char out [128];
+	int rc = exec_status (cmd, out, sizeof (out));
+	if (rc != 0)
+	{
+		trace (0, "сброс потолка: плотность не вернулась (код %d) — повторяю\n", rc);
+		rc = exec_status (cmd, out, sizeof (out));
+	}
+
+	if (rc != 0)
+	{
+		trace (0, "сброс потолка: плотность осталась изменённой (код %d); "
+		       "вернуть можно командой `%s`\n", rc, cmd);
+		return -1;
+	}
+
+	return 0;
+}
+
+static int ceiling_reset_now (void)
+{
+	char out [256];
+
+	int rc = exec_status ("wm density", out, sizeof (out));
+	if (rc != 0)
+	{
+		trace (1, "сброс потолка: `wm density` не выполнилась (код %d)\n", rc);
+		return -1;
+	}
+
+	int cur = 0, had = 0, next = 0;
+	if (ceiling_density_parse (out, &cur, &had, &next) != 0)
+	{
+		trace (1, "сброс потолка: не разобрать вывод `wm density`\n");
+		return -1;
+	}
+
+	/* Два шага отдельными командами: код возврата составной команды — это код
+	 * ПОСЛЕДНЕЙ (возврата плотности), и отказ первого шага прошёл бы как
+	 * успех: демон счёл бы потолок подтверждённым, а плеер режим не перечитал
+	 * (нашло ревью). */
+	char cmd [64];
+	snprintf (cmd, sizeof (cmd), "wm density %d", next);
+	rc = exec_status (cmd, out, sizeof (out));
+	if (rc != 0)
+	{
+		trace (1, "сброс потолка: плотность %d не применилась (код %d)\n", next, rc);
+		ceiling_restore (had, cur);	/* первый шаг мог примениться частично */
+		return -1;
+	}
+
+	/* Возврат плотности обязателен и после успешного первого шага: иначе на
+	 * экране останется изменённая плотность. */
+	if (ceiling_restore (had, cur) != 0)
+		return -1;
+
+	trace (0, "потолок частоты сброшен сменой плотности %d->%d: плеер перечитает режим\n",
+	       cur, next);
+	return 0;
+}
+
+/* Пределы на сбросы, чтобы смена ролика/рекламы не превратилась в серию
+ * перезапусков декодера: не чаще раза в 1.5 с и не больше четырёх на видео. */
+#define CEILING_RESETS_MAX	4
+#define CEILING_MIN_GAP_US	1500000ULL
+
+/* Сбросить потолок, если цель выше уже подтверждённого. target_id — режим,
+ * который демон считает нужным; playing — видео идёт. */
+static void ceiling_maybe_reset (const platform_t *plat, int target_id, bool playing)
+{
+	if (!g_ceiling_reset || (plat->sink == SINK_LEGACY))
+		return;
+	if (!playing || (target_id < 0))
+		return;
+	if (g_ceiling_resets >= CEILING_RESETS_MAX)
+		return;
+	if (g_ceiling_us && ((now_us () - g_ceiling_us) < CEILING_MIN_GAP_US))
+		return;
+
+	int hz = atv14_mode_hz (plat, target_id);
+	if (hz <= 0)
+		return;
+
+	/* Потолок уже не ниже цели: min(потолок, текущий режим) и так даёт
+	 * нужную частоту, лишний перезапуск декодера не нужен. */
+	if (!ceiling_should_reset (g_ceiling_hz, hz))
+		return;
+
+	/* Время попытки фиксируем и при отказе: иначе на устройстве, где `wm` не
+	 * работает или вывод не разобрался, демон молотил бы fork/exec каждые
+	 * trigger.poll.ms до конца ролика (нашло ревью). */
+	g_ceiling_us = now_us ();
+	g_ceiling_resets++;
+
+	if (ceiling_reset_now () == 0)
+	{
+		g_ceiling_hz = hz;
+		g_ceiling_mode_id = target_id;
+		/* Перезапуск декодера от смены плотности — не новый ролик; признак
+		 * одноразовый, чтобы настоящий новый ролик в том же окне его не унаследовал
+		 * (нашло ревью). */
+		g_ceiling_restart_expected = true;
+	}
+}
+
+/* Новое видео: подтверждённый потолок прежнего ролика к нему не относится. */
+static void ceiling_forget (void)
+{
+	g_ceiling_resets = 0;
+	g_ceiling_hz = 0;
+}
+
+/* Сброс потолка только что произошёл: перезапуск декодера, который он вызвал,
+ * не должен считаться новым видео (иначе демон поднимет режим до максимума и
+ * получится лишний переход). */
+static bool ceiling_recent (void)
+{
+	return g_ceiling_us && ((now_us () - g_ceiling_us) < 3000000ULL);
+}
+
+/* Потреблять одноразовый признак «декодер перезапустился от нашего сброса».
+ * Возврат true — этот перезапуск наш (и признак снят). */
+#define CEILING_RESTART_WINDOW_US	10000000ULL
+
+static bool ceiling_take_restart (int cur_id)
+{
+	/* Одного времени мало: настоящий новый ролик может начаться в том же окне.
+	 * Наш перезапуск приходит при ТОМ ЖЕ режиме, который был при сбросе; если
+	 * демон успел переключить режим (замер нового ролика), это не наш
+	 * перезапуск (нашло ревью). Окно шире, чем у bump: перезапуск рендерера
+	 * после смены плотности наблюдался и через 2, и через 9 с — время зависит
+	 * от плеера и буферизации (живой прогон 2026-10-18). */
+	bool own = g_ceiling_restart_expected &&
+	           (now_us () - g_ceiling_us) < CEILING_RESTART_WINDOW_US &&
+	           (cur_id >= 0) && (cur_id == g_ceiling_mode_id);
+	g_ceiling_restart_expected = false;
+	return own;
+}
+
 /* Статистика для GUI/API (afrd -s, status): legacy-структуры в ATV14 не
  * ведутся, поэтому отдаём id текущего режима и id режима возврата. */
 static void atv14_stats_sync (const platform_t *plat, int cur_id, int orig_id, bool held)
@@ -2599,7 +2781,8 @@ static int run_atv14 (const platform_t *plat)
 		 * безопасно даже при ложном срабатывании — следующий замер вернёт
 		 * нужную частоту. Без этого смена ролика (в т.ч. автовоспроизведение)
 		 * наследовала низкий «потолок» предыдущего ролика. */
-		if (!new_video && g_switch_bump && (plat->sink != SINK_LEGACY) && video)
+		if (!new_video && g_switch_bump && (plat->sink != SINK_LEGACY) && video &&
+		    !ceiling_recent ())
 			atv14_bump (plat, &orig_sf_id, &cur_sf_id, &want_sf_id, &held);
 
 		if (new_video != video)
@@ -2618,12 +2801,25 @@ static int run_atv14 (const platform_t *plat)
 				 * вернула бы режим, не измерив его частоту. */
 				pause_forget (&pause_mem);
 
+				/* Провал канала сразу после нашей смены плотности —
+				 * следствие сброса потолка, а не новый ролик: режим уже на
+				 * максимуме, повторный bump дал бы лишний переход. Признак
+				 * одноразовый: настоящий новый ролик его не наследует
+				 * (нашло ревью). */
+				bool own_restart = ceiling_take_restart (cur_sf_id);
+
+				/* Подтверждённый «потолок» прежнего ролика к новому не
+				 * относится: его надо сбросить заново (журнал §47.9). */
+				if (!own_restart)
+					ceiling_forget ();
+
 				/* Запоминаем приложение, которое ведёт это видео: по нему
 				 * ловим «залипший» инстанс декодера (плеер ушёл, а канал
 				 * остался и счётчик стоит) */
 				if (new_video)
 				{
-					atv14_bump (plat, &orig_sf_id, &cur_sf_id, &want_sf_id, &held);
+					if (!own_restart)
+						atv14_bump (plat, &orig_sf_id, &cur_sf_id, &want_sf_id, &held);
 
 					stuck_reset (&stuck);
 					pkg_probe_us = 0;
@@ -2658,13 +2854,26 @@ static int run_atv14 (const platform_t *plat)
 			 * а частоту мерим заново. */
 			if (have_prev_frames && (v0.frames < prev_frames))
 			{
-				trace (1, "счётчик кадров сброшен — новое видео, мерю заново\n");
+				/* Сброс счётчика сразу после нашей смены плотности — это
+				 * не новое видео: конфигурация экрана перезапустила декодер
+				 * (журнал §47.9). Потолок уже сброшен, поднимать режим и
+				 * обнулять состояние видео не нужно; замер начинается
+				 * заново, чтобы решение опиралось на новый счётчик. */
+				bool own_reset = ceiling_take_restart (cur_sf_id);
+
+				trace (1, own_reset
+				       ? "счётчик кадров сброшен нашей сменой плотности — мерю заново\n"
+				       : "счётчик кадров сброшен — новое видео, мерю заново\n");
 
 				/* Следующий ролик в том же плеере начинается с перезапуска
 				 * декодера, а не с паузы: поднимаем режим до максимума и
 				 * здесь, иначе он унаследует низкий «потолок» предыдущего
 				 * ролика (журнал §47.6). */
-				atv14_bump (plat, &orig_sf_id, &cur_sf_id, &want_sf_id, &held);
+				if (!own_reset)
+				{
+					atv14_bump (plat, &orig_sf_id, &cur_sf_id, &want_sf_id, &held);
+					ceiling_forget ();
+				}
 
 				want_sf_id = -1;
 				measure_failed = false;
@@ -3510,7 +3719,20 @@ static int run_atv14 (const platform_t *plat)
 				mstime_update ();
 				mstime_arm (&hdrinfo_timer, HDRINFO_SETTLE_MS);
 				hdrinfo_armed = true;
+
+				/* Режим применён на живом видео: если он выше прежнего
+				 * «потолка» плеера, тот потолок уже не даст нужной подачи
+				 * (журнал §47.9). Сбрасываем его сменой плотности. */
+				if (!resume_switch)
+					ceiling_maybe_reset (plat, want_sf_id, video_eff);
 			}
+		}
+		else if ((act == GUARD_NONE) && video_eff && (want_sf_id >= 0))
+		{
+			/* Решение есть, а режим уже стоит: ровно случай зажима — плеер
+			 * начал сессию под низкой частотой, и повторная выдача того же
+			 * режима его не расклинит (журнал §47.9). */
+			ceiling_maybe_reset (plat, want_sf_id, video_eff);
 		}
 		else if (act == GUARD_RESTORE)
 		{
@@ -3635,6 +3857,13 @@ int afrd_run ()
 	 * частоты (журнал §47.6). На старом пути зажима нет — там ключ не
 	 * действует (CFGKEY_ATV14), умолчание 0. */
 	g_switch_bump = cfg_get_int ("switch.bump", (g_plat.kind == PLAT_LEGACY) ? 0 : 1);
+
+	/* Сброс «потолка» частоты у плеера. Умолчание зависит от приёмника:
+	 * на backdoor-пути (Android 12-14) смена плотности стоит ~80 мс подачи,
+	 * на вендорном (Android 10/11) — 1.5-2.5 с, поэтому там выключено
+	 * (журнал §47.9). */
+	g_ceiling_reset = cfg_get_int ("switch.ceiling.reset",
+	                               (g_plat.sink == SINK_SF_BACKDOOR) ? 1 : 0);
 
 	/* «Громкие ключи»: настройка, которая на выбранном пути не действует,
 	 * должна быть названа в логе, а не молча проигнорирована (именно так

@@ -53,4 +53,23 @@ fi
 
 CLASSPATH="$DEX:/system/framework/android.hidl.base-V1.0-java.jar:/system/framework/android.hidl.manager-V1.0-java.jar:$RES"
 export CLASSPATH
-exec app_process /system/bin AfrdDispMode "$MODE"
+
+# Код 3 — сервис SystemControl не зарегистрирован в hwservicemanager. На ATV11
+# это бывает при живом процессе (lazy HAL не поднялся после сбоя): помощник
+# сообщал «systemcontrol service not found», и AFR молча оставался без смены
+# режима (живая находка 2026-10-17). Перезапуск сервиса лечит; делаем это один
+# раз и повторяем вызов, чтобы отказ не выглядел как «сервиса нет вовсе».
+app_process /system/bin AfrdDispMode "$MODE"
+rc=$?
+if [ "$rc" = "3" ]; then
+	echo "SystemControl не зарегистрирован — перезапускаю сервис и повторяю" >&2
+	setprop ctl.restart system_control 2>/dev/null
+	i=0
+	while [ "$i" -lt 20 ]; do
+		sleep 0.5
+		i=$((i + 1))
+	done
+	app_process /system/bin AfrdDispMode "$MODE"
+	rc=$?
+fi
+exit $rc
