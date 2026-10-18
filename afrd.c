@@ -81,6 +81,12 @@ static int g_ceiling_mode_id = -1;	/* режим, при котором сбра
  * ~20 с (живая находка 18.10 на .42). Замеру это не мешает: он и так решает. */
 static bool g_ceiling_no_fast = false;
 
+/* Подъём режима при выходе плеера на передний план (switch.bump.on.app).
+ * На Android 10/11 плеер фиксирует частоту раньше, чем появляется канал
+ * декодера, поэтому подъём «по видео» опаздывает; передний план виден на
+ * 260-450 мс от старта ролика — до создания поверхности (журнал §49.13). */
+static int g_switch_bump_on_app = 0;
+
 static const char *g_hdmi_state = NULL;
 static int g_uevent_sock = -1;
 static const char *g_vdec_sysfs = NULL;
@@ -2470,6 +2476,10 @@ static int run_atv14 (const platform_t *plat)
 	/* Заморозка счётчика кадров (AV1 и т.п.): сколько живём без роста и
 	 * сообщили ли уже об этом (логируем один раз на видео) */
 	unsigned long long counter_last_grow_us = 0;
+
+	/* Вариант 3: последний опрос переднего плана и уже увиденный пакет */
+	unsigned long long fg_probe_us = 0;
+	char fg_seen [PKG_NAME_LEN] = { 0 };
 	bool counter_stall_logged = false;
 
 	/* §21.9: проверка, что после смены режима кадры реально идут на подачу */
@@ -3681,6 +3691,47 @@ static int run_atv14 (const platform_t *plat)
 		else
 			skip_logged = false;
 
+		/* Вариант 3: пока видео не идёт, следим за передним планом. Если
+		 * режим ниже максимума и на экран вышел новый пакет (обычно плеер),
+		 * поднимаем режим заранее — это окно до того, как плеер создаст
+		 * поверхность и запомнит частоту (журнал §49.13).
+		 *
+		 * Опрос стоит 60-70 мс на боксе, поэтому делается только когда он
+		 * может что-то изменить: режим ниже максимума, видео не идёт, и не
+		 * чаще раза в секунду. */
+		if (g_switch_bump && g_switch_bump_on_app && !video &&
+		    (plat->sink != SINK_LEGACY))
+		{
+			int bw = 0, bh = 0;
+			int bcur = atv_current_target (plat, &bw, &bh);
+			int bmax = bump_target_mode (plat, bw, bh);
+
+			if ((bcur >= 0) && (bmax >= 0) && (bmax != bcur) &&
+			    ((now_us () - fg_probe_us) > 1000000ULL))
+			{
+				fg_probe_us = now_us ();
+
+				char fgp [PKG_NAME_LEN] = { 0 };
+				if (pkg_probe (plat, fgp, sizeof (fgp)) == 0 && fgp [0] &&
+				    strcmp (fgp, fg_seen) != 0)
+				{
+					memcpy (fg_seen, fgp, sizeof (fg_seen));
+					trace (1, "передний план: %s — поднимаю режим заранее\n", fgp);
+
+					if (atv14_bump (plat, &orig_sf_id, &cur_sf_id, &want_sf_id, &held) == 0)
+					{
+						/* Удержания здесь нет: цель подъёма — чтобы рабочий
+						 * стол (и следующий ролик) начинались с максимума.
+						 * Иначе guard_decide сразу вернёт «исходный» режим,
+						 * то есть повторно применит тот же режим и потратит
+						 * до секунды (живая находка 18.10). */
+						held = false;
+						orig_sf_id = -1;
+					}
+				}
+			}
+		}
+
 		act = guard_decide (video_eff, want_sf_id, cur_sf_id, &orig_sf_id, &held);
 
 		/* Цель возврата после видео: id, который был на экране до нашего
@@ -3931,6 +3982,11 @@ int afrd_run ()
 	 * частоты (журнал §47.6). На старом пути зажима нет — там ключ не
 	 * действует (CFGKEY_ATV14), умолчание 0. */
 	g_switch_bump = cfg_get_int ("switch.bump", (g_plat.kind == PLAT_LEGACY) ? 0 : 1);
+
+	/* Подъём режима по выходу плеера на передний план: на Android 10/11 это
+	 * единственный способ успеть до того, как плеер запомнит частоту. */
+	g_switch_bump_on_app = cfg_get_int ("switch.bump.on.app",
+	                                    (g_plat.kind == PLAT_LEGACY) ? 0 : 1);
 
 	/* Сброс «потолка» частоты у плеера. Умолчание зависит от приёмника:
 	 * на backdoor-пути (Android 12-14) смена плотности стоит ~80 мс подачи,

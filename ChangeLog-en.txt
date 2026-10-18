@@ -16,6 +16,17 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       50.34 -> 60.00 fps, an 83 ms delivery gap; on the vendor path (Android 10/11)
       the same operation costs 1.5-2.5 s, so there the key defaults to off.
 
+    * Mode bump when a player comes to the foreground (switch.bump.on.app, on by
+      default). On Android 10/11 the player remembers the display rate when the
+      surface is created (~1.1 s after the video starts), while the decoder
+      channel appears only at ~3.9 s - so the previous bump "on video" was too
+      late and the video stayed clamped for up to 20 s. Now the mode is raised as
+      soon as the player reaches the foreground (0.3-0.5 s). The foreground probe
+      costs 60-70 ms, so it runs only when it can change something: no video is
+      playing, the mode is below the maximum, and at most once a second. Live
+      measurement on Android 11: cold start of a 60 fps video under 50 Hz -
+      delivery 59.9 fps by the 8th second (was 49.4 fps for 15-20 s).
+
     * A persistent mode-switch helper on Android 10/11 (vendor.disp.persist, on
       by default). Previously every switch started a separate app_process with
       the dex — that is ~490 ms out of 0.85-1.76 s, up to half of the switch

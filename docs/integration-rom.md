@@ -288,6 +288,7 @@ AFRd2 — форк AFRd (Andrey Zabolotnyi) под **GPL-3**. Размещени
 | `fps.declare.fast` | Android 10–14 | — |
 | `switch.bump` | Android 10–14 | — |
 | `switch.ceiling.reset` | Android 12–14 (на Android 10/11 выключен: смена плотности стоит 1.5–2.5 с) | — |
+| `switch.bump.on.app` | Android 10–14 | — |
 | `vendor.disp.cli` | Android 10–14 | — |
 | `vendor.disp.persist` | Android 10/11 | — |
 | `vendor.disp.cap` | Android 10–14 | — |
