@@ -16,6 +16,17 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       50.34 -> 60.00 fps, an 83 ms delivery gap; on the vendor path (Android 10/11)
       the same operation costs 1.5-2.5 s, so there the key defaults to off.
 
+    * The stock YouTube app is no longer excluded from frame rate matching on
+      Android 12-14. It used to be in the default "players that AFR disturbs"
+      list: it fixed the refresh rate when a video started, and the next video
+      stayed clamped. The clamp is now closed (mode bump before the first frame
+      and a ceiling reset), so the exclusion is gone and YouTube is handled like
+      any other player. An already installed app migrates the setting once on
+      update: only the stock YouTube package is removed from the list, the user's
+      own entries are kept. On Android 10/11 the exclusion remains: there a cold
+      start of a 60 fps video under 50 Hz stays clamped (measured 49.81 fps), and
+      a ceiling reset costs a 1.5-2.5 s pause.
+
     * "Blacklisted refresh rates" (mode.blacklist.rates) are now picked from the
       rates your TV supports instead of typed as numbers: the daemon compares the
       blacklisted rate with the mode rate numerically, so 23.976 and 24 are

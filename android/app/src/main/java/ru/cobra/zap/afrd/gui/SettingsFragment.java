@@ -102,6 +102,7 @@ public class SettingsFragment extends PreferenceFragment
         "fps_declare_fast",
         "pause_keep",
         "switch_restore_on_stop",
+        "switch_bump",
         /* калибровка по плееру */
         "fps_correct_enable",
         "fps_correct_list",

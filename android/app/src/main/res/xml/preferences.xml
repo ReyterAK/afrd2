@@ -144,6 +144,12 @@
         <SwitchPreference android:defaultValue="0" android:key="fps_declare_fast"
                           android:summary="@string/prefsum_fps_declare_fast"
                           android:title="@string/prefs_fps_declare_fast"/>
+        <!-- Один пункт на обе механики зажима (switch.bump + switch.ceiling.reset):
+             на backdoor-пути умолчание сброса потолка следует за этим ключом
+             (см. afrd_run). -->
+        <SwitchPreference android:defaultValue="1" android:key="switch_bump"
+                          android:summary="@string/prefsum_switch_bump"
+                          android:title="@string/prefs_switch_bump"/>
         <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="20000" android:key="fps_measure_envelope_ms"
                           android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
                           android:singleLine="true" android:summary="@string/prefsum_fps_measure_envelope"

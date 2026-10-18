@@ -210,6 +210,8 @@ extern bool strlist_load (strlist_t *list, const char *key, const char *desc);
 extern void strlist_free (strlist_t *list);
 // Check if string list contains selected value
 extern bool strlist_contains (strlist_t *list, const char *str);
+// Append one value to a string list (used for path-dependent defaults)
+extern void strlist_add (strlist_t *list, const char *str);
 
 /// afrd statistics in shared memory
 typedef struct

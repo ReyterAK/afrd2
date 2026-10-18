@@ -108,7 +108,7 @@ afrd -D /etc/afrd.ini      # -D: уйти в фон, записать pid
 | Пункт меню | Android 9 (legacy) | Android 11 | Android 14 | Умолчание |
 |---|---|---|---|---|
 | Включить автоподбор частоты | `enable` | `enable` | `enable` | выкл (`0`) |
-| Не переключать для этих плееров | `switch.skip.pkg` | `switch.skip.pkg` | `switch.skip.pkg` | `com.google.android.youtube.tv` |
+| Не переключать для этих плееров | `switch.skip.pkg` | `switch.skip.pkg` | `switch.skip.pkg` | 14 → пусто; 9/11 → `com.google.android.youtube.tv` |
 | Возвращать режим при остановке | `switch.delay.off` = `10000` / **`0`** | `switch.restore.on.stop` = `1` / `0` | то же | вкл |
 | Удвоение частоты (25→50, 30→60) | `mode.prefer.exact` = **`0`** / `1` | то же | то же | вкл |
 | Дробные частоты (23.976) | `mode.use.fract` = `0` авто / `1` только дробные / `2` только целые | то же | то же | авто (`0`) |
@@ -282,7 +282,7 @@ AFRd2 — форк AFRd (Andrey Zabolotnyi) под **GPL-3**. Размещени
 | `mode.use.fract` | оба пути (6–14) | — |
 | `mode.blacklist.rates` | оба пути (6–14) | — |
 | `mode.min.hz.list` | оба пути (6–14) | — |
-| `switch.skip.pkg` | оба пути (6–14) | — |
+| `switch.skip.pkg` | оба пути (6–14); умолчание зависит от пути: на Android 12–14 список пуст, на 10/11 — штатный YouTube | — |
 | `switch.timeout` | оба пути (6–14) | — |
 | `switch.delay.off` | оба пути (6–14) | — |
 | `fps.declare.fast` | Android 10–14 | — |

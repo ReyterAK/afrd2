@@ -2117,12 +2117,12 @@ static int ceiling_restore (int had_override, int prev)
 	if (ceiling_build_restore (cmd, sizeof (cmd), had_override, prev) != 0)
 		return -1;
 
-	char out [128];
-	int rc = exec_status (cmd, out, sizeof (out));
+	char resp [128];
+	int rc = exec_status (cmd, resp, sizeof (resp));
 	if (rc != 0)
 	{
 		trace (0, "сброс потолка: плотность не вернулась (код %d) — повторяю\n", rc);
-		rc = exec_status (cmd, out, sizeof (out));
+		rc = exec_status (cmd, resp, sizeof (resp));
 	}
 
 	if (rc != 0)
@@ -2137,9 +2137,9 @@ static int ceiling_restore (int had_override, int prev)
 
 static int ceiling_reset_now (void)
 {
-	char out [256];
+	char resp [256];
 
-	int rc = exec_status ("wm density", out, sizeof (out));
+	int rc = exec_status ("wm density", resp, sizeof (resp));
 	if (rc != 0)
 	{
 		trace (1, "сброс потолка: `wm density` не выполнилась (код %d)\n", rc);
@@ -2147,7 +2147,7 @@ static int ceiling_reset_now (void)
 	}
 
 	int cur = 0, had = 0, next = 0;
-	if (ceiling_density_parse (out, &cur, &had, &next) != 0)
+	if (ceiling_density_parse (resp, &cur, &had, &next) != 0)
 	{
 		trace (1, "сброс потолка: не разобрать вывод `wm density`\n");
 		return -1;
@@ -2159,7 +2159,7 @@ static int ceiling_reset_now (void)
 	 * (нашло ревью). */
 	char cmd [64];
 	snprintf (cmd, sizeof (cmd), "wm density %d", next);
-	rc = exec_status (cmd, out, sizeof (out));
+	rc = exec_status (cmd, resp, sizeof (resp));
 	if (rc != 0)
 	{
 		trace (1, "сброс потолка: плотность %d не применилась (код %d)\n", next, rc);
@@ -3822,6 +3822,33 @@ int afrd_run ()
 	if (g_plat.sink == SINK_VENDOR_MODE)
 		modes_refresh_platform ();
 
+	/* switch.skip.pkg: умолчание зависит от пути (журнал §48.10).
+	 *
+	 * На Android 12-14 зажим частоты закрыт подъёмом режима и сбросом потолка,
+	 * поэтому штатный YouTube обрабатывается как все плееры. На Android 10/11
+	 * (вендорный SystemControl) холодный старт 60-фпс ролика под 50 Гц остаётся
+	 * зажатым — живой замер 2026-10-18: 49.81 к/с, — а сброс потолка там стоит
+	 * 1.5-2.5 с заминки, поэтому плеер по умолчанию остаётся в списке.
+	 *
+	 * Явно заданный ключ не трогаем, в том числе пустой `switch.skip.pkg=`
+	 * (пустой список — законное значение: «исключений нет»). */
+	if (!cfg_get (g_cfg, "switch.skip.pkg"))
+	{
+		if (g_plat.kind == PLAT_ATV14)
+		{
+			strlist_free (&g_skip_pkgs);
+			trace (1, "switch.skip.pkg не задан — на этом пути список пуст "
+			       "(зажим закрыт bump и сбросом потолка)\n");
+		}
+		else if (g_plat.kind == PLAT_ATV11)
+		{
+			strlist_free (&g_skip_pkgs);
+			strlist_add (&g_skip_pkgs, "com.google.android.youtube.tv");
+			trace (1, "switch.skip.pkg не задан — на этом пути исключаю штатный YouTube: "
+			       "холодный старт 60-фпс ролика под 50 Гц остаётся зажатым\n");
+		}
+	}
+
 	/* switch.delay.off на новом пути значит другое (предел терпения к паузе,
 	 * см. pause.h) и имеет своё умолчание: конфиг читается в afrd_init до
 	 * определения платформы, поэтому уточняем значение здесь. Явно заданный
@@ -3860,10 +3887,12 @@ int afrd_run ()
 
 	/* Сброс «потолка» частоты у плеера. Умолчание зависит от приёмника:
 	 * на backdoor-пути (Android 12-14) смена плотности стоит ~80 мс подачи,
-	 * на вендорном (Android 10/11) — 1.5-2.5 с, поэтому там выключено
-	 * (журнал §47.9). */
+	 * на вендорном (Android 10/11) — 1.5-2.5 с, поэтому там выключено.
+	 * На backdoor-пути умолчание следует за switch.bump: в интерфейсе это один
+	 * пункт «Устранять зажим частоты», и выключение тумблера должно снимать
+	 * обе механики, а не оставлять половину (журнал §47.9). */
 	g_ceiling_reset = cfg_get_int ("switch.ceiling.reset",
-	                               (g_plat.sink == SINK_SF_BACKDOOR) ? 1 : 0);
+	                               (g_plat.sink == SINK_SF_BACKDOOR) ? g_switch_bump : 0);
 
 	/* «Громкие ключи»: настройка, которая на выбранном пути не действует,
 	 * должна быть названа в логе, а не молча проигнорирована (именно так

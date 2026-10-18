@@ -48,4 +48,29 @@ public class Seed
     {
         return oldDefault.equals (prefValue);
     }
+
+    /**
+     * Убрать пакет из списка через пробел (обновление умолчания switch.skip.pkg).
+     * Пустая строка на выходе — законное значение («исключений нет»).
+     * Нужен при обновлении: у уже установленного приложения в настройках лежит
+     * старое умолчание (штатный YouTube), которое на Android 12-14 больше не
+     * нужно — там зажим закрыт подъёмом режима и сбросом потолка.
+     */
+    public static String withoutPkg (String list, String pkg)
+    {
+        if (list == null)
+            return null;
+
+        StringBuilder out = new StringBuilder ();
+        for (String item : list.trim ().split ("\\s+"))
+        {
+            if (item.isEmpty () || item.equals (pkg))
+                continue;
+            if (out.length () > 0)
+                out.append (' ');
+            out.append (item);
+        }
+
+        return out.toString ();
+    }
 }

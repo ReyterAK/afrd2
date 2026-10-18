@@ -240,8 +240,27 @@ public class MainActivity extends Activity
         return updateConfig ();
     }
 
+    /* Умолчание switch.skip.pkg на Android 10/11: там штатный YouTube остаётся
+     * исключённым (холодный старт 60-фпс ролика под 50 Гц зажимается, а сброс
+     * потолка стоит 1.5-2.5 с). Профиль этого значения больше не содержит —
+     * умолчание зависит от пути, — поэтому на 10/11 записываем его в настройки
+     * один раз, чтобы строка настроек и поведение демона совпадали. Пустое
+     * значение (пользователь снял исключение) не перетираем. */
+    private void atv11SkipSeed ()
+    {
+        if (!Control.isAtv14 () || (android.os.Build.VERSION.SDK_INT > 30))
+            return;
+
+        if (mOptions.contains ("switch_skip_pkg"))
+            return;
+
+        mOptions.edit ().putString ("switch_skip_pkg", kSkipYoutube).apply ();
+    }
+
     private boolean updateConfig ()
     {
+        atv11SkipSeed ();
+
         // load config options from ini file
         Config conf = new Config ();
         if (!conf.load (mControl.mIni))
@@ -275,6 +294,7 @@ public class MainActivity extends Activity
 
         // and save the modified file
         atv14PauseDefault (conf);
+        atv14SkipDefault (conf);
         return conf.condSave (mControl.mIni);
     }
 
@@ -357,6 +377,52 @@ public class MainActivity extends Activity
         }
 
         req.edit ().putBoolean ("inert_pause_delay_reset", true).apply ();
+    }
+
+    /* Перенос умолчания switch.skip.pkg на Android 12-14 (журнал §48.10).
+     *
+     * В прежних версиях профиль исключал штатный YouTube из AFR: плеер выбирал
+     * темп отрисовки в момент старта ролика и удержанный низкий режим «зажимал»
+     * следующий. На Android 12-14 зажим закрыт подъёмом режима до максимума
+     * (switch.bump) и сбросом потолка (switch.ceiling.reset), поэтому исключение
+     * больше не нужно. Но у уже установленного приложения это значение лежит в
+     * настройках и в ini — без переноса обновление ничего бы не изменило.
+     *
+     * Убираем только штатный YouTube, свои записи пользователя сохраняем;
+     * сделанную после обновления правку не трогаем никогда (флаг в requisites).
+     * На Android 10/11 исключение остаётся: там холодный старт 60-фпс ролика под
+     * 50 Гц зажимается, а сброс потолка стоит 1.5-2.5 с. */
+    private static final String kSkipYoutube = "com.google.android.youtube.tv";
+
+    private void atv14SkipDefault (Config conf)
+    {
+        if (!Control.isAtv14 ())
+            return;
+
+        /* 30 — Android 11: на 12+ исключение снимаем, на 10/11 оставляем.
+         * Литерал, а не VERSION_CODES.S: compileSdk проекта — 27. */
+        if (android.os.Build.VERSION.SDK_INT <= 30)
+            return;
+
+        SharedPreferences req = getSharedPreferences ("requisites", 0);
+        if (req.getBoolean ("inert_skip_youtube_reset", false))
+            return;
+
+        String val = mOptions.getString ("switch_skip_pkg", null);
+        if (val == null)
+        {
+            req.edit ().putBoolean ("inert_skip_youtube_reset", true).apply ();
+            return;
+        }
+
+        String cleared = Seed.withoutPkg (val, kSkipYoutube);
+        if (!cleared.equals (val))
+        {
+            mOptions.edit ().putString ("switch_skip_pkg", cleared).apply ();
+            conf.put ("switch.skip.pkg", cleared);
+        }
+
+        req.edit ().putBoolean ("inert_skip_youtube_reset", true).apply ();
     }
 
     /* Настройки, которых ещё нет в ini_options, берём из конфига профиля. */

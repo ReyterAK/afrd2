@@ -104,6 +104,16 @@ void strlist_free (strlist_t *list)
 	list->size = 0;
 }
 
+void strlist_add (strlist_t *list, const char *str)
+{
+	if (!list || !str || !str [0])
+		return;
+
+	list->size++;
+	list->data = realloc (list->data, list->size * sizeof (char *));
+	list->data [list->size - 1] = strdup (str);
+}
+
 bool strlist_contains (strlist_t *list, const char *str)
 {
 	for (int i = 0; i < list->size; i++)
