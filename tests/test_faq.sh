@@ -53,7 +53,7 @@ check () { # check <файл> <ожидаемое число вопросов>
 	' "$file" || exit 1
 }
 
-check FAQ-ru.txt 18
-check FAQ-en.txt 18
+check FAQ-ru.txt 19
+check FAQ-en.txt 19
 
-echo "faq: OK (18 вопросов в каждом языке)"
+echo "faq: OK (19 вопросов в каждом языке)"

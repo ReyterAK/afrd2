@@ -1352,6 +1352,7 @@ static int atv14_bump (const platform_t *plat, int *orig_sf_id, int *cur_sf_id,
 	if (!g_switch_bump || (plat->sink == SINK_LEGACY))
 		return -1;
 
+
 	int bw = 0, bh = 0;
 	int cur = atv_current_target (plat, &bw, &bh);
 	int bump = bump_target_mode (plat, bw, bh);
@@ -2282,15 +2283,22 @@ static void ceiling_forget (void)
 /* Сброс потолка только что произошёл: перезапуск декодера, который он вызвал,
  * не должен считаться новым видео (иначе демон поднимет режим до максимума и
  * получится лишний переход). */
-static bool ceiling_recent (void)
+/* Окно «это перезапуск от нашего сброса». Декодер после смены плотности
+ * перезапускается не сразу: сброс -> перезапуск -> сброс счётчика занимает
+ * 6-9 с (живые замеры 18.10 на .50: сброс -> видимый перезапуск через 7.7-8.0 с,
+ * на .41 — через 2.5-3.5 с). Поэтому окно 12 с, а не 3: короткое окно давало
+ * «мигание» 50 -> 60 сразу после переключения. Цена: настоящий новый ролик,
+ * начатый в эти 12 с, не поднимется — но режим и так был выставлен по контенту,
+ * а следующий замер его поправит. */
+#define CEILING_RESTART_WINDOW_US	12000000ULL
+
+static bool ceiling_recent_within (unsigned long long us)
 {
-	return g_ceiling_us && ((now_us () - g_ceiling_us) < 3000000ULL);
+	return g_ceiling_us && ((now_us () - g_ceiling_us) < us);
 }
 
 /* Потреблять одноразовый признак «декодер перезапустился от нашего сброса».
  * Возврат true — этот перезапуск наш (и признак снят). */
-#define CEILING_RESTART_WINDOW_US	10000000ULL
-
 static bool ceiling_take_restart (int cur_id)
 {
 	/* Одного времени мало: настоящий новый ролик может начаться в том же окне.
@@ -2893,10 +2901,19 @@ static int run_atv14 (const platform_t *plat)
 		 * нужную частоту. Без этого смена ролика (в т.ч. автовоспроизведение)
 		 * наследовала низкий «потолок» предыдущего ролика. */
 		if (!new_video && g_switch_bump && (plat->sink != SINK_LEGACY) && video &&
-		    !ceiling_recent ())
+		    !ceiling_recent_within (CEILING_RESTART_WINDOW_US))
 			atv14_bump (plat, &orig_sf_id, &cur_sf_id, &want_sf_id, &held);
 
-		if (new_video != video)
+		/* Наша же смена плотности перезапускает декодер, и канал на время
+		 * пропадает. Если принять это за остановку видео, демон сразу вернёт
+		 * максимум — именно так матрица приёмки и «поймала» ложный стоп
+		 * (живая находка 18.10 на .50: переключение на 50 Гц в 18:32:56 и
+		 * возврат на 60 Гц в 18:32:59). Пока сброс свежий, «видео кончилось»
+		 * игнорируем: настоящая остановка придёт позже и будет обработана. */
+		bool lost_after_reset = !new_video &&
+		                        ceiling_recent_within (CEILING_RESTART_WINDOW_US);
+
+		if ((new_video != video) && !lost_after_reset)
 		{
 			msleep (new_video ? start_deb : stop_deb);
 
@@ -2922,7 +2939,8 @@ static int run_atv14 (const platform_t *plat)
 				 * проверка увидела бы false и подняла режим, запустив петлю
 				 * 24 <-> 60 (живая находка 18.10 на .41). Кроме флага смотрим
 				 * и на недавний сброс плотности. */
-				bool own_restart = ceiling_take_restart (cur_sf_id) || ceiling_recent ();
+				bool own_restart = ceiling_take_restart (cur_sf_id) ||
+				                   ceiling_recent_within (CEILING_RESTART_WINDOW_US);
 
 				/* Подтверждённый «потолок» прежнего ролика к новому не
 				 * относится: его надо сбросить заново (журнал §47.9). */
@@ -2977,7 +2995,13 @@ static int run_atv14 (const platform_t *plat)
 				 * (журнал §47.9). Потолок уже сброшен, поднимать режим и
 				 * обнулять состояние видео не нужно; замер начинается
 				 * заново, чтобы решение опиралось на новый счётчик. */
-				bool own_reset = ceiling_take_restart (cur_sf_id);
+				/* Перезапуск декодера от нашего сброса плотности приходит
+				 * позже трёх секунд: сброс -> перезапуск -> счётчик с нуля
+				 * занимает 2.5-3.5 с. Окно здесь шире, иначе демон принимал
+				 * это за новый ролик и поднимал режим — режим мигал 50 -> 60
+				 * сразу после переключения (живая находка 18.10 на .50). */
+				bool own_reset = ceiling_take_restart (cur_sf_id) ||
+				                 ceiling_recent_within (8000000ULL);
 
 				trace (1, own_reset
 				       ? "счётчик кадров сброшен нашей сменой плотности — мерю заново\n"
