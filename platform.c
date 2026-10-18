@@ -110,6 +110,15 @@ platform_t platform_detect (void)
 	{
 		p.kind = PLAT_LEGACY;
 		p.sink = SINK_LEGACY;
+
+		/* Диагностика для незнакомого бокса (журнал §50): backdoor 1035 есть, но
+		 * узла декодера нет — типичный AOSP-бокс не на Amlogic. Демон уйдёт в
+		 * legacy-путь и молча ничего не сделает; без этой строки в журнале
+		 * причина не видна. */
+		if (sf_backdoor_available ())
+			trace (0, "backdoor SurfaceFlinger есть, но источника частоты кадров "
+			       "(%s) нет: бокс не Amlogic или другой драйвер декодера — "
+			       "AFR работать не будет\n", VDVC_STATUS);
 		p.hdmi_state = (sysfs_exists (HDMI_STATE_OLD) == 0)
 		             ? HDMI_STATE_OLD : HDMI_STATE_OLD_CABLE;
 		p.sf_backdoor = false;
