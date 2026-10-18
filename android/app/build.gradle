@@ -16,8 +16,8 @@ android {
         applicationId 'ru.reyter.afrd2'
         minSdkVersion 23
         compileSdkVersion 27
-        versionCode 10001
-        versionName '1.0.1'
+        versionCode 10100
+        versionName '1.1.0'
         targetSdkVersion 28
         versionNameSuffix ''
         project.ext.set ('archivesBaseName', "${applicationId}-${versionName}${versionNameSuffix}".toString ())
