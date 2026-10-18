@@ -25,6 +25,7 @@
 #include "pause.h"
 #include "stuck.h"
 #include "ceiling.h"
+#include "dispserve.h"
 
 #define __USE_GNU
 #include <math.h>
@@ -50,6 +51,9 @@
 const char *g_hdmi_dev = NULL;
 const char *g_mode_path = NULL;
 const char *g_vendor_disp_cli = NULL;
+/* Постоянный помощник смены режима (vendor.disp.persist, Android 10/11):
+ * убирает из каждой смены разовый запуск app_process (~490 мс, журнал §49.9). */
+int g_vendor_disp_persist = 1;
 /* Быстрое решение по заявленной частоте кадра (fps.declare.fast): заполняется
  * в afrd_run — умолчание зависит от пути (на Android 10/11 включено). */
 int g_fps_declare_fast = 0;
@@ -71,6 +75,11 @@ static int g_ceiling_hz = 0;		/* частота, до которой потол�
 static unsigned long long g_ceiling_us = 0;	/* время последней попытки */
 static bool g_ceiling_restart_expected = false;	/* ждём перезапуск декодера */
 static int g_ceiling_mode_id = -1;	/* режим, при котором сбрасывали потолок */
+/* После нашего сброса потолка быстрый путь по заявленной частоте выключен до
+ * конца видео: сброс перезапускает декодер, драйвер заявляет 30 fps, и быстрое
+ * решение возвращало режим на максимум — получалась петля 50 ↔ 60 каждые
+ * ~20 с (живая находка 18.10 на .42). Замеру это не мешает: он и так решает. */
+static bool g_ceiling_no_fast = false;
 
 static const char *g_hdmi_state = NULL;
 static int g_uevent_sock = -1;
@@ -1252,6 +1261,11 @@ static bool atv14_rate_allowed (int hz, void *ctx)
 /* Пакет на переднем плане (определение ниже, нужно для mode.min.hz.list). */
 static char g_cur_pkg [PKG_NAME_LEN];
 
+/* Сброс «потолка» частоты плеера (switch.ceiling.reset); определение ниже.
+ * Нужен в atv14_bump: на вендорном пути режим меняется дольше, чем плеер
+ * успевает зафиксировать частоту. */
+static int ceiling_reset_now (void);
+
 /* ATV14-путь: подъём режима до максимума (switch.bump); определение ниже. */
 static int atv14_bump (const platform_t *plat, int *orig_sf_id, int *cur_sf_id,
                        int *want_sf_id, bool *held);
@@ -1374,6 +1388,26 @@ static int atv14_bump (const platform_t *plat, int *orig_sf_id, int *cur_sf_id,
 	 * только для первого ролика после запуска демона — это дешевле петли.
 	 * Сброс по замеру (ceiling_maybe_reset) при явно включённом
 	 * switch.ceiling.reset остаётся: он одноразовый и петлю не заводит. */
+	/* Вендорный путь (Android 10/11): плеер фиксирует «потолок» раньше, чем
+	 * режим успевает смениться (смена 0.34-1.09 с с постоянным помощником), и
+	 * ролик играет зажатым до конца замера (14-20 с). Поэтому сразу после
+	 * успешной смены сбрасываем потолок; быстрый путь по заявленной частоте
+	 * на этом видео выключается (см. g_ceiling_no_fast), иначе перезапуск
+	 * декодера заводил петлю 50 ↔ 60.
+	 * На backdoor-пути смена ~0.45 с и bump обычно успевает — там не нужно. */
+	if ((plat->sink == SINK_VENDOR_MODE) && g_ceiling_reset && (g_ceiling_resets == 0))
+	{
+		g_ceiling_us = now_us ();
+		g_ceiling_resets++;
+		if (ceiling_reset_now () == 0)
+		{
+			g_ceiling_hz = atv14_mode_hz (plat, bump);
+			g_ceiling_mode_id = bump;
+			g_ceiling_no_fast = true;
+			g_ceiling_restart_expected = true;
+		}
+	}
+
 	/* Возврат после видео — на максимум, а не на прежний режим: иначе
 	 * следующий ролик начнётся с низкого «потолка», и зажим вернётся. */
 	*orig_sf_id = bump;
@@ -2224,6 +2258,7 @@ static void ceiling_maybe_reset (const platform_t *plat, int target_id, bool pla
 	{
 		g_ceiling_hz = hz;
 		g_ceiling_mode_id = target_id;
+		g_ceiling_no_fast = true;
 		/* Перезапуск декодера от смены плотности — не новый ролик; признак
 		 * одноразовый, чтобы настоящий новый ролик в том же окне его не унаследовал
 		 * (нашло ревью). */
@@ -2889,6 +2924,7 @@ static int run_atv14 (const platform_t *plat)
 				measure_failed = false;
 				retries = 0;
 				fast_applied = false;	/* новое видео — быстрое решение заново */
+				g_ceiling_no_fast = false;
 				fast_class = 0;
 				recheck_armed = false;	/* R56: перепроверка — на текущее видео */
 				mstime_disable (&recheck_timer);
@@ -3294,7 +3330,8 @@ static int run_atv14 (const platform_t *plat)
 				 * замер продолжает работать и ниже поправит режим, если
 				 * заявленная частота расходится с фактической (наш синтетический
 				 * клип: драйвер рапортует 30 fps при реальных 23.976). */
-				if (g_fps_declare_fast && !fast_applied && !held && (v0.decl_fps > 0))
+				if (g_fps_declare_fast && !g_ceiling_no_fast && !fast_applied && !held &&
+				    (v0.decl_fps > 0))
 				{
 					int dclass = fps_declared_class ((int)v0.decl_fps);
 					if (dclass)
@@ -4212,6 +4249,7 @@ int afrd_init ()
 	/* Путь к вендорному помощнику смены режима (Android 10/11). Пишут его
 	 * приложение и Magisk-модуль, раскладывая помощник в свои каталоги. */
 	g_vendor_disp_cli = cfg_get_str ("vendor.disp.cli", DEFAULT_VENDOR_DISP_CLI);
+	g_vendor_disp_persist = cfg_get_int ("vendor.disp.persist", 1);
 	g_mode_prefer_exact = cfg_get_int ("mode.prefer.exact", DEFAULT_MODE_PREFER_EXACT);
 	g_mode_use_fract = cfg_get_int ("mode.use.fract", DEFAULT_MODE_USE_FRACT);
 	blacklist_rates_load ("mode.blacklist.rates");
@@ -4274,6 +4312,10 @@ void afrd_fini ()
 	modes_release ();
 	apisock_fini ();
 	colorspace_fini ();
+	/* Постоянный помощник режима: его процесс держит HIDL-вызовы, поэтому при
+	 * переинициализации и выходе его надо снять — иначе останется сирота с
+	 * загруженной VM (журнал §49.9). */
+	dispserve_stop ();
 
 	if (g_uevent_sock != -1) {
 		close (g_uevent_sock);

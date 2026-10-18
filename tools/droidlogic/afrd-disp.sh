@@ -17,9 +17,20 @@
 # 6 — не найден droidlogic-res.apk (некуда взять классы HIDL-прокси).
 # Успех — только 0.
 
+# Режим работы: по умолчанию — разовая смена (одно имя режима в аргументе).
+# С `--serve` запускается постоянный помощник: он держит VM и классы HIDL
+# загруженными и читает имена режимов построчно. Разовый запуск app_process
+# стоит ~490 мс (замер 18.10 на ATV11) — постоянный помощник убирает эту часть
+# из каждой смены режима (журнал §49.9).
+SERVE=0
+if [ "$1" = "--serve" ]; then
+	SERVE=1
+	shift
+fi
+
 MODE=$1
-if [ -z "$MODE" ]; then
-	echo "usage: $0 <mode>" >&2
+if [ "$SERVE" = 0 ] && [ -z "$MODE" ]; then
+	echo "usage: $0 <mode> | --serve" >&2
 	exit 2
 fi
 
@@ -59,6 +70,10 @@ export CLASSPATH
 # сообщал «systemcontrol service not found», и AFR молча оставался без смены
 # режима (живая находка 2026-10-17). Перезапуск сервиса лечит; делаем это один
 # раз и повторяем вызов, чтобы отказ не выглядел как «сервиса нет вовсе».
+if [ "$SERVE" = 1 ]; then
+	exec app_process /system/bin AfrdDispServe
+fi
+
 app_process /system/bin AfrdDispMode "$MODE"
 rc=$?
 if [ "$rc" = "3" ]; then

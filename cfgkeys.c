@@ -63,6 +63,9 @@ static const struct
 	 * поэтому путь настраиваемый; список нужен, потому что таблицы режимов
 	 * SurfaceFlinger на 10/11 нет. */
 	{ "vendor.disp.cli",		CFGKEY_ATV14, NULL },
+	/* Постоянный помощник смены режима: держит VM загруженной, снимая ~490 мс
+	 * запуска app_process с каждой смены (журнал §49.9). */
+	{ "vendor.disp.persist",	CFGKEY_ATV14, NULL },
 	{ "vendor.disp.cap",		CFGKEY_ATV14, NULL },
 	{ "trigger.poll.ms",		CFGKEY_ATV14, NULL },
 	{ "trigger.start.debounce.ms",	CFGKEY_ATV14, NULL },

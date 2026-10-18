@@ -2,6 +2,7 @@
 #include "afrd.h"
 #include "exec.h"
 #include "sink.h"
+#include "dispserve.h"
 
 int sink_build_sf_set (char *buf, size_t n, int sf_mode_id)
 {
@@ -66,6 +67,22 @@ int sink_apply (sink_kind_t kind, const char *mode_path, int sf_mode_id,
 	{
 		if (!legacy_mode_name || !*legacy_mode_name)
 			return -1;
+
+		/* Постоянный помощник: он держит VM и классы HIDL загруженными, поэтому
+		 * смена режима перестаёт включать ~490 мс на запуск app_process
+		 * (журнал §49.9). Любой отказ — работаем разовым запуском. */
+		if (g_vendor_disp_persist)
+		{
+			int prc = dispserve_apply (g_vendor_disp_cli, legacy_mode_name);
+			if (prc == 0)
+			{
+				trace (1, "Переключаю режим (вендорный SystemControl, помощник) на %s\n",
+				       legacy_mode_name);
+				return 0;
+			}
+			if (prc == -2)
+				return -1;	/* режим отвергнут — повторять нечего */
+		}
 
 		/* Путь к помощнику берём из конфига тем же глобалом, что и вендорский
 		 * клиент цветового пространства на ATV14 (afrd.c: g_vendor_disp_cli). */

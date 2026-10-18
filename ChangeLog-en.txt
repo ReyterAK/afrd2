@@ -16,6 +16,21 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       50.34 -> 60.00 fps, an 83 ms delivery gap; on the vendor path (Android 10/11)
       the same operation costs 1.5-2.5 s, so there the key defaults to off.
 
+    * A persistent mode-switch helper on Android 10/11 (vendor.disp.persist, on
+      by default). Previously every switch started a separate app_process with
+      the dex — that is ~490 ms out of 0.85-1.76 s, up to half of the switch
+      time. The helper keeps the VM and HIDL classes loaded and accepts mode
+      names line by line: a switch now takes 0.34-1.09 s. Any failure of the
+      helper (did not start, did not answer, crashed) makes the daemon fall back
+      to the one-shot launch, so the key can be disabled without losing
+      functionality.
+
+    * On Android 10/11 the player's rate ceiling is now reset right after the
+      mode bump instead of 15-20 s later by measurement: delivery recovers by
+      the 6th second. The fast path by the declared rate is disabled for that
+      video after the reset - otherwise the decoder restart plus a repeated fast
+      decision produced a 50 <-> 60 loop every ~20 s.
+
     * The stock YouTube app is no longer excluded from frame rate matching on
       Android 12-14. It used to be in the default "players that AFR disturbs"
       list: it fixed the refresh rate when a video started, and the next video

@@ -18,10 +18,10 @@ trap 'rm -rf "$TMP"' EXIT
 
 # class-файл версии 52 (Java 8): d8 из build-tools 28 иначе не читает вывод
 # современного javac («Compilation failed with an internal error»).
-javac --release 8 -nowarn -d "$TMP" "$DIR/AfrdDispMode.java"
+javac --release 8 -nowarn -d "$TMP" "$DIR/AfrdDispMode.java" "$DIR/AfrdDispServe.java"
 # min-api 23 (Android 6), а не 30: dex запускается и на Android 10, и прежнее
 # значение ничего не давало — только сужало применимость без нужды.
-"$D8" --min-api 23 --lib "$LIB" --output "$TMP" "$TMP/AfrdDispMode.class"
+"$D8" --min-api 23 --lib "$LIB" --output "$TMP" "$TMP/AfrdDispMode.class" "$TMP/AfrdDispServe.class"
 
 cp "$TMP/classes.dex" "$OUT"
 echo "готово: $OUT ($(wc -c < "$OUT") байт)"
