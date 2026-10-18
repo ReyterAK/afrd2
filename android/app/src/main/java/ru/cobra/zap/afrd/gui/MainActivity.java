@@ -506,6 +506,10 @@ public class MainActivity extends Activity
             @Override
             public void run ()
             {
+                /* Кэш сбрасываем: пользователь мог выдать root уже после
+                 * предыдущей проверки (на стоковой прошивке Magisk спрашивает
+                 * разрешение диалогом — живая находка 18.10). */
+                RootShell.resetProbe ();
                 final boolean su = RootShell.suAvailable ();
 
                 mAppHandler.post (new Runnable ()
