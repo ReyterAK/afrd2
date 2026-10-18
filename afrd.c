@@ -71,9 +71,6 @@ static int g_ceiling_hz = 0;		/* частота, до которой потол�
 static unsigned long long g_ceiling_us = 0;	/* время последней попытки */
 static bool g_ceiling_restart_expected = false;	/* ждём перезапуск декодера */
 static int g_ceiling_mode_id = -1;	/* режим, при котором сбрасывали потолок */
-static int g_bump_confirm_id = -1;	/* bump: ждём, что режим реально сменился */
-static int g_bump_confirm_hz = 0;	/* частота режима, до которого поднимали */
-static unsigned long long g_bump_confirm_us = 0;
 
 static const char *g_hdmi_state = NULL;
 static int g_uevent_sock = -1;
@@ -1368,17 +1365,15 @@ static int atv14_bump (const platform_t *plat, int *orig_sf_id, int *cur_sf_id,
 	*want_sf_id = -1;
 	*cur_sf_id = bump;
 
-	/* Вендорный путь переключает режим 0.9-1.3 с (замер 18.10 на двух ТВ), а
-	 * плеер фиксирует «потолок» раньше — на создании поверхности. Поэтому
-	 * после подтверждённой смены режима нужен один сброс потолка, иначе ролик
-	 * играет зажатым до конца замера (14-20 с). На backdoor-пути переключение
-	 * ~0.45 с и bump обычно успевает — там сброс не нужен. */
-	if (plat->sink == SINK_VENDOR_MODE)
-	{
-		g_bump_confirm_id = bump;
-		g_bump_confirm_hz = atv14_mode_hz (plat, bump);
-		g_bump_confirm_us = now_us ();
-	}
+	/* Вендорный путь (Android 10/11): сброс потолка здесь НЕ делается.
+	 * Живой замер 18.10: смена плотности перезапускает декодер, демон видит
+	 * «новое видео» и заново применяет быстрое решение по заявленной частоте —
+	 * режим начинает мигать 50 ↔ 60 каждые ~20 с (проверено на .42 + Samsung:
+	 * без сброса режим стоит ровно, со сбросом — петля). Штатный путь там и так
+	 * возвращает режим на максимум по окончании видео, поэтому зажим возможен
+	 * только для первого ролика после запуска демона — это дешевле петли.
+	 * Сброс по замеру (ceiling_maybe_reset) при явно включённом
+	 * switch.ceiling.reset остаётся: он одноразовый и петлю не заводит. */
 	/* Возврат после видео — на максимум, а не на прежний режим: иначе
 	 * следующий ролик начнётся с низкого «потолка», и зажим вернётся. */
 	*orig_sf_id = bump;
@@ -2268,67 +2263,6 @@ static bool ceiling_take_restart (int cur_id)
 	           (cur_id >= 0) && (cur_id == g_ceiling_mode_id);
 	g_ceiling_restart_expected = false;
 	return own;
-}
-
-/* Режим после bump реально сменился — сбросить «потолок» плеера один раз.
- * Сравниваем имя режима в узле (вендорный путь задаёт режим именем). */
-static void ceiling_confirm_bump (const platform_t *plat)
-{
-	if (g_bump_confirm_id < 0)
-		return;
-
-	if (g_bump_confirm_id >= g_modes_n)
-	{
-		g_bump_confirm_id = -1;
-		return;
-	}
-
-	/* Режим не подтвердился за 4 с — сброс не делаем: смена не состоялась,
-	 * и повторять её здесь нечем (решение по замеру ниже). */
-	if ((now_us () - g_bump_confirm_us) > 4000000ULL)
-	{
-		trace (1, "bump: режим не подтвердился за 4 с — сброс потолка пропущен\n");
-		g_bump_confirm_id = -1;
-		return;
-	}
-
-	char *cm = sysfs_read (g_mode_path);
-	if (!cm)
-		return;
-
-	char nm [64];
-	size_t i = 0;
-	while (((i + 1) < sizeof (nm)) && cm [i] && cm [i] != '\n' && cm [i] != '\r')
-	{
-		nm [i] = cm [i];
-		i++;
-	}
-	nm [i] = 0;
-	free (cm);
-
-	if (strcmp (nm, g_modes [g_bump_confirm_id].name) != 0)
-	{
-		trace (2, "bump: жду имя режима '%s', узел отдаёт '%s'\n",
-		       g_modes [g_bump_confirm_id].name, nm);
-		return;
-	}
-
-	int id = g_bump_confirm_id;
-	int hz = g_bump_confirm_hz;
-	g_bump_confirm_id = -1;
-
-	/* Сбросы выключены или уже были на этом видео — второй не нужен. */
-	if (!g_ceiling_reset || (g_ceiling_resets > 0))
-		return;
-
-	g_ceiling_us = now_us ();
-	g_ceiling_resets++;
-	if (ceiling_reset_now () == 0)
-	{
-		g_ceiling_hz = hz;
-		g_ceiling_mode_id = id;
-		g_ceiling_restart_expected = true;
-	}
 }
 
 /* Статистика для GUI/API (afrd -s, status): legacy-структуры в ATV14 не
@@ -3709,10 +3643,6 @@ static int run_atv14 (const platform_t *plat)
 		}
 		else
 			skip_logged = false;
-
-		/* Вендорный путь: bump мог не успеть до первого кадра — как только
-		 * режим реально сменился, сбрасываем «потолок» плеера (журнал §49.7). */
-		ceiling_confirm_bump (plat);
 
 		act = guard_decide (video_eff, want_sf_id, cur_sf_id, &orig_sf_id, &held);
 
