@@ -2441,6 +2441,57 @@ static void atv14_recover_stale (const platform_t *plat)
 		       "но вернуть "HZ_FMT" Гц не удалось\n", HZ_ARGS (hz));
 }
 
+/* Рабочий стол, наши экраны и системный UI: их появление на переднем плане не
+ * повод поднимать режим. Иначе демон возвращал бы 60 Гц рабочему столу, который
+ * пользователь сознательно поставил на 50 Гц (живая находка 18.10: подъём
+ * срабатывал на com.google.android.tvlauncher). Пакет лаунчера определяется один
+ * раз при старте цикла. */
+static bool fg_is_desktop (const char *pkg)
+{
+	static char home [PKG_NAME_LEN] = { 0 };
+	static bool home_probed = false;
+
+	if (!home_probed)
+	{
+		home_probed = true;
+
+		char out [256];
+		if (exec_capture ("cmd package resolve-activity --brief -a android.intent.action.MAIN "
+		                  "-c android.intent.category.HOME", out, sizeof (out)) == 0)
+		{
+			/* Убираем хвостовые переводы строк: последняя НЕПУСТАЯ строка
+			 * и есть компонент, а наивный strrchr попал бы в пустую
+			 * (живая находка 18.10 — лаунчер не распознавался). */
+			size_t olen = strlen (out);
+			while (olen > 0 && (out [olen - 1] == '\n' || out [olen - 1] == '\r' ||
+			                    out [olen - 1] == ' '))
+				out [--olen] = 0;
+
+			char *p = strrchr (out, '\n');
+			p = p ? p + 1 : out;
+			char *slash = strchr (p, '/');
+			size_t n = slash ? (size_t)(slash - p) : strlen (p);
+			if ((n > 0) && (n < sizeof (home)))
+			{
+				memcpy (home, p, n);
+				home [n] = 0;
+				trace (1, "пакет рабочего стола: %s\n", home);
+			}
+		}
+	}
+
+	if (home [0] && (strcmp (pkg, home) == 0))
+		return true;
+
+	/* Наши собственные экраны и системный UI */
+	if (strcmp (pkg, "ru.reyter.afrd2") == 0)
+		return true;
+	if (strcmp (pkg, "com.android.systemui") == 0)
+		return true;
+
+	return false;
+}
+
 static int run_atv14 (const platform_t *plat)
 {
 	guard_action_t act;
@@ -3713,7 +3764,8 @@ static int run_atv14 (const platform_t *plat)
 
 				char fgp [PKG_NAME_LEN] = { 0 };
 				if (pkg_probe (plat, fgp, sizeof (fgp)) == 0 && fgp [0] &&
-				    strcmp (fgp, fg_seen) != 0)
+				    strcmp (fgp, fg_seen) != 0 &&
+				    (fgp [0] != 0) && !fg_is_desktop (fgp))
 				{
 					memcpy (fg_seen, fgp, sizeof (fg_seen));
 					trace (1, "передний план: %s — поднимаю режим заранее\n", fgp);
