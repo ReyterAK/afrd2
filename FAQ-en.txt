@@ -386,6 +386,8 @@
 ! OTT Navigator returned to the previous channel on the first AFR switch. Add a
 ! player to this list if you see clamping there and want AFRd2 to fight it. An
 ! empty list disables the mechanisms for everyone and leaves plain measurement.
+! A player listed under "Players that AFR disturbs" never gets the mechanisms:
+! that list promises to leave the mode alone.
 
 ! If some player is wrongly detected as 25 instead of 24 fps (or vice versa),
 ! that is not clamping but measurement inaccuracy: such players feed more frames

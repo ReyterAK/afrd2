@@ -1285,13 +1285,24 @@ static char g_cur_pkg [PKG_NAME_LEN];
 
 /* true — этому пакету применяем механики борьбы с «зажимом» (switch.bump.pkg).
  * Пустой список — не применяем никому: механики стоят перезапуска декодера
- * и смены конфигурации экрана, а зажим измерен только у штатного YouTube. */
+ * и смены конфигурации экрана, а зажим измерен только у штатного YouTube.
+ *
+ * Плеер из switch.skip.pkg («AFR мешает») механики не получает: обещание
+ * этого списка — «режим не переключаем и не удерживаем», и подъём режима ему
+ * противоречит. Иначе на Android 10/11, где штатный YouTube по умолчанию стоит
+ * в обоих списках, подъём по переднему плану всё равно трогал бы режим. */
 static bool bump_pkg_allows_pkg (const char *pkg)
 {
 	if (g_bump_pkgs.size == 0)
 		return false;
 
-	return pkg && pkg [0] && strlist_contains (&g_bump_pkgs, pkg);
+	if (!pkg || !pkg [0])
+		return false;
+
+	if ((g_skip_pkgs.size > 0) && strlist_contains (&g_skip_pkgs, pkg))
+		return false;
+
+	return strlist_contains (&g_bump_pkgs, pkg);
 }
 
 /* То же с определением пакета на переднем плане. Пакет опрашивается каждый
@@ -1416,6 +1427,9 @@ static int atv14_bump (const platform_t *plat, int *orig_sf_id, int *cur_sf_id,
 	{
 		if (g_bump_pkgs.size == 0)
 			trace (1, "bump: switch.bump.pkg пуст — режим не поднимаю\n");
+		else if ((g_skip_pkgs.size > 0) && strlist_contains (&g_skip_pkgs, bump_pkg))
+			trace (1, "bump: %s в switch.skip.pkg (AFR мешает) — режим не поднимаю\n",
+			       bump_pkg);
 		else
 			trace (1, "bump: %s не в switch.bump.pkg — режим не поднимаю\n",
 			       bump_pkg);
