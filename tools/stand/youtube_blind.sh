@@ -85,6 +85,18 @@ logonly () { echo "$(date '+%H:%M:%S') $*" >> "$EV"; }
 dev () { adb -s "$D" shell "$@" 2>/dev/null | tr -d '\r'; }
 suroot () { adb -s "$D" shell "su -c \"$1\"" 2>/dev/null | tr -d '\r'; }
 
+# Гигиена стенда (§58). Запуск ролика по deep-link создаёт задачу с базовым
+# намерением VIEW+URL; она переживает и force-stop, и перезагрузку, и тогда
+# запуск YouTube с иконки лаунчера сразу играет тот же ролик вместо главного
+# экрана. Скрипт-чистильщик кладём на бокс из репозитория и вызываем после
+# прогона.
+CLEAN_SH=/data/local/tmp/yt_task_clean.sh
+clean_tasks () {
+	[ -f "$(dirname "$0")/yt_task_clean.sh" ] || return 0
+	adb -s "$D" push "$(dirname "$0")/yt_task_clean.sh" "$CLEAN_SH" >/dev/null 2>&1
+	dev "chmod 755 $CLEAN_SH; sh $CLEAN_SH $PKG"
+}
+
 need_stand () {
 	if ! adb -s "$D" get-state >/dev/null 2>&1; then
 		echo "стенд $D недоступен (adb get-state)" >&2
@@ -714,6 +726,7 @@ cmd_run () { # <номер предъявления>
 	dur=$(( $(now) - t0 ))
 	pause_player >/dev/null
 	say "П$P: стоп, смотрели ${dur} с ($(state_desc))"
+	clean_tasks >/dev/null
 	[ "$at" != 0 ] && [ "$switched" = 0 ] && say "П$P: смена режима не выполнилась — предъявление недействительно"
 	echo
 	echo "  П$P — вердикт: плавно или рывки?"
@@ -761,6 +774,7 @@ cmd_auto () { # автономный прогон всех предъявлен�
 		fi
 		P=$((P + 1))
 	done
+	clean_tasks >/dev/null
 	say "автономный прогон завершён"
 }
 

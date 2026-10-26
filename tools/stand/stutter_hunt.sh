@@ -101,4 +101,11 @@ while [ "$r" -le "$RUNS" ]; do
 	r=$((r + 1))
 done
 
+# Гигиена стенда (§58): deep-link задача плеера переживает force-stop —
+# снимаем её, иначе запуск YouTube с иконки сразу играет тот же ролик.
+CLEAN=${0%/*}/yt_task_clean.sh
+if [ -f "$CLEAN" ]; then
+	say "гигиена: $(sh "$CLEAN" com.google.android.youtube.tv 2>&1 | tr '\n' ' ')"
+fi
+
 say "=== ИТОГ: зачтено прогонов=$done_runs аномалия=$anomaly $(date +%H:%M:%S) ==="

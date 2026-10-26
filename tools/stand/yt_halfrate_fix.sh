@@ -74,4 +74,6 @@ am force-stop "$PKG" >/dev/null 2>&1
 sleep 2
 service call SurfaceFlinger 1035 i32 "$ORIG_ID" >/dev/null 2>&1
 service call SurfaceFlinger 1035 i32 9999 >/dev/null 2>&1
+# Гигиена стенда (§58): deep-link задача переживает force-stop и перезагрузку.
+say "гигиена: $(sh "${0%/*}/yt_task_clean.sh" "$PKG" 2>&1 | tr '\n' ' ')"
 say "=== ИТОГ: воспроизведено=$bad попыток=$i режим=$(cat /sys/class/display/mode) $(date +%H:%M:%S) ==="

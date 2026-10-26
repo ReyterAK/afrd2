@@ -111,6 +111,13 @@ if [ -n "$PIN" ]; then
 	echo "unpin: mode=$(mode) $(syncnum) $(backdoor)" >> "$LOG"
 fi
 
+# Гигиена стенда (§58): если запускали по deep-link, задача плеера с этим
+# намерением остаётся в recents и после force-stop, и после перезагрузки —
+# тогда запуск с иконки лаунчера сразу играет тот же ролик. Снимаем её.
+if [ -f "${0%/*}/yt_task_clean.sh" ] && [ -n "$PKG" ]; then
+	echo "clean: $(sh "${0%/*}/yt_task_clean.sh" "$PKG" 2>&1 | tr '\n' ' ')" >> "$LOG"
+fi
+
 # вендорский путь: события FRA/HWC (журнал, §19.4)
 logcat -d -v time 2>/dev/null | grep -E \
 	"frameRateDisplay|setVideoLayerOn|adjustVsyncMode|configure width|Created component|waitMixVsync|wait for hw vsync|ModePolicy" \

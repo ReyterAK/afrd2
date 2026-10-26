@@ -67,4 +67,8 @@ am force-stop "$PKG" >/dev/null 2>&1
 sleep 2
 service call SurfaceFlinger 1035 i32 "$ORIG_ID" >/dev/null 2>&1
 service call SurfaceFlinger 1035 i32 9999 >/dev/null 2>&1
+# Гигиена стенда (§58): задача, созданная запуском по deep-link, переживает
+# force-stop и перезагрузку — после неё YouTube с иконки лаунчера сразу играет
+# тот же ролик. Снимаем её.
+say "гигиена: $(sh "${0%/*}/yt_task_clean.sh" "$PKG" 2>&1 | tr '\n' ' ')"
 say "=== ИТОГ: $(grep -c 'ПОЛОВИННАЯ-ПОДАЧА' "$OUT")/$RUNS половинной подачи $(date +%H:%M:%S) ==="
