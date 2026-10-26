@@ -379,6 +379,14 @@
 ! Android 10/11 it stays in the "Players that AFR disturbs" list by default,
 ! because on a slow mode switch there is a noticeable pause.
 
+! Next to it there is the "Players to fix clamping for" list - the applications
+! the mechanisms apply to. By default it holds only the stock YouTube, the only
+! player where clamping was measured; for some players the ceiling reset (a
+! display configuration change) restarts the player and breaks playback - e.g.
+! OTT Navigator returned to the previous channel on the first AFR switch. Add a
+! player to this list if you see clamping there and want AFRd2 to fight it. An
+! empty list disables the mechanisms for everyone and leaves plain measurement.
+
 ! If some player is wrongly detected as 25 instead of 24 fps (or vice versa),
 ! that is not clamping but measurement inaccuracy: such players feed more frames
 ! to the decoder than the nominal rate. The correction is set per player in

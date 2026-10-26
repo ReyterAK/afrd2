@@ -257,9 +257,30 @@ public class MainActivity extends Activity
         mOptions.edit ().putString ("switch_skip_pkg", kSkipYoutube).apply ();
     }
 
+    /* Умолчание switch.bump.pkg: демон применяет механики зажима только
+     * перечисленным плеерам, по умолчанию — штатному YouTube (зажим измерен
+     * только у него, а у остальных сброс потолка может перезапускать Activity).
+     * Проставляем один раз, чтобы строка настроек показывала то же, что делает
+     * демон; очищенный пользователем список не возвращаем. */
+    private void bumpPkgSeed ()
+    {
+        if (!Control.isAtv14 ())
+            return;
+
+        SharedPreferences req = getSharedPreferences ("requisites", 0);
+        if (req.getBoolean ("bump_pkg_seed", false))
+            return;
+
+        if (!mOptions.contains ("switch_bump_pkg"))
+            mOptions.edit ().putString ("switch_bump_pkg", kSkipYoutube).apply ();
+
+        req.edit ().putBoolean ("bump_pkg_seed", true).apply ();
+    }
+
     private boolean updateConfig ()
     {
         atv11SkipSeed ();
+        bumpPkgSeed ();
 
         // load config options from ini file
         Config conf = new Config ();

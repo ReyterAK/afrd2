@@ -150,6 +150,13 @@
         <SwitchPreference android:defaultValue="1" android:key="switch_bump"
                           android:summary="@string/prefsum_switch_bump"
                           android:title="@string/prefs_switch_bump"/>
+        <!-- Кому применяются механики зажима (switch.bump.pkg): зажим измерен
+             только у штатного YouTube, а у других плееров сброс потолка может
+             перезапустить Activity (живой случай — OTT Navigator). Умолчание
+             проставляет приложение (MainActivity.bumpPkgSeed). -->
+        <ru.cobra.zap.xprefs.XAppsPreference android:key="switch_bump_pkg"
+                          android:summary="@string/prefsum_switch_bump_pkg"
+                          android:title="@string/prefs_switch_bump_pkg"/>
         <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="20000" android:key="fps_measure_envelope_ms"
                           android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
                           android:singleLine="true" android:summary="@string/prefsum_fps_measure_envelope"

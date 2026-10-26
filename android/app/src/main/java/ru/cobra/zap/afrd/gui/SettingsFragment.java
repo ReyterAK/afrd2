@@ -103,6 +103,7 @@ public class SettingsFragment extends PreferenceFragment
         "pause_keep",
         "switch_restore_on_stop",
         "switch_bump",
+        "switch_bump_pkg",
         /* калибровка по плееру */
         "fps_correct_enable",
         "fps_correct_list",
@@ -161,6 +162,7 @@ public class SettingsFragment extends PreferenceFragment
     private static final String [][] kAppsPrefs =
     {
         { "switch_skip_pkg", AppsPickerActivity.MODE_MULTI },
+        { "switch_bump_pkg", AppsPickerActivity.MODE_MULTI },
         { "fps_correct_av1_pkg", AppsPickerActivity.MODE_SINGLE },
         { "mode_min_hz_list", AppsPickerActivity.MODE_PKG_VALUE },
         { "fps_correct_list", AppsPickerActivity.MODE_PKG_PERCENT },

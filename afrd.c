@@ -127,6 +127,17 @@ static uevent_filter_t g_filter_hdcp;
 
 static strlist_t g_vdec_blacklist;
 static strlist_t g_frhint_vdec_blacklist;
+
+/* Пакеты из switch.bump.pkg: кому применяются механики борьбы с «зажимом»
+ * (подъём режима до максимума и сброс «потолка» частоты).
+ *
+ * Зажим измерен только у штатного YouTube TV (журнал §28.9, §46.6, §47.2);
+ * у остальных плееров он не подтверждён, а механики не бесплатны: сброс
+ * потолка — это смена конфигурации экрана, и часть плееров на неё
+ * перезапускает Activity (живой случай: OTT Navigator возвращался к
+ * предыдущему каналу при первом срабатывании AFR). Поэтому механики
+ * применяются только перечисленным пакетам; пустой список — никому. */
+static strlist_t g_bump_pkgs;
 /* Пакеты из switch.skip.pkg: на Android 10-14 демон их мерит и пишет в журнал,
  * но режим не переключает и не удерживает — плеер сам выбирает темп отрисовки
  * под текущий режим экрана, а удержанный низкий режим «зажимал» бы следующий
@@ -717,6 +728,11 @@ static void framerate_restore (bool only_if_black)
  * (mode.min.hz.list, определение ниже). */
 static int mode_min_hz_for (const char *pkg);
 
+/* Приложение на переднем плане (определение ниже). Нужно гейту по списку
+ * switch.bump.pkg: подъём режима случается раньше первого замера, где пакет
+ * определяется в обычном порядке. */
+static int pkg_probe (const platform_t *plat, char *out, size_t out_sz);
+
 /* Пакет плеера текущего видео и решение по switch.skip.pkg (определения ниже:
  * нужны framerate_switch/delay_framerate_switch, которые идут раньше). */
 static const char *pkg_name (void);
@@ -1267,6 +1283,45 @@ static bool atv14_rate_allowed (int hz, void *ctx)
 /* Пакет на переднем плане (определение ниже, нужно для mode.min.hz.list). */
 static char g_cur_pkg [PKG_NAME_LEN];
 
+/* true — этому пакету применяем механики борьбы с «зажимом» (switch.bump.pkg).
+ * Пустой список — не применяем никому: механики стоят перезапуска декодера
+ * и смены конфигурации экрана, а зажим измерен только у штатного YouTube. */
+static bool bump_pkg_allows_pkg (const char *pkg)
+{
+	if (g_bump_pkgs.size == 0)
+		return false;
+
+	return pkg && pkg [0] && strlist_contains (&g_bump_pkgs, pkg);
+}
+
+/* То же с определением пакета на переднем плане. Пакет опрашивается каждый
+ * раз, без кэша: подъём случается раньше первого замера (где пакет иначе
+ * определяется), а кэш от прошлого приложения отправил бы механики не тому
+ * плееру. Опрос стоит 60-70 мс, а подъёмов на ролик один-два.
+ *
+ * pkg_out (может быть NULL) получает определённый пакет — для журнала: без
+ * него отказ не отличить от «передний план не определился». */
+static bool bump_pkg_allows (const platform_t *plat, char *pkg_out, size_t sz)
+{
+	if (pkg_out && sz)
+		pkg_out [0] = 0;
+
+	if (g_bump_pkgs.size == 0)
+		return false;
+
+	char pkg [PKG_NAME_LEN] = { 0 };
+	int rc = pkg_probe (plat, pkg, sizeof (pkg));
+
+	if (pkg_out && sz)
+	{
+		snprintf (pkg_out, sz, "%s", (rc == 0) ? pkg
+		          : (rc == -1) ? "(передний план не прочитан)"
+		                       : "(передний план не разобран)");
+	}
+
+	return (rc == 0) && bump_pkg_allows_pkg (pkg);
+}
+
 /* Сброс «потолка» частоты плеера (switch.ceiling.reset); определение ниже.
  * Нужен в atv14_bump: на вендорном пути режим меняется дольше, чем плеер
  * успевает зафиксировать частоту. */
@@ -1352,6 +1407,20 @@ static int atv14_bump (const platform_t *plat, int *orig_sf_id, int *cur_sf_id,
 	if (!g_switch_bump || (plat->sink == SINK_LEGACY))
 		return -1;
 
+	/* Механики зажима — только плеерам из switch.bump.pkg (журнал §55.9):
+	 * зажим измерен у штатного YouTube, а у плееров, которые на смену
+	 * конфигурации экрана перезапускают Activity, сброс потолка ломает
+	 * воспроизведение (OTT Navigator возвращался к предыдущему каналу). */
+	char bump_pkg [PKG_NAME_LEN] = { 0 };
+	if (!bump_pkg_allows (plat, bump_pkg, sizeof (bump_pkg)))
+	{
+		if (g_bump_pkgs.size == 0)
+			trace (1, "bump: switch.bump.pkg пуст — режим не поднимаю\n");
+		else
+			trace (1, "bump: %s не в switch.bump.pkg — режим не поднимаю\n",
+			       bump_pkg);
+		return -1;
+	}
 
 	int bw = 0, bh = 0;
 	int cur = atv_current_target (plat, &bw, &bh);
@@ -2239,6 +2308,13 @@ static void ceiling_maybe_reset (const platform_t *plat, int target_id, bool pla
 {
 	if (!g_ceiling_reset || (plat->sink == SINK_LEGACY))
 		return;
+
+	/* Сброс — смена конфигурации экрана: часть плееров перезапускает на ней
+	 * Activity и теряет состояние (живой случай: OTT Navigator вернулся к
+	 * предыдущему каналу). Поэтому только плеерам из switch.bump.pkg. */
+	if (!bump_pkg_allows (plat, NULL, 0))
+		return;
+
 	if (!playing || (target_id < 0))
 		return;
 	if (g_ceiling_resets >= CEILING_RESETS_MAX)
@@ -3793,7 +3869,7 @@ static int run_atv14 (const platform_t *plat)
 		 * может что-то изменить: режим ниже максимума, видео не идёт, и не
 		 * чаще раза в секунду. */
 		if (g_switch_bump && g_switch_bump_on_app && !video &&
-		    (plat->sink != SINK_LEGACY))
+		    (plat->sink != SINK_LEGACY) && (g_bump_pkgs.size > 0))
 		{
 			int bw = 0, bh = 0;
 			int bcur = atv_current_target (plat, &bw, &bh);
@@ -3810,17 +3886,27 @@ static int run_atv14 (const platform_t *plat)
 				    (fgp [0] != 0) && !fg_is_desktop (fgp))
 				{
 					memcpy (fg_seen, fgp, sizeof (fg_seen));
-					trace (1, "передний план: %s — поднимаю режим заранее\n", fgp);
 
-					if (atv14_bump (plat, &orig_sf_id, &cur_sf_id, &want_sf_id, &held) == 0)
+					/* Подъём — только плеерам из switch.bump.pkg: у
+					 * остальных зажим не подтверждён, а лишний переход
+					 * режима они видят как «щелчок» (журнал §55.9). */
+					if (!bump_pkg_allows_pkg (fgp))
+						trace (1, "передний план: %s — не в switch.bump.pkg, "
+						       "режим не поднимаю\n", fgp);
+					else
 					{
-						/* Удержания здесь нет: цель подъёма — чтобы рабочий
-						 * стол (и следующий ролик) начинались с максимума.
-						 * Иначе guard_decide сразу вернёт «исходный» режим,
-						 * то есть повторно применит тот же режим и потратит
-						 * до секунды (живая находка 18.10). */
-						held = false;
-						orig_sf_id = -1;
+						trace (1, "передний план: %s — поднимаю режим заранее\n", fgp);
+
+						if (atv14_bump (plat, &orig_sf_id, &cur_sf_id, &want_sf_id, &held) == 0)
+						{
+							/* Удержания здесь нет: цель подъёма — чтобы рабочий
+							 * стол (и следующий ролик) начинались с максимума.
+							 * Иначе guard_decide сразу вернёт «исходный» режим,
+							 * то есть повторно применит тот же режим и потратит
+							 * до секунды (живая находка 18.10). */
+							held = false;
+							orig_sf_id = -1;
+						}
 					}
 				}
 			}
@@ -4076,6 +4162,19 @@ int afrd_run ()
 	 * частоты (журнал §47.6). На старом пути зажима нет — там ключ не
 	 * действует (CFGKEY_ATV14), умолчание 0. */
 	g_switch_bump = cfg_get_int ("switch.bump", (g_plat.kind == PLAT_LEGACY) ? 0 : 1);
+
+	/* Кому применяются механики зажима (switch.bump.pkg). Умолчание — штатный
+	 * YouTube: только у него зажим измерен (журнал §28.9, §46.6, §47.2). У
+	 * остальных плееров он не подтверждён, а сброс потолка — смена
+	 * конфигурации экрана, на которой часть плееров перезапускает Activity
+	 * (живой случай: OTT Navigator возвращался к предыдущему каналу).
+	 * Явно заданный список не трогаем, в том числе пустой — «никому». */
+	if ((g_plat.kind != PLAT_LEGACY) && !cfg_get (g_cfg, "switch.bump.pkg"))
+	{
+		strlist_free (&g_bump_pkgs);
+		strlist_add (&g_bump_pkgs, "com.google.android.youtube.tv");
+		trace (1, "switch.bump.pkg не задан — механики зажима только для штатного YouTube\n");
+	}
 
 	/* Подъём режима по выходу плеера на передний план: на Android 10/11 это
 	 * единственный способ успеть до того, как плеер запомнит частоту. */
@@ -4405,6 +4504,7 @@ int afrd_init ()
 	blacklist_rates_load ("mode.blacklist.rates");
 	mode_min_hz_load ("mode.min.hz.list");
 	strlist_load (&g_skip_pkgs, "switch.skip.pkg", "packages: no mode switching");
+	strlist_load (&g_bump_pkgs, "switch.bump.pkg", "packages: clamp fix");
 
 	trace (1, "\trefresh rate selection: use fractional %d, exact %d\n",
 		g_mode_use_fract, g_mode_prefer_exact);
@@ -4481,6 +4581,7 @@ void afrd_fini ()
 	strlist_free (&g_vdec_blacklist);
 	strlist_free (&g_frhint_vdec_blacklist);
 	strlist_free (&g_skip_pkgs);
+	strlist_free (&g_bump_pkgs);
 	g_mode_blacklist_rates_count = 0;
 
 	g_enable = false;

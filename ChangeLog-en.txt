@@ -1,6 +1,17 @@
 AFRd2 — a fork of AFRd (based on AFRd 0.3.2 by Andrey Zabolotnyi,
 anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
+Not released yet
+
+    * The frame rate "clamping" mechanisms (mode bump and ceiling reset) no
+      longer apply to every player: a new switch.bump.pkg list holds only the
+      stock YouTube by default. Clamping was measured there; for other players
+      it is not confirmed, and the ceiling reset is a display configuration
+      change that restarts the Activity in some players (OTT Navigator returned
+      to the previous channel on the first AFR switch). An empty list disables
+      the mechanisms completely. The app has a new "Players to fix clamping
+      for" item.
+
 1.1.0 Sun Oct 18 2026
 
     Release after the 1.0.0 publication: the main thing is that frame rate
