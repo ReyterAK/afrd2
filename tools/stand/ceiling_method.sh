@@ -22,6 +22,9 @@
 #
 # Переменные:
 #   URL    — ролик (по умолчанию Big Buck Bunny 60 к/с);
+#   PLAYER — компонент плеера, если ссылку надо открыть именно им
+#            (например com.brouken.player/.PlayerActivity);
+#   MIME   — MIME-тип для VIEW (по умолчанию video/mp4);
 #   START  — `auto` (ссылка; по умолчанию) или `manual` (ролик запускает
 #            человек — нужно там, где плеер не принимает ссылку: на ATV11
 #            Cobalt показывает «Видео недоступно», а клик по плитке играет);
@@ -32,6 +35,7 @@
 # Код возврата: 0 — проверки выполнены, 1 — зажим создать не удалось.
 
 URL=${URL:-https://youtu.be/aqz-KE-bpKQ}
+MIME=${MIME:-video/mp4}
 START=${START:-auto}
 LOW=${LOW:-1080p24hz}
 HIGH=${HIGH:-1080p60hz}
@@ -98,47 +102,42 @@ mode_set () { # <имя режима>; 0 — применено
 	cur=$(cat /sys/class/display/mode 2>/dev/null)
 	[ "$cur" = "$1" ] && return 0
 
-	if [ -z "$BACKDOOR" ]; then
-		# Проверяем 1035 один раз: на 10/11 он отвечает «Operation not permitted».
-		if service call SurfaceFlinger 1035 i32 9999 2>&1 | grep -q -i "not permitted"; then
-			BACKDOOR=no
-		else
-			BACKDOOR=yes
-		fi
-	fi
-
-	if [ "$BACKDOOR" = yes ]; then
-		# id режима берём из таблицы display по разрешению и частоте: имя вида
-		# «1080p24hz» разбираем на высоту и частоту, интерлейс и дробные имена
-		# (1080i60hz, 1080p59.94hz) при этом просто не совпадут.
-		h=$(echo "$1" | sed -n 's/^\([0-9][0-9]*\)p[0-9.]*hz$/\1/p')
-		f=$(echo "$1" | sed -n 's/^[0-9][0-9]*p\([0-9.]*\)hz$/\1/p')
-		if [ -z "$h" ] || [ -z "$f" ]; then
-			say "  !! имя режима «$1» не разобрать (ожидается <высота>p<частота>hz)"
-			return 1
-		fi
-
-		id=$(dumpsys display 2>/dev/null \
-		     | grep -oE 'id=[0-9]+, width=[0-9]+, height=[0-9]+, fps=[0-9.]+' \
-		     | awk -F'[=,]' -v h="$h" -v f="$f" '
-		        { id = $2; hh = $6; ff = $8 + 0
-		          if (hh != h) next
-		          d = ff - f; if (d < 0) d = -d
-		          if (d < f * 0.02) { print id; exit } }')
-		if [ -z "$id" ]; then
-			say "  !! режим $1 не найден в таблице display"
-			return 1
-		fi
-
-		service call SurfaceFlinger 1035 i32 "$id" >/dev/null 2>&1
-		[ "$(cat /sys/class/display/mode 2>/dev/null)" = "$1" ] && return 0
-		say "  !! 1035 с id $id не дал режим $1"
+	# Путь выбирается по наличию помощника, а не по пробе 1035: на Android 11
+	# транзакция отвечает не «not permitted», а «Broken pipe», и проба давала
+	# ложное «backdoor работает» (живая находка на `.42` после перепрошивки, §64).
+	# Помощник кладёт приложение AFRd2 только на вендорном пути (10/11).
+	if [ -x "$HELPER" ]; then
+		sh "$HELPER" "$1" >/dev/null 2>&1
+		if [ "$(cat /sys/class/display/mode 2>/dev/null)" = "$1" ]; then return 0; fi
+		say "  !! помощник не дал режим $1 (сейчас $(cat /sys/class/display/mode 2>/dev/null))"
 		return 1
 	fi
 
-	[ -x "$HELPER" ] || { say "  !! помощник $HELPER недоступен — режим не сменить"; return 1; }
-	sh "$HELPER" "$1" >/dev/null 2>&1
-	[ "$(cat /sys/class/display/mode 2>/dev/null)" = "$1" ]
+	# Backdoor (Android 12-14): id режима берём из таблицы display по
+	# разрешению и частоте; имя вида «1080p24hz» разбираем на части.
+	h=$(echo "$1" | sed -n 's/^\([0-9][0-9]*\)p[0-9.]*hz$/\1/p')
+	f=$(echo "$1" | sed -n 's/^[0-9][0-9]*p\([0-9.]*\)hz$/\1/p')
+	if [ -z "$h" ] || [ -z "$f" ]; then
+		say "  !! имя режима «$1» не разобрать (ожидается <высота>p<частота>hz)"
+		return 1
+	fi
+
+	id=$(dumpsys display 2>/dev/null \
+	     | grep -oE 'id=[0-9]+, width=[0-9]+, height=[0-9]+, fps=[0-9.]+' \
+	     | awk -F'[=,]' -v h="$h" -v f="$f" '
+	        { id = $2; hh = $6; ff = $8 + 0
+	          if (hh != h) next
+	          d = ff - f; if (d < 0) d = -d
+	          if (d < f * 0.02) { print id; exit } }')
+	if [ -z "$id" ]; then
+		say "  !! режим $1 не найден в таблице display"
+		return 1
+	fi
+
+	service call SurfaceFlinger 1035 i32 "$id" >/dev/null 2>&1
+	[ "$(cat /sys/class/display/mode 2>/dev/null)" = "$1" ] && return 0
+	say "  !! 1035 с id $id не дал режим $1"
+	return 1
 }
 
 codec_svc () {
@@ -203,16 +202,47 @@ wait_video () { # ждёт появления декодера; 0 — появи
 	return 1
 }
 
+# Плеер может открыть файл на паузе — Just Player так и делает (живая находка
+# на `.42` после перепрошивки, §64: замер подачи возвращал n/a, потому что
+# кадры не шли, а режим при этом менялся). Дожимаем Play и проверяем, что
+# позиция ролика растёт.
+ensure_playing () {
+	p1=$(pos)
+	input keyevent KEYCODE_MEDIA_PLAY >/dev/null 2>&1
+	sleep 3
+	p2=$(pos)
+	if [ -n "$p1" ] && [ -n "$p2" ] && [ "$p1" = "$p2" ]; then
+		# ещё попытка: часть плееров реагирует только на центр/DPAD_CENTER
+		input keyevent KEYCODE_DPAD_CENTER >/dev/null 2>&1
+		sleep 3
+		p3=$(pos)
+		if [ "$p1" = "$p3" ]; then
+			say "  !! позиция ролика не растёт ($p1) — пауза не снята"
+			return 1
+		fi
+	fi
+	return 0
+}
+
 start_video () {
 	am force-stop com.google.android.youtube.tv >/dev/null 2>&1
 	am force-stop org.videolan.vlc >/dev/null 2>&1
 	am force-stop net.gtvbox.videoplayer >/dev/null 2>&1
+	am force-stop com.brouken.player >/dev/null 2>&1
 	if [ "$START" = manual ]; then
 		say "  запустите ролик на боксе (у вас $WAIT с)…"
 		wait_video
 		return $?
 	fi
-	am start -a android.intent.action.VIEW -d "$URL" >/dev/null 2>&1
+
+	# PLAYER — компонент активности плеера. Нужен там, где на file:// не
+	# находится обработчик либо плеер по умолчанию не тот (на ATV11 после
+	# сброса из плееров только Vimu со своим AFR; годный — Just Player).
+	if [ -n "$PLAYER" ]; then
+		am start -n "$PLAYER" -a android.intent.action.VIEW -d "$URL" -t "$MIME" >/dev/null 2>&1
+	else
+		am start -a android.intent.action.VIEW -d "$URL" >/dev/null 2>&1
+	fi
 	wait_video
 }
 
@@ -220,7 +250,8 @@ clamp () { # создать зажим: старт под LOW, подъём до
 	mode_set "$LOW" || { say "  !! режим $LOW не выставился"; return 1; }
 	sleep 2
 	start_video || { say "  !! видео не стартовало"; return 1; }
-	sleep 4
+	ensure_playing
+	sleep 3
 	set -- $(stats)
 	say "    под $LOW:      подача $1 к/с, интервал $2 периода(ов) [$4], декодер $(decrate) к/с"
 	mode_set "$HIGH" || { say "  !! режим $HIGH не выставился"; return 1; }
