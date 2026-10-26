@@ -460,6 +460,7 @@ OWN_AFR_TEST=1 sh tools/stand/acceptance_matrix.sh         # + плеер со �
 API_TEST=1 sh tools/stand/acceptance_matrix.sh             # + API, подсказка плеера, сброс счётчика (R34в)
 LOG=acceptance.log sh tools/stand/acceptance_matrix.sh     # + протокол в файл
 sh tools/stand/guard_test.sh                               # SIGTERM: режим возвращён, флаг снят
+sh tools/stand/ceiling_method.sh                           # сброс потолка на ЭТОМ боксе: сервис кодека, цена, зажим
 sh tools/stand/youtube_clamp.sh status                     # «зажим FPS» в штатном YouTube глазами (ATV9): фазы A/B/C
 ```
 
