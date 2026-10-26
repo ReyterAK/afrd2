@@ -121,13 +121,22 @@ static void test_codec_pick (void)
 
 static void test_build_codec_restart (void)
 {
-	char buf [512];
+	/* Команда с проверкой по ps длиннее прежней (563 знака) — буфер с запасом:
+	 * в демоне это EXEC_CMD_MAX (1024), и усечённая команда недопустима. */
+	char buf [1024];
 
 	CHECK (ceiling_build_codec_restart (buf, sizeof (buf), "vendor.media.omx") == 0);
 	CHECK (strstr (buf, "setprop ctl.restart vendor.media.omx") != NULL);
 	/* успех проверяется сменой pid: init молча игнорирует чужой сервис */
 	CHECK (strstr (buf, "init.svc_debug_pid.vendor.media.omx") != NULL);
+	/* Android 8-9: свойства init.svc_debug_pid нет, хотя перезапуск работает —
+	 * запасной признак, смена pid процессов с этим бинарником в аргументах */
+	CHECK (strstr (buf, "media.omx") != NULL);
 	CHECK (strstr (buf, "exit 1") != NULL);
+
+	/* неизвестный сервис — команду не собираем вовсе: признак процесса
+	 * взять неоткуда, а без него проверка была бы фиктивной */
+	CHECK (ceiling_build_codec_restart (buf, sizeof (buf), "some.other.service") == -1);
 
 	CHECK (ceiling_build_codec_restart (buf, sizeof (buf), NULL) == -1);
 	CHECK (ceiling_build_codec_restart (buf, sizeof (buf), "") == -1);
