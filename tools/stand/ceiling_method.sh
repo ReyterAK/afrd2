@@ -34,7 +34,12 @@ say () { echo "$@"; echo "$@" >> "$OUT"; }
 # среднее до бессмысленного значения (живой случай §61.1), а доля кратности
 # периода устойчива.
 stats () {
-	L=$(dumpsys SurfaceFlinger --list 2>/dev/null | grep 'SurfaceView\[' | grep -i blast | head -1)
+	# Имя видео-слоя зависит от версии: на Android 12+ это
+	# `SurfaceView[...](BLAST)#N`, на 8-11 — `SurfaceView - pkg/Activity#N`.
+	# Без второго шаблона замер на 8-11 отдаёт пустоту (живая находка на
+	# ATV11/`.42`: подача печаталась как n/a).
+	L=$(dumpsys SurfaceFlinger --list 2>/dev/null | grep 'SurfaceView' \
+	    | grep -v -i background | grep -E '\(BLAST\)|SurfaceView - ' | head -1)
 	[ -z "$L" ] && { echo "n/a 0 0"; return; }
 	dumpsys SurfaceFlinger --latency "$L" > /data/local/tmp/cm.lat 2>/dev/null
 	awk 'NR == 1 { p = $1 / 1e6; next }
