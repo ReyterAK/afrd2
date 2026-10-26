@@ -48,6 +48,16 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       (switch.skip.pkg) never gets the mechanisms: that list promises to leave
       the mode alone. The app has a new "Players to fix clamping for" item.
 
+    * Defaults for the clamping mechanics on Android 11-14 now follow the
+      verified scheme. `switch.skip.pkg` is empty on every path: the stock
+      YouTube is no longer excluded (on 10/11 it was there because of a
+      "reset costs 1.5-2.5 s" estimate that did not hold — the real figure is
+      0.26 s). `switch.ceiling.reset` is on by default on the vendor path too,
+      and the default method is a codec restart (`switch.ceiling.method=auto`):
+      it does not change the display mode, so clamping is fixed without an
+      extra mode switch and the playback position is preserved. Measured on
+      Android 11: 50.02 -> 59.94 fps in 0.26 s.
+
     * Ceiling reset by restarting the codec (switch.ceiling.method). The old
       way - a display density change - relaunches the Activity and costs 6.8 s
       of "waiting"; the new one recreates only the decoder session, and the

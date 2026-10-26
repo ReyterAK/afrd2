@@ -240,23 +240,6 @@ public class MainActivity extends Activity
         return updateConfig ();
     }
 
-    /* Умолчание switch.skip.pkg на Android 10/11: там штатный YouTube остаётся
-     * исключённым (холодный старт 60-фпс ролика под 50 Гц зажимается, а сброс
-     * потолка стоит 1.5-2.5 с). Профиль этого значения больше не содержит —
-     * умолчание зависит от пути, — поэтому на 10/11 записываем его в настройки
-     * один раз, чтобы строка настроек и поведение демона совпадали. Пустое
-     * значение (пользователь снял исключение) не перетираем. */
-    private void atv11SkipSeed ()
-    {
-        if (!Control.isAtv14 () || (android.os.Build.VERSION.SDK_INT > 30))
-            return;
-
-        if (mOptions.contains ("switch_skip_pkg"))
-            return;
-
-        mOptions.edit ().putString ("switch_skip_pkg", kSkipYoutube).apply ();
-    }
-
     /* Умолчание switch.bump.pkg: демон применяет механики зажима только
      * перечисленным плеерам, по умолчанию — штатному YouTube (зажим измерен
      * только у него, а у остальных сброс потолка может перезапускать Activity).
@@ -279,7 +262,6 @@ public class MainActivity extends Activity
 
     private boolean updateConfig ()
     {
-        atv11SkipSeed ();
         bumpPkgSeed ();
 
         // load config options from ini file
@@ -411,18 +393,13 @@ public class MainActivity extends Activity
      *
      * Убираем только штатный YouTube, свои записи пользователя сохраняем;
      * сделанную после обновления правку не трогаем никогда (флаг в requisites).
-     * На Android 10/11 исключение остаётся: там холодный старт 60-фпс ролика под
-     * 50 Гц зажимается, а сброс потолка стоит 1.5-2.5 с. */
+     * Действует на всех путях: на 10/11 зажим тоже снимается сбросом потолка
+     * (замер §64.7 журнала: подача 50.02 -> 59.94 к/с за 0.26 с). */
     private static final String kSkipYoutube = "com.google.android.youtube.tv";
 
     private void atv14SkipDefault (Config conf)
     {
         if (!Control.isAtv14 ())
-            return;
-
-        /* 30 — Android 11: на 12+ исключение снимаем, на 10/11 оставляем.
-         * Литерал, а не VERSION_CODES.S: compileSdk проекта — 27. */
-        if (android.os.Build.VERSION.SDK_INT <= 30)
             return;
 
         SharedPreferences req = getSharedPreferences ("requisites", 0);
