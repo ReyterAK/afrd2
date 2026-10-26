@@ -104,3 +104,108 @@ int ceiling_should_reset (int confirmed_hz, int target_hz)
 
 	return (target_hz > confirmed_hz + CEILING_HZ_TOLERANCE) ? 1 : 0;
 }
+
+/* --- перезапуск кодека как второй способ сброса потолка (журнал §60) --------
+ *
+ * Декодер живёт в HAL-процессе (Codec2 на Android 12+, OMX на 8-11), а не в
+ * приложении. Перезапуск этого процесса пересоздаёт сессию декодера у плеера:
+ * плеер получает ошибку/новый кодек, перечитывает режим дисплея и подача
+ * выправляется — с текущей позиции ролика. Замер на ATV14: декодер пропадает
+ * на 68 мс, возвращается на 1.1 с (смена плотности — 6.8 с).
+ *
+ * Имя сервиса зависит от версии Android и прошивки, поэтому оно не
+ * зашивается, а опрашивается: init отдаёт состояние в init.svc.<имя>.
+ * Порядок списка — приоритет: сначала Codec2 (Android 12+), затем OMX
+ * (Android 8-11).
+ */
+static const char *const ceiling_codec_services [] =
+{
+	"android-hardware-media-c2-hal-1-2",
+	"android-hardware-media-c2-hal-1-1",
+	"android-hardware-media-c2-hal-1-0",
+	"vendor.media.omx",
+	"media.omx",
+	NULL
+};
+
+int ceiling_codec_probe_cmd (char *buf, size_t n)
+{
+	if (!buf || (n == 0))
+		return -1;
+
+	size_t used = 0;
+	int r = snprintf (buf, n, "for s in");
+	if (r < 0 || ((size_t) r >= n))
+		return -1;
+	used = (size_t) r;
+
+	for (int i = 0; ceiling_codec_services [i]; i++)
+	{
+		r = snprintf (buf + used, n - used, " %s", ceiling_codec_services [i]);
+		if (r < 0 || ((size_t) r >= n - used))
+			return -1;
+		used += (size_t) r;
+	}
+
+	r = snprintf (buf + used, n - used,
+	              "; do echo \"$s=$(getprop init.svc.$s)\"; done");
+	if (r < 0 || ((size_t) r >= n - used))
+		return -1;
+
+	return 0;
+}
+
+const char *ceiling_codec_pick (const char *probe_out)
+{
+	if (!probe_out)
+		return NULL;
+
+	/* Вывод опроса — строки «<имя>=running» (getprop пустого свойства печатает
+	 * пустую строку, поэтому «=running» без имени тоже возможно). Выбираем
+	 * первый кандидат в порядке приоритета, а не первый по порядку строк:
+	 * порядок строк задаёт shell, и полагаться на него незачем. */
+	for (int i = 0; ceiling_codec_services [i]; i++)
+	{
+		const char *name = ceiling_codec_services [i];
+		size_t len = strlen (name);
+		const char *p = probe_out;
+
+		while (*p)
+		{
+			const char *eol = strchr (p, '\n');
+			size_t line_len = eol ? (size_t)(eol - p) : strlen (p);
+
+			if ((line_len > len + 1) &&
+			    (strncmp (p, name, len) == 0) &&
+			    (p [len] == '=') &&
+			    (strncmp (p + len + 1, "running", 7) == 0))
+				return name;
+
+			if (!eol)
+				break;
+			p = eol + 1;
+		}
+	}
+
+	return NULL;
+}
+
+int ceiling_build_codec_restart (char *buf, size_t n, const char *svc)
+{
+	if (!buf || (n == 0) || !svc || !*svc)
+		return -1;
+
+	/* Признак успеха — НОВЫЙ pid: `setprop ctl.restart` только выставляет
+	 * свойство, а init может и проигнорировать его (нет такого сервиса, нет
+	 * прав), вернув 0. Поэтому ждём смену init.svc_debug_pid.<svc>; ожидание
+	 * ограничено, чтобы зависший HAL не держал цикл демона. */
+	int r = snprintf (buf, n,
+	                  "p0=$(getprop init.svc_debug_pid.%s); setprop ctl.restart %s; "
+	                  "i=0; while [ $i -lt 12 ]; do sleep 0.25; "
+	                  "p=$(getprop init.svc_debug_pid.%s); "
+	                  "if [ -n \"$p\" ] && [ \"$p\" != \"$p0\" ]; then echo \"pid $p\"; exit 0; fi; "
+	                  "i=$((i+1)); done; echo \"pid не сменился\"; exit 1",
+	                  svc, svc, svc);
+
+	return ((r > 0) && ((size_t) r < n)) ? 0 : -1;
+}

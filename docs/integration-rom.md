@@ -289,6 +289,7 @@ AFRd2 — форк AFRd (Andrey Zabolotnyi) под **GPL-3**. Размещени
 | `switch.bump.pkg` | Android 10–14; умолчание — `com.google.android.youtube.tv` | — |
 | `switch.bump` | Android 10–14 | — |
 | `switch.ceiling.reset` | Android 12–14 (на Android 10/11 выключен: смена плотности стоит 1.5–2.5 с) | — |
+| `switch.ceiling.method` | Android 10–14; `auto` — перезапуск кодека (1.1 с) с запасным путём на плотность, `codec`, `density` | — |
 | `switch.bump.on.app` | Android 10–14 | — |
 | `fps.correct.av1.pct` | Android 10–14 | — |
 | `vendor.disp.cli` | Android 10–14 | — |

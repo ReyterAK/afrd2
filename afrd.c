@@ -29,6 +29,7 @@
 
 #define __USE_GNU
 #include <math.h>
+#include <strings.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <linux/netlink.h>
@@ -2269,7 +2270,61 @@ static int ceiling_restore (int had_override, int prev)
 	return 0;
 }
 
-static int ceiling_reset_now (void)
+/* Способ сброса потолка (switch.ceiling.method): перезапуск процесса кодека
+ * (быстро: 1.1 с, но перезапускает декодер у всех приложений) или смена
+ * плотности экрана (медленно: 6.8 с, зато в пределах одного приложения).
+ * auto — сначала кодек, при неудаче плотность. */
+typedef enum
+{
+	CEIL_METHOD_AUTO = 0,
+	CEIL_METHOD_CODEC,
+	CEIL_METHOD_DENSITY
+} ceil_method_t;
+
+static ceil_method_t g_ceiling_method = CEIL_METHOD_AUTO;
+
+/* Перезапуск процесса кодека: имя сервиса ищется опросом init, а успех
+ * проверяется сменой pid — иначе init молча проигнорирует ctl.restart, а демон
+ * счёл бы потолок сброшенным (журнал §60). */
+static int ceiling_reset_codec (void)
+{
+	char cmd [EXEC_CMD_MAX];
+	char resp [512];
+
+	if (ceiling_codec_probe_cmd (cmd, sizeof (cmd)) != 0)
+		return -1;
+
+	if (exec_status (cmd, resp, sizeof (resp)) != 0)
+	{
+		trace (1, "сброс потолка: опрос сервисов кодека не выполнился\n");
+		return -1;
+	}
+
+	const char *svc = ceiling_codec_pick (resp);
+	if (!svc)
+	{
+		trace (1, "сброс потолка: запущенный сервис кодека не найден "
+		       "(ни Codec2, ни OMX)\n");
+		return -1;
+	}
+
+	if (ceiling_build_codec_restart (cmd, sizeof (cmd), svc) != 0)
+		return -1;
+
+	int rc = exec_status (cmd, resp, sizeof (resp));
+	if (rc != 0)
+	{
+		trace (1, "сброс потолка: сервис кодека %s не перезапустился (код %d)\n",
+		       svc, rc);
+		return -1;
+	}
+
+	trace (0, "потолок частоты сброшен перезапуском кодека (%s): плеер "
+	       "пересоздаст декодер с текущей позиции\n", svc);
+	return 0;
+}
+
+static int ceiling_reset_density (void)
 {
 	char resp [256];
 
@@ -2309,6 +2364,26 @@ static int ceiling_reset_now (void)
 	trace (0, "потолок частоты сброшен сменой плотности %d->%d: плеер перечитает режим\n",
 	       cur, next);
 	return 0;
+}
+
+/* Сброс потолка выбранным способом. Возврат: 0 — сброшен, -1 — нет. */
+static int ceiling_reset_now (void)
+{
+	switch (g_ceiling_method)
+	{
+		case CEIL_METHOD_CODEC:
+			return ceiling_reset_codec ();
+
+		case CEIL_METHOD_DENSITY:
+			return ceiling_reset_density ();
+
+		default:
+			if (ceiling_reset_codec () == 0)
+				return 0;
+			/* Причина отказа уже в журнале; плотность — запасной путь. */
+			trace (1, "сброс потолка: перехожу к смене плотности\n");
+			return ceiling_reset_density ();
+	}
 }
 
 /* Пределы на сбросы, чтобы смена ролика/рекламы не превратилась в серию
@@ -3306,6 +3381,22 @@ static int run_atv14 (const platform_t *plat)
 			 * помогает, а смена его пересобирает vsync-путь HWC/SF. */
 			cadence_armed = false;
 
+			/* Свежий сброс потолка (особенно перезапуском кодека) оставляет
+			 * в окне подачи провал на время пересоздания декодера, и проверка
+			 * видит «вдвое реже» там, где плеер ещё догоняет (§60: живой
+			 * прогон 26.10 — сразу после сброса кодеком демон зря переключил
+			 * режим 60 -> 50 -> 60). Пропускаем проверку, пока окно сброса
+			 * свежее, и возвращаемся к ней позже. */
+			if (ceiling_recent_within (CEILING_RESTART_WINDOW_US))
+			{
+				mstime_update ();
+				mstime_arm (&cadence_timer, 2000);
+				cadence_armed = true;
+				trace (2, "проверка подачи отложена: только что был сброс "
+				       "потолка (окно подачи ещё не восстановилось)\n");
+				goto cadence_done;
+			}
+
 			/* Цветовое пространство: применяем ещё раз, когда переключение
 			 * режима уже устоялось. Фреймворк переустанавливает цветовое
 			 * пространство сам — асинхронно после смены режима, и применение
@@ -3387,6 +3478,7 @@ static int run_atv14 (const platform_t *plat)
 					trace (2, "подача в порядке: %d мс при периоде %d мс, ожидание %d мс\n",
 					       am, pm, expect_ms);
 			}
+cadence_done: ;
 		}
 		else if (recheck_armed && mstime_expired (&recheck_timer))
 		{
@@ -4203,6 +4295,25 @@ int afrd_run ()
 	 * обе механики, а не оставлять половину (журнал §47.9). */
 	g_ceiling_reset = cfg_get_int ("switch.ceiling.reset",
 	                               (g_plat.sink == SINK_SF_BACKDOOR) ? g_switch_bump : 0);
+
+	/* Чем сбрасывать потолок. codec — перезапуск процесса кодека: он быстрее
+	 * смены плотности в шесть раз (1.1 с против 6.8 с, замер §60) и работает
+	 * на любой версии Android, где находится сервис кодека; density — прежний
+	 * способ, оставлен на случай, когда перезапуск кодека недоступен. */
+	{
+		const char *method = cfg_get_str ("switch.ceiling.method", "auto");
+		if (method && (strcasecmp (method, "codec") == 0))
+			g_ceiling_method = CEIL_METHOD_CODEC;
+		else if (method && (strcasecmp (method, "density") == 0))
+			g_ceiling_method = CEIL_METHOD_DENSITY;
+		else
+			g_ceiling_method = CEIL_METHOD_AUTO;
+
+		if (g_ceiling_reset)
+			trace (1, "сброс потолка: способ %s\n",
+			       (g_ceiling_method == CEIL_METHOD_CODEC) ? "codec" :
+			       (g_ceiling_method == CEIL_METHOD_DENSITY) ? "density" : "auto");
+	}
 
 	/* «Громкие ключи»: настройка, которая на выбранном пути не действует,
 	 * должна быть названа в логе, а не молча проигнорирована (именно так

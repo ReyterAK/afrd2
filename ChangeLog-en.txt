@@ -48,6 +48,18 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       (switch.skip.pkg) never gets the mechanisms: that list promises to leave
       the mode alone. The app has a new "Players to fix clamping for" item.
 
+    * Ceiling reset by restarting the codec (switch.ceiling.method). The old
+      way - a display density change - relaunches the Activity and costs 6.8 s
+      of "waiting"; the new one recreates only the decoder session, and the
+      player continues from the current position: measured on ATV14, the
+      decoder disappears for 68 ms and is back in 1.1 s. The service name is
+      discovered via init (Codec2 on Android 12+, OMX on 8-11), so the method
+      also suits Android 10/11 where the density change cost 1.5-2.5 s.
+      Default `auto`: codec restart, density change as a fallback; `density`
+      restores the previous behaviour. Cost: the HAL is restarted, i.e. the
+      decoder of every application at once (background playback in another
+      app will be interrupted).
+
     * Relative AV1 counter correction (fps.correct.av1.pct): the overcount is
       proportional to the rate (23.976 -> 25.40, 59.94 -> 63.30) and the previous
       additive correction could not fix it. Off by default.

@@ -81,6 +81,60 @@ static void test_should_reset (void)
 	CHECK (ceiling_should_reset (15345, 0) == 0);	/* цель не определена */
 }
 
+/* --- перезапуск кодека (§60) ------------------------------------------------- */
+
+static void test_codec_probe_cmd (void)
+{
+	char buf [512];
+
+	CHECK (ceiling_codec_probe_cmd (buf, sizeof (buf)) == 0);
+	/* опрос одним вызовом shell: по строке на кандидата */
+	CHECK (strstr (buf, "android-hardware-media-c2-hal-1-2") != NULL);
+	CHECK (strstr (buf, "vendor.media.omx") != NULL);
+	CHECK (strstr (buf, "init.svc") != NULL);
+
+	/* буфер меньше команды — честный отказ, а не обрезанная команда */
+	CHECK (ceiling_codec_probe_cmd (buf, 8) == -1);
+	CHECK (ceiling_codec_probe_cmd (NULL, 16) == -1);
+}
+
+static void test_codec_pick (void)
+{
+	/* порядок строк в выводе не важен: приоритет — у кандидатов списка */
+	CHECK (strcmp (ceiling_codec_pick (
+		"media.omx=\n"
+		"vendor.media.omx=\n"
+		"android-hardware-media-c2-hal-1-2=running\n"), "android-hardware-media-c2-hal-1-2") == 0);
+
+	/* Android 10/11: Codec2 нет, живой OMX */
+	CHECK (strcmp (ceiling_codec_pick (
+		"android-hardware-media-c2-hal-1-2=\n"
+		"vendor.media.omx=running\n"), "vendor.media.omx") == 0);
+
+	/* сервис есть, но остановлен — перезапускать нечего */
+	CHECK (ceiling_codec_pick ("vendor.media.omx=stopped\n") == NULL);
+	CHECK (ceiling_codec_pick ("") == NULL);
+	CHECK (ceiling_codec_pick (NULL) == NULL);
+	/* подстрока не должна приниматься за имя: running-хвост от другого сервиса */
+	CHECK (ceiling_codec_pick ("vendor.media.omx.extra=running\n") == NULL);
+}
+
+static void test_build_codec_restart (void)
+{
+	char buf [512];
+
+	CHECK (ceiling_build_codec_restart (buf, sizeof (buf), "vendor.media.omx") == 0);
+	CHECK (strstr (buf, "setprop ctl.restart vendor.media.omx") != NULL);
+	/* успех проверяется сменой pid: init молча игнорирует чужой сервис */
+	CHECK (strstr (buf, "init.svc_debug_pid.vendor.media.omx") != NULL);
+	CHECK (strstr (buf, "exit 1") != NULL);
+
+	CHECK (ceiling_build_codec_restart (buf, sizeof (buf), NULL) == -1);
+	CHECK (ceiling_build_codec_restart (buf, sizeof (buf), "") == -1);
+	CHECK (ceiling_build_codec_restart (buf, 8, "vendor.media.omx") == -1);
+}
+
+
 static void test_parse_no_newline (void)
 {
 	int cur = 0, had = 0, next = 0;
@@ -98,6 +152,9 @@ int main (void)
 	test_parse_bad ();
 	test_build_restore ();
 	test_should_reset ();
+	test_codec_probe_cmd ();
+	test_codec_pick ();
+	test_build_codec_restart ();
 	test_parse_no_newline ();
 
 	if (failures)
