@@ -6,6 +6,10 @@ AFRd2: Android 11–14 (ядро 5.x, Amlogic; вживую проверено �
 
 Этот репозиторий — форк [AFRd](https://github.com/anpaza/afrd) (upstream 0.3.2).
 AFRd2 — версия 1.0.0 (номер синхронизируется из main.c сборкой ./mka).
+
+Исходники и готовые сборки: <https://github.com/ReyterAK/afrd2> (GPL-3;
+выпуски — в разделе Releases). Обсуждение и поддержка — тема на 4PDA:
+<https://4pda.to/forum/index.php?showtopic=1127735>.
 Форк аддитивный: путь для Android 6–9 (ядра 3.14/4.9) сохранён без изменений, а
 для Android 11–14 добавлен рабочий — там декодер больше не рассылает uevent'ы, а
 запись в `/sys/class/display/mode` режим не переключает. Нужная ветка выбирается
@@ -101,6 +105,10 @@ AFRD_ABIS=armeabi-v7a ./mka                           # только бинар�
 зависимости только libc/libm/libdl). `./mka` без аргументов дополнительно
 раскладывает бинарники и профили в `android/app/src/main/res/raw/` (для сборки
 APK) и правит `versionName` в `android/app/build.gradle`.
+
+Сборка приложения: `cd android && ./gradlew assembleDebug`. SDK берётся из
+`ANDROID_HOME`/`ANDROID_SDK_ROOT`; `android/local.properties` в репозиторий не
+входит — если SDK не в стандартном месте, создайте файл сами (`sdk.dir=<путь>`).
 
 ### Установка и запуск
 
