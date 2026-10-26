@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# AFRd2: замер сброса «потолка» частоты на конкретном боксе (§60–62 журнала).
+# AFRd2: замер сброса «потолка» частоты на конкретном боксе (§60–63 журнала).
 #
 # Отвечает на три вопроса для ЭТОГО устройства:
 #   1) какой сервис кодека здесь есть (Codec2 на Android 12+, OMX на 8-11);
@@ -7,91 +7,181 @@
 #   3) снимает ли перезапуск кодека зажим и сохраняется ли позиция ролика.
 #
 # Зажим создаётся вручную, чтобы не зависеть от версии демона: режим
-# закрепляется низким (1035), плеер стартует под ним, затем режим поднимается —
+# закрепляется низким, плеер стартует под ним, затем режим поднимается —
 # плеер остаётся «зажатым» на низкой частоте (§60).
 #
-# Запуск (демон AFRd2 ОСТАНОВЛЕН, ТВ включён, ролик доступен по ссылке):
-#   URL="https://youtu.be/aqz-KE-bpKQ" sh /data/local/tmp/ceiling_method.sh
+# Путь смены режима выбирается сам:
+#   * Android 12-14 (backdoor) — транзакция 1035 SurfaceFlinger;
+#   * Android 10/11 (вендорный) — помощник afrd-disp.sh из кэша приложения
+#     AFRd2 (транзакция 1035 там отвергается с «Operation not permitted»,
+#     живая находка на ATV11/`.42`, §63).
+#
+# Запуск (демон AFRd2 ОСТАНОВЛЕН, ТВ включён):
+#   sh /data/local/tmp/ceiling_method.sh             # ролик по ссылке
+#   START=manual sh /data/local/tmp/ceiling_method.sh  # ролик открываю руками
 #
 # Переменные:
-#   URL   — ролик (по умолчанию Big Buck Bunny 60 к/с);
-#   LOW   — id режима, под которым стартуем (по умолчанию 6 = 1080p24hz);
-#   HIGH  — id режима, до которого поднимаем (по умолчанию 1 = 1080p60hz);
-#   WAIT  — сколько ждать старта видео, с (по умолчанию 14).
+#   URL    — ролик (по умолчанию Big Buck Bunny 60 к/с);
+#   START  — `auto` (ссылка; по умолчанию) или `manual` (ролик запускает
+#            человек — нужно там, где плеер не принимает ссылку: на ATV11
+#            Cobalt показывает «Видео недоступно», а клик по плитке играет);
+#   LOW    — режим, под которым стартуем (по умолчанию 1080p24hz);
+#   HIGH   — режим, до которого поднимаем (по умолчанию 1080p60hz);
+#   WAIT   — сколько ждать старта видео, с (по умолчанию 25).
 #
-# Код возврата: 0 — все проверки выполнены, 1 — не удалось создать зажим.
+# Код возврата: 0 — проверки выполнены, 1 — зажим создать не удалось.
 
 URL=${URL:-https://youtu.be/aqz-KE-bpKQ}
-LOW=${LOW:-6}
-HIGH=${HIGH:-1}
-WAIT=${WAIT:-14}
+START=${START:-auto}
+LOW=${LOW:-1080p24hz}
+HIGH=${HIGH:-1080p60hz}
+WAIT=${WAIT:-25}
 OUT=/data/local/tmp/ceiling_method.txt
+HELPER=/data/user/0/ru.reyter.afrd2/cache/afrd-disp.sh
 
 say () { echo "$@"; echo "$@" >> "$OUT"; }
 
-# Подача видео-слоя: к/с, доля кадров «в темпе» периода дисплея и период.
-# Доля важнее среднего: один мусорный интервал из буфера --latency сдвигает
-# среднее до бессмысленного значения (живой случай §61.1), а доля кратности
-# периода устойчива.
+# --- подача видео-слоя -------------------------------------------------------
+# Печатает: «<к/с> <интервал в периодах дисплея> <период, мс> <гистограмма>».
+#
+# Вердикт ставится НЕ по подаче самой по себе, а в сравнении с частотой
+# декодера (он показывает реальную частоту контента): зажим — это когда
+# декодер выдаёт 60 к/с, а на экран уходит ~31. Доля «целых периодов» для этого
+# не годится: зажатый 60-фпс ролик чередует 1 и 2 периода, и обе величины —
+# целые (проверено на стенде, §63).
+#
+# Средняя подача тоже обманчива сама по себе: один мусорный интервал из буфера
+# --latency сдвигает её до бессмысленного значения (§61.1), поэтому печатается
+# ещё и медианный интервал в периодах — он к выбросам устойчив.
 stats () {
 	# Имя видео-слоя зависит от версии: на Android 12+ это
 	# `SurfaceView[...](BLAST)#N`, на 8-11 — `SurfaceView - pkg/Activity#N`.
-	# Без второго шаблона замер на 8-11 отдаёт пустоту (живая находка на
-	# ATV11/`.42`: подача печаталась как n/a).
 	L=$(dumpsys SurfaceFlinger --list 2>/dev/null | grep 'SurfaceView' \
 	    | grep -v -i background | grep -E '\(BLAST\)|SurfaceView - ' | head -1)
-	[ -z "$L" ] && { echo "n/a 0 0"; return; }
+	[ -z "$L" ] && { echo "n/a n/a n/a n/a"; return; }
 	dumpsys SurfaceFlinger --latency "$L" > /data/local/tmp/cm.lat 2>/dev/null
 	awk 'NR == 1 { p = $1 / 1e6; next }
 	     NF == 3 && $2 + 0 > 0 && $2 + 0 < 1e17 { n++; t[n] = $2 + 0 }
-	     END { if (n < 3) { print "n/a 0 0"; exit }
-	           m = 0; ok = 0; s = 0
-	           for (i = 2; i <= n; i++) { d = (t[i] - t[i-1]) / 1e6; if (d <= 0) continue
-	                                      m++; s += d; if (d / p < 1.5) ok++ }
-	           if (m) printf "%.2f %d %.2f", 1000 / (s / m), 100 * ok / m, p; else print "n/a 0 0" }' \
+	     END { if (n < 3) { print "n/a n/a n/a n/a"; exit }
+	           m = 0; s = 0
+	           for (i = 2; i <= n; i++) {
+	             d = (t[i] - t[i-1]) / 1e6
+	             if (d <= 0) continue
+	             m++; s += d; med[m] = d
+	           }
+	           if (!m) { print "n/a n/a n/a n/a"; exit }
+	           # медиана интервалов (пузырьковая сортировка на 126 значениях
+	           # дешевле вызова sort, которого в toybox может не быть)
+	           for (i = 1; i <= m; i++)
+	             for (j = i + 1; j <= m; j++)
+	               if (med[j] < med[i]) { x = med[i]; med[i] = med[j]; med[j] = x }
+	           mm = med[int ((m + 1) / 2)]
+	           # гистограмма по кратности периода: только ненулевые корзины
+	           for (i = 1; i <= m; i++) { k = int (med[i] / p + 0.5); h[k]++ }
+	           hist = ""
+	           for (k = 1; k <= 6; k++) if (h[k]) hist = hist sprintf ("%dx%d ", k, h[k])
+	           printf "%.2f %.2f %.2f %s", 1000 / (s / m), mm / p, p, hist }' \
 		/data/local/tmp/cm.lat
 }
 
-pos () { dumpsys media_session 2>/dev/null | grep -A12 'starboard\|youtube\|vlc' | grep -o 'position=[0-9]*' | head -1 | cut -d= -f2; }
+pos () { dumpsys media_session 2>/dev/null | grep -o 'position=[0-9]*' | head -1 | cut -d= -f2; }
+decrate () { # кадры/с по счётчику декодера — в обход подачи
+	a=$(awk '/frame count/ { print $4 }' /sys/class/vdec/vdec_status 2>/dev/null); a=${a:-0}
+	sleep 5
+	b=$(awk '/frame count/ { print $4 }' /sys/class/vdec/vdec_status 2>/dev/null); b=${b:-0}
+	echo $(( (b - a) / 5 ))
+}
 
-# --- 1. какой сервис кодека --------------------------------------------------
-say "=== устройство: sdk $(getprop ro.build.version.sdk), $(getprop ro.product.model), $(getprop ro.board.platform)"
-say "--- кандидаты сервисов кодека:"
-SVC=
-for s in android-hardware-media-c2-hal-1-2 android-hardware-media-c2-hal-1-1 \
-         android-hardware-media-c2-hal-1-0 vendor.media.omx media.omx \
-         vendor.media.c2 media.swcodec; do
-	st=$(getprop init.svc.$s)
-	[ -n "$st" ] && say "    $s = $st"
-	if [ "$st" = "running" ] && [ -z "$SVC" ]; then SVC=$s; fi
-done
-if [ -z "$SVC" ]; then
-	say "!! запущенного сервиса кодека не найдено — сброс перезапуском недоступен"
-else
-	say "--- выбран: $SVC"
-fi
+# --- смена режима: 1035 (12-14) или вендорный помощник (10/11) ---------------
+BACKDOOR=
+mode_set () { # <имя режима>; 0 — применено
+	cur=$(cat /sys/class/display/mode 2>/dev/null)
+	[ "$cur" = "$1" ] && return 0
 
-# --- 2. цена перезапуска -----------------------------------------------------
-# Ждём смены pid: init молча игнорирует ctl.restart для несуществующего сервиса.
-restart_timed () { # <сервис> -> мс или 0
-	t0=$(date +%s%3N)
+	if [ -z "$BACKDOOR" ]; then
+		# Проверяем 1035 один раз: на 10/11 он отвечает «Operation not permitted».
+		if service call SurfaceFlinger 1035 i32 9999 2>&1 | grep -q -i "not permitted"; then
+			BACKDOOR=no
+		else
+			BACKDOOR=yes
+		fi
+	fi
+
+	if [ "$BACKDOOR" = yes ]; then
+		# id режима берём из таблицы display по разрешению и частоте: имя вида
+		# «1080p24hz» разбираем на высоту и частоту, интерлейс и дробные имена
+		# (1080i60hz, 1080p59.94hz) при этом просто не совпадут.
+		h=$(echo "$1" | sed -n 's/^\([0-9][0-9]*\)p[0-9.]*hz$/\1/p')
+		f=$(echo "$1" | sed -n 's/^[0-9][0-9]*p\([0-9.]*\)hz$/\1/p')
+		if [ -z "$h" ] || [ -z "$f" ]; then
+			say "  !! имя режима «$1» не разобрать (ожидается <высота>p<частота>hz)"
+			return 1
+		fi
+
+		id=$(dumpsys display 2>/dev/null \
+		     | grep -oE 'id=[0-9]+, width=[0-9]+, height=[0-9]+, fps=[0-9.]+' \
+		     | awk -F'[=,]' -v h="$h" -v f="$f" '
+		        { id = $2; hh = $6; ff = $8 + 0
+		          if (hh != h) next
+		          d = ff - f; if (d < 0) d = -d
+		          if (d < f * 0.02) { print id; exit } }')
+		if [ -z "$id" ]; then
+			say "  !! режим $1 не найден в таблице display"
+			return 1
+		fi
+
+		service call SurfaceFlinger 1035 i32 "$id" >/dev/null 2>&1
+		[ "$(cat /sys/class/display/mode 2>/dev/null)" = "$1" ] && return 0
+		say "  !! 1035 с id $id не дал режим $1"
+		return 1
+	fi
+
+	[ -x "$HELPER" ] || { say "  !! помощник $HELPER недоступен — режим не сменить"; return 1; }
+	sh "$HELPER" "$1" >/dev/null 2>&1
+	[ "$(cat /sys/class/display/mode 2>/dev/null)" = "$1" ]
+}
+
+codec_svc () {
+	for s in android-hardware-media-c2-hal-1-2 android-hardware-media-c2-hal-1-1 \
+	         android-hardware-media-c2-hal-1-0 vendor.media.omx media.omx \
+	         vendor.media.c2 media.swcodec; do
+		[ "$(getprop init.svc.$s)" = running ] && { echo "$s"; return 0; }
+	done
+	return 1
+}
+
+# Перезапуск сервиса кодека с подтверждением: на 10+ по init.svc_debug_pid,
+# на 8-9 (свойства нет, хотя перезапуск работает) — по смене pid процесса.
+# Чем процесс сервиса виден в `ps`: имя init-сервиса и имя бинарника не
+# совпадают (android-hardware-media-c2-hal-1-2 -> media.c2@1.2).
+codec_bin () {
+	case "$1" in
+		android-hardware-media-c2-hal-1-2) echo "media.c2@1.2" ;;
+		android-hardware-media-c2-hal-1-1) echo "media.c2@1.1" ;;
+		android-hardware-media-c2-hal-1-0) echo "media.c2@1.0" ;;
+		vendor.media.omx|media.omx)        echo "media.omx" ;;
+		*)                                 echo "$1" ;;
+	esac
+}
+
+codec_restart () { # <сервис>; печатает мс
+	bin=$(codec_bin "$1")
 	p0=$(getprop init.svc_debug_pid.$1)
+	b0=$(ps -A -o PID,ARGS 2>/dev/null | grep "$bin" | grep -v grep | awk '{ print $1 }' | tr '\n' ',')
+	t0=$(date +%s%3N)
 	setprop ctl.restart "$1"
 	i=0
-	while [ $i -lt 200 ]; do
+	while [ $i -lt 120 ]; do
 		p=$(getprop init.svc_debug_pid.$1)
-		if [ -n "$p" ] && [ "$p" != "$p0" ]; then
-			echo $(( $(date +%s%3N) - t0 )); return 0
-		fi
+		a=$(ps -A -o PID,ARGS 2>/dev/null | grep "$bin" | grep -v grep | awk '{ print $1 }' | tr '\n' ',')
+		if [ -n "$p" ] && [ "$p" != "$p0" ]; then echo $(( $(date +%s%3N) - t0 )); return 0; fi
+		if [ -z "$p0" ] && [ -n "$a" ] && [ "$a" != "$b0" ]; then echo $(( $(date +%s%3N) - t0 )); return 0; fi
 		i=$((i + 1)); sleep 0.1
 	done
 	echo 0; return 1
 }
 
-# Смена плотности: команда + возврат, замер по времени до готовности `wm`.
 density_cost () {
-	# Действующая плотность: override важнее физической (иначе +1 к физической
-	# при заданном override ничего не меняет и «сброса» не происходит).
 	cur=$(wm density 2>/dev/null | awk '
 		/Override density/ { o = $3 }
 		/Physical density/ { p = $3 }
@@ -103,63 +193,99 @@ density_cost () {
 	echo $(( $(date +%s%3N) - t0 ))
 }
 
-# --- 3. зажим и снятие -------------------------------------------------------
-clamp () { # создать зажим: старт под LOW, подъём до HIGH
-	am force-stop com.google.android.youtube.tv >/dev/null 2>&1
-	am force-stop org.videolan.vlc >/dev/null 2>&1
-	service call SurfaceFlinger 1035 i32 9999 >/dev/null 2>&1
-	service call SurfaceFlinger 1035 i32 "$LOW" >/dev/null 2>&1
-	sleep 2
-	am start -a android.intent.action.VIEW -d "$URL" >/dev/null 2>&1
+wait_video () { # ждёт появления декодера; 0 — появился
 	i=0
 	while [ $i -lt $((WAIT * 2)) ]; do
 		c=$(awk '/frame count/ { print $4 }' /sys/class/vdec/vdec_status 2>/dev/null)
-		[ -n "$c" ] && break
+		[ -n "$c" ] && return 0
 		i=$((i + 1)); sleep 0.5
 	done
-	sleep 3
-	set -- $(stats)
-	before_rate=$1; before_ok=$2
-	service call SurfaceFlinger 1035 i32 "$HIGH" >/dev/null 2>&1
-	sleep 6
-	set -- $(stats)
-	say "    зажим: до подъёма ${before_rate} к/с (в темпе ${before_ok}%), после ${1} к/с (в темпе ${2}%)"
-
+	return 1
 }
 
+start_video () {
+	am force-stop com.google.android.youtube.tv >/dev/null 2>&1
+	am force-stop org.videolan.vlc >/dev/null 2>&1
+	am force-stop net.gtvbox.videoplayer >/dev/null 2>&1
+	if [ "$START" = manual ]; then
+		say "  запустите ролик на боксе (у вас $WAIT с)…"
+		wait_video
+		return $?
+	fi
+	am start -a android.intent.action.VIEW -d "$URL" >/dev/null 2>&1
+	wait_video
+}
+
+clamp () { # создать зажим: старт под LOW, подъём до HIGH
+	mode_set "$LOW" || { say "  !! режим $LOW не выставился"; return 1; }
+	sleep 2
+	start_video || { say "  !! видео не стартовало"; return 1; }
+	sleep 4
+	set -- $(stats)
+	say "    под $LOW:      подача $1 к/с, интервал $2 периода(ов) [$4], декодер $(decrate) к/с"
+	mode_set "$HIGH" || { say "  !! режим $HIGH не выставился"; return 1; }
+	sleep 7
+	set -- $(stats)
+	say "    при $HIGH:     подача $1 к/с, интервал $2 периода(ов) [$4], декодер $(decrate) к/с  <- зажим, если подача много ниже декодера"
+}
+
+# --- 1. устройство -----------------------------------------------------------
+say "=== устройство: sdk $(getprop ro.build.version.sdk), $(getprop ro.product.model), $(getprop ro.board.platform)"
+say "--- режим сейчас: $(cat /sys/class/display/mode 2>/dev/null)"
+SVC=$(codec_svc)
+for s in android-hardware-media-c2-hal-1-2 android-hardware-media-c2-hal-1-1 \
+         android-hardware-media-c2-hal-1-0 vendor.media.omx media.omx \
+         vendor.media.c2 media.swcodec; do
+	st=$(getprop init.svc.$s)
+	[ -n "$st" ] && say "    $s = $st"
+done
+[ -n "$SVC" ] && say "--- выбран сервис кодека: $SVC" || say "!! запущенного сервиса кодека нет"
+
+# --- 2. цена вмешательств ----------------------------------------------------
 say ""
-say "=== цена вмешательств"
+say "=== цена вмешательств (для этого бокса)"
 if [ -n "$SVC" ]; then
-	t=$(restart_timed "$SVC")
-	if [ "$t" -gt 0 ]; then say "  перезапуск кодека ($SVC): ${t} мс"; else say "  перезапуск кодека ($SVC): НЕ подтверждён (pid не сменился)"; fi
+	t=$(codec_restart "$SVC")
+	if [ "$t" -gt 0 ]; then say "  перезапуск кодека: ${t} мс"; else say "  перезапуск кодека: НЕ подтверждён"; fi
 fi
 d=$(density_cost)
 if [ "$d" -gt 0 ]; then say "  смена плотности (туда-обратно): ${d} мс"; else say "  смена плотности: не измерить"; fi
 
+# --- 3. зажим и снятие -------------------------------------------------------
 say ""
 say "=== зажим и снятие перезапуском кодека"
-clamp
-p0=$(pos)
-say "    позиция до: ${p0:-н/д}"
-if [ -n "$SVC" ]; then
-	restart_timed "$SVC" >/dev/null
-	sleep 10
-	set -- $(stats)
-	say "    после перезапуска кодека: ${1} к/с, в темпе ${2}%"
-	say "    позиция после: $(pos) (было ${p0:-н/д})"
+if clamp; then
+	p0=$(pos); say "    позиция до: ${p0:-н/д}"
+	if [ -n "$SVC" ]; then
+		t=$(codec_restart "$SVC")
+		say "    перезапуск: ${t} мс"
+		sleep 10
+		set -- $(stats)
+		say "    после:         подача $1 к/с, интервал $2 периода(ов) [$4], декодер $(decrate) к/с"
+		say "    позиция: ${p0:-н/д} -> $(pos)"
+	fi
 fi
 
 say ""
 say "=== зажим и снятие сменой плотности"
-clamp
-p0=$(pos)
-density_cost >/dev/null
-sleep 10
-set -- $(stats)
-say "    после смены плотности: ${1} к/с, в темпе ${2}%"
-say "    позиция после: $(pos) (было ${p0:-н/д})"
+if clamp; then
+	p0=$(pos); say "    позиция до: ${p0:-н/д}"
+	d=$(density_cost); say "    смена плотности: ${d} мс"
+	sleep 10
+	set -- $(stats)
+	say "    после:         подача $1 к/с, интервал $2 периода(ов) [$4], декодер $(decrate) к/с"
+	say "    позиция: ${p0:-н/д} -> $(pos)"
+fi
+
+say ""
+say "=== контроль: без вмешательства"
+if clamp; then
+	sleep 10
+	set -- $(stats)
+	say "    остаётся:      подача $1 к/с, интервал $2 периода(ов) [$4], декодер $(decrate) к/с"
+fi
 
 am force-stop com.google.android.youtube.tv >/dev/null 2>&1
-service call SurfaceFlinger 1035 i32 9999 >/dev/null 2>&1
+mode_set "$HIGH" >/dev/null 2>&1
 say ""
-say "=== итог (файл $OUT)"
+say "=== итог записан в $OUT"
