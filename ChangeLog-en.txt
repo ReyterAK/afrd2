@@ -1,6 +1,31 @@
 AFRd2 — a fork of AFRd (based on AFRd 0.3.2 by Andrey Zabolotnyi,
 anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
+1.1.1 Unreleased
+
+    * Fix: the frame-rate "ceiling" reset (switch.ceiling.reset) did not work on
+      Android 12-14. In 1.1.0 it was armed only on the vendor path (10/11), so on
+      the backdoor path it fired only as a side effect of the mode bump. Live
+      measurement on `.50`: a 60 fps video started under 50 Hz with
+      switch.bump=0 stayed clamped at 50.34 fps while the codec restart itself
+      works (the same stand releases the clamp: 30.47 -> 60.00 fps,
+      tools/stand/ceiling_method.sh). The reset is now armed by the main loop,
+      independently of the bump, and works on both paths; after the fix the same
+      run gives 50.29 -> 59.94 fps with the playback position preserved.
+    * The reset is still once per video and deferred, but now checks that it is
+      needed: it runs only when the target mode is above the mode the video
+      started under (otherwise the decoder restart would be pointless — e.g. a
+      24 fps clip under 60 Hz: 0 restarts, 23.98 fps).
+
+    Stand tools:
+    * tools/stand/ceiling_method.sh: the mode id for SurfaceFlinger transaction
+      1035 now comes from SurfaceFlinger's own displayModes table (DisplayManager
+      has its own numbering and 1035 answered "Invalid argument"); the mode path
+      is chosen by Android version instead of by the presence of the vendor
+      helper (on ATV14 the helper switches HDMI behind the framework's back and
+      left mode/activeMode out of sync); after a switch the sysfs node is waited
+      for instead of being read immediately.
+
 1.1.0 Sun Oct 18 2026
 
     Release after the 1.0.0 publication: the main thing is that frame rate

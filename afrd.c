@@ -1477,16 +1477,12 @@ static int atv14_bump (const platform_t *plat, int *orig_sf_id, int *cur_sf_id,
 	*want_sf_id = -1;
 	*cur_sf_id = bump;
 
-	/* Потолок сбрасываем ОДИН раз на видео, но НЕ здесь: замер на `.42`
-	 * (§65) показал, что сброс в момент подъёма (пока плеер инициализируется)
-	 * не помогает — подача остаётся 54.9 к/с, тогда как тот же сброс через
-	 * несколько секунд после старта даёт 59.94. Поэтому здесь только
-	 * взводим признак, а сам сброс делается в цикле, когда видео уже идёт. */
-	if ((plat->sink == SINK_VENDOR_MODE) && g_ceiling_reset && (g_ceiling_resets == 0))
-	{
-		g_ceiling_pending = true;
-		g_ceiling_us = now_us ();	/* отсчёт задержки — от подъёма */
-	}
+	/* Сброс потолка здесь НЕ делается и не взводится: замер на `.42` (§65)
+	 * показал, что сброс в момент подъёма (пока плеер инициализируется) не
+	 * помогает — подача остаётся 54.9 к/с, тогда как тот же сброс через
+	 * несколько секунд после старта даёт 59.94. Взводит его шаг цикла
+	 * (ceiling_pending_step), когда видео уже идёт и режим ему назначен, —
+	 * тогда сброс работает и при выключенном подъёме (§67). */
 
 	/* Возврат после видео — на максимум, а не на прежний режим: иначе
 	 * следующий ролик начнётся с низкого «потолка», и зажим вернётся. */
@@ -2461,11 +2457,43 @@ static int ceiling_reset_now (void)
  * инициализацию и подача остаётся заниженной (живой замер `.42`, §65). */
 #define CEILING_DEFER_MS	4000
 
-/* Отложенный сброс: вызывается из цикла, когда видео уже идёт. */
+/* Отложенный сброс: вызывается из цикла, когда видео уже идёт и режим ему
+ * назначен (cur_id — целевой режим, а не «какой сейчас»).
+ *
+ * Взведение здесь, а не только в подъёме: подъём бывает выключен
+ * (switch.bump=0) или не сработать (плеер вне switch.bump.pkg), а сброс
+ * потолка — самостоятельный механизм со своим ключом. Живой замер `.50`
+ * (§67): ролик 60 к/с, начатый под 50 Гц при switch.bump=0, остался зажатым
+ * на 50.34 к/с, потому что взводить сброс было некому. */
 static void ceiling_pending_step (const platform_t *plat, int cur_id, bool playing)
 {
-	if (!g_ceiling_pending || !playing)
+	if (!playing || (cur_id < 0) || !g_ceiling_reset || (g_ceiling_resets > 0))
 		return;
+
+	int hz = atv14_mode_hz (plat, cur_id);
+	if (hz <= 0)
+		return;
+
+	/* Зажим возможен только если целевой режим ВЫШЕ того, под которым
+	 * началось видео: при равном или меньшем плеер и так мог отдавать эту
+	 * частоту (живой случай §61 — 30-фпс ролик под 60 Гц: перезапуск декодера
+	 * был лишним и давал заметную паузу). */
+	if (g_ceiling_start_id >= 0)
+	{
+		int start_hz = atv14_mode_hz (plat, g_ceiling_start_id);
+		if ((start_hz > 0) && (hz <= start_hz))
+			return;
+	}
+
+	/* Потолок уже не ниже цели — перезапуск декодера ничего не изменит. */
+	if (!ceiling_should_reset (g_ceiling_hz, hz))
+		return;
+
+	if (!g_ceiling_pending)
+	{
+		g_ceiling_pending = true;
+		g_ceiling_us = now_us ();	/* отсчёт задержки — от решения */
+	}
 
 	if (g_ceiling_us && ((now_us () - g_ceiling_us) < (unsigned long long) CEILING_DEFER_MS * 1000))
 		return;
@@ -2480,7 +2508,7 @@ static void ceiling_pending_step (const platform_t *plat, int cur_id, bool playi
 		g_ceiling_mode_id = cur_id;
 		g_ceiling_no_fast = true;
 		g_ceiling_restart_expected = true;
-		trace (0, "потолок сброшен через %d мс после подъёма режима\n",
+		trace (0, "потолок сброшен через %d мс после решения о режиме\n",
 		       CEILING_DEFER_MS);
 	}
 }
@@ -2489,6 +2517,9 @@ static void ceiling_pending_step (const platform_t *plat, int cur_id, bool playi
 static void ceiling_forget (void)
 {
 	g_ceiling_resets = 0;
+	/* Несработавший сброс прежнего видео не должен выстрелить на новом без
+	 * своей задержки (иначе перезапуск декодера придётся на инициализацию). */
+	g_ceiling_pending = false;
 	g_ceiling_hz = 0;
 	/* Режим старта относится к текущему видео: новое начнётся под своим
 	 * (запишется в момент старта, см. g_ceiling_start_id). */

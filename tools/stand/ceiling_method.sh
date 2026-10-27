@@ -10,11 +10,13 @@
 # закрепляется низким, плеер стартует под ним, затем режим поднимается —
 # плеер остаётся «зажатым» на низкой частоте (§60).
 #
-# Путь смены режима выбирается сам:
-#   * Android 12-14 (backdoor) — транзакция 1035 SurfaceFlinger;
+# Путь смены режима выбирается сам по SDK:
+#   * Android 12-14 (backdoor) — транзакция 1035 SurfaceFlinger, id берётся из
+#     таблицы displayModes самого SF;
 #   * Android 10/11 (вендорный) — помощник afrd-disp.sh из кэша приложения
 #     AFRd2 (транзакция 1035 там отвергается с «Operation not permitted»,
-#     живая находка на ATV11/`.42`, §63).
+#     живая находка на ATV11/`.42`, §63; на ATV14 тот же помощник меняет
+#     HDMI мимо SF и даёт рассинхрон, §67).
 #
 # Запуск (демон AFRd2 ОСТАНОВЛЕН, ТВ включён):
 #   sh /data/local/tmp/ceiling_method.sh             # ролик по ссылке
@@ -98,23 +100,44 @@ decrate () { # кадры/с по счётчику декодера — в об�
 
 # --- смена режима: 1035 (12-14) или вендорный помощник (10/11) ---------------
 BACKDOOR=
+
+# Смена режима асинхронна: узел /sys/class/display/mode обновляет фреймворк уже
+# после того, как HAL переключил HDMI (на `.50` это ~1-2 с). Мгновенный
+# read-back после вызова давал ложный отказ, а следующая фаза заставала режим
+# уже переключённым и мерила не то, что подписала (живая находка, §67).
+wait_mode () { # <имя режима>; 0 — узел дошёл до значения
+	i=0
+	while [ $i -lt 30 ]; do
+		[ "$(cat /sys/class/display/mode 2>/dev/null)" = "$1" ] && return 0
+		i=$((i + 1)); sleep 0.2
+	done
+	return 1
+}
+
 mode_set () { # <имя режима>; 0 — применено
 	cur=$(cat /sys/class/display/mode 2>/dev/null)
 	[ "$cur" = "$1" ] && return 0
 
-	# Путь выбирается по наличию помощника, а не по пробе 1035: на Android 11
+	# Путь выбирается по версии Android, а не по пробе 1035: на Android 11
 	# транзакция отвечает не «not permitted», а «Broken pipe», и проба давала
 	# ложное «backdoor работает» (живая находка на `.42` после перепрошивки, §64).
-	# Помощник кладёт приложение AFRd2 только на вендорном пути (10/11).
-	if [ -x "$HELPER" ]; then
+	# Наличие помощника признаком быть не может: приложение кладёт его на всех
+	# 10-14, а на 14 помощник меняет HDMI в обход SurfaceFlinger (рассинхрон:
+	# `mode` = новый, `activeMode` = старый; живая находка на `.50`, §67).
+	if [ "$(getprop ro.build.version.sdk)" -lt 31 ]; then
 		sh "$HELPER" "$1" >/dev/null 2>&1
-		if [ "$(cat /sys/class/display/mode 2>/dev/null)" = "$1" ]; then return 0; fi
+		wait_mode "$1" && return 0
 		say "  !! помощник не дал режим $1 (сейчас $(cat /sys/class/display/mode 2>/dev/null))"
 		return 1
 	fi
 
-	# Backdoor (Android 12-14): id режима берём из таблицы display по
-	# разрешению и частоте; имя вида «1080p24hz» разбираем на части.
+	# Backdoor (Android 12-14): id режима берём из таблицы displayModes самого
+	# SurfaceFlinger по разрешению и частоте; имя вида «1080p24hz» разбираем на
+	# части. Таблица DisplayManager (`dumpsys display`, поля `id=…, width=…,
+	# fps=…`) для транзакции 1035 не годится: у неё своя нумерация, и 1035
+	# отвечает «Invalid argument» (живая находка на `.50`, §67: 17-40 против
+	# 44-57). Формат SF: «{id=45, hwcId=49, resolution=1920x1080,
+	# refreshRate=60.00 Hz, dpi=…, group=1}».
 	h=$(echo "$1" | sed -n 's/^\([0-9][0-9]*\)p[0-9.]*hz$/\1/p')
 	f=$(echo "$1" | sed -n 's/^[0-9][0-9]*p\([0-9.]*\)hz$/\1/p')
 	if [ -z "$h" ] || [ -z "$f" ]; then
@@ -122,21 +145,21 @@ mode_set () { # <имя режима>; 0 — применено
 		return 1
 	fi
 
-	id=$(dumpsys display 2>/dev/null \
-	     | grep -oE 'id=[0-9]+, width=[0-9]+, height=[0-9]+, fps=[0-9.]+' \
-	     | awk -F'[=,]' -v h="$h" -v f="$f" '
-	        { id = $2; hh = $6; ff = $8 + 0
+	id=$(dumpsys SurfaceFlinger 2>/dev/null \
+	     | grep -oE '\{id=[0-9]+, hwcId=[0-9]+, resolution=[0-9]+x[0-9]+, refreshRate=[0-9.]+' \
+	     | awk -F'[=,x]' -v h="$h" -v f="$f" '
+	        { id = $2; hh = $7; ff = $9 + 0
 	          if (hh != h) next
 	          d = ff - f; if (d < 0) d = -d
 	          if (d < f * 0.02) { print id; exit } }')
 	if [ -z "$id" ]; then
-		say "  !! режим $1 не найден в таблице display"
+		say "  !! режим $1 не найден в таблице displayModes SurfaceFlinger"
 		return 1
 	fi
 
 	service call SurfaceFlinger 1035 i32 "$id" >/dev/null 2>&1
-	[ "$(cat /sys/class/display/mode 2>/dev/null)" = "$1" ] && return 0
-	say "  !! 1035 с id $id не дал режим $1"
+	wait_mode "$1" && return 0
+	say "  !! 1035 с id $id не дал режим $1 (сейчас $(cat /sys/class/display/mode 2>/dev/null))"
 	return 1
 }
 
