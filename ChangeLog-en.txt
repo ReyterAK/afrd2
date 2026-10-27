@@ -1,32 +1,7 @@
 AFRd2 — a fork of AFRd (based on AFRd 0.3.2 by Andrey Zabolotnyi,
 anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
-1.1.1 Unreleased
-
-    * Fix: the frame-rate "ceiling" reset (switch.ceiling.reset) did not work on
-      Android 12-14. In 1.1.0 it was armed only on the vendor path (10/11), so on
-      the backdoor path it fired only as a side effect of the mode bump. Live
-      measurement on `.50`: a 60 fps video started under 50 Hz with
-      switch.bump=0 stayed clamped at 50.34 fps while the codec restart itself
-      works (the same stand releases the clamp: 30.47 -> 60.00 fps,
-      tools/stand/ceiling_method.sh). The reset is now armed by the main loop,
-      independently of the bump, and works on both paths; after the fix the same
-      run gives 50.29 -> 59.94 fps with the playback position preserved.
-    * The reset is still once per video and deferred, but now checks that it is
-      needed: it runs only when the target mode is above the mode the video
-      started under (otherwise the decoder restart would be pointless — e.g. a
-      24 fps clip under 60 Hz: 0 restarts, 23.98 fps).
-
-    Stand tools:
-    * tools/stand/ceiling_method.sh: the mode id for SurfaceFlinger transaction
-      1035 now comes from SurfaceFlinger's own displayModes table (DisplayManager
-      has its own numbering and 1035 answered "Invalid argument"); the mode path
-      is chosen by Android version instead of by the presence of the vendor
-      helper (on ATV14 the helper switches HDMI behind the framework's back and
-      left mode/activeMode out of sync); after a switch the sysfs node is waited
-      for instead of being read immediately.
-
-1.1.0 Sun Oct 18 2026
+1.1.0 Tue Oct 27 2026
 
     Release after the 1.0.0 publication: the main thing is that frame rate
     "clamping" on Android 11+ is fixed and mode switching on Android 10/11 is
@@ -44,9 +19,9 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
           (switch.bump.on.app) - this also covers cold starts, where the decoder
           appears later than the player fixes its rate;
         - if the switch still landed on a live video, resets the player's rate
-          ceiling by bumping the display density by one and restoring it
-          (switch.ceiling.reset): the player re-reads the mode and delivery
-          recovers without restarting playback.
+          ceiling (switch.ceiling.reset): by restarting the codec process, and
+          by bumping the display density if that fails. The player re-reads the
+          mode and delivery recovers from the current playback position.
       Live measurements: ATV14 - 50.34 -> 59.94 fps, an 83 ms delivery gap;
       Android 11 - 49.4 -> 59.9 fps by the 8th second.
 
@@ -57,15 +32,16 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       one-shot launch, so the key can be disabled safely.
 
     * The stock YouTube app is no longer excluded from frame rate matching on
-      Android 12-14: clamping is fixed, so it is handled like any other player.
-      An installed app migrates the setting on update (only the stock YouTube
-      package is removed, the user's own entries are kept). On Android 10/11 the
-      exclusion stays: a cold start of a 60 fps video under 50 Hz is still
-      clamped there, and a ceiling reset costs a noticeable pause.
+      any path (Android 11-14): clamping is fixed, so it is handled like any
+      other player. On Android 10/11 the former exclusion was based on a
+      "reset costs 1.5-2.5 s" estimate that a live measurement did not
+      confirm (the real figure is 0.26 s). An installed app migrates the
+      setting on update (only the stock YouTube package is removed, the
+      user's own entries are kept).
 
     * The clamping mechanisms apply only to the players in switch.bump.pkg
       (stock YouTube by default). Clamping was measured there; for other
-      players it is not confirmed, and the ceiling reset is a display
+      players it is not confirmed, and the fallback ceiling reset is a display
       configuration change that restarts the Activity in some players
       (OTT Navigator returned to the previous channel on the first AFR switch).
       An empty list disables the mechanisms completely and leaves plain
@@ -77,8 +53,11 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       verified scheme. `switch.skip.pkg` is empty on every path: the stock
       YouTube is no longer excluded (on 10/11 it was there because of a
       "reset costs 1.5-2.5 s" estimate that did not hold — the real figure is
-      0.26 s). `switch.ceiling.reset` is on by default on the vendor path too,
-      and the default method is a codec restart (`switch.ceiling.method=auto`):
+      0.26 s). `switch.ceiling.reset` is on by default on both paths: its
+      default follows `switch.bump`, but the reset itself does not depend on
+      the bump and, with the bump off, remains the only protection against
+      clamping. The default method is a codec restart
+      (`switch.ceiling.method=auto`):
       it does not change the display mode, so clamping is fixed without an
       extra mode switch and the playback position is preserved. Measured on
       Android 11: 50.02 -> 59.94 fps in 0.26 s.
@@ -91,7 +70,9 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       discovered via init (Codec2 on Android 12+, OMX on 8-11), so the method
       also suits Android 10/11 where the density change cost 1.5-2.5 s.
       Default `auto`: codec restart, density change as a fallback; `density`
-      restores the previous behaviour. Cost: the HAL is restarted, i.e. the
+      restores the previous behaviour. The reset is done once per video,
+      deferred, and only when the target mode is above the mode the video
+      started under. Cost: the HAL is restarted, i.e. the
       decoder of every application at once (background playback in another
       app will be interrupted).
 
@@ -104,9 +85,6 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       Magisk keeps its su in /debug_ramdisk/su: the app reported "root required"
       although root was present. Candidates are now probed and only one returning
       uid=0 is accepted.
-
-    * Fixed a 24 <-> 60 loop after a ceiling reset: the decoder restarts twice
-      and the second signal was taken for a new video.
 
     * "Blacklisted refresh rates" (mode.blacklist.rates) are picked from the
       rates the TV supports instead of typed as numbers: 23.976 and 24 are

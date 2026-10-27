@@ -366,11 +366,11 @@
 
 ! AFRd2 closes it in two ways: it raises the mode to the maximum your TV supports
 ! before the player's first frame, and - if the switch still landed on a running
-! video - resets the player's rate ceiling once by bumping the display density by
-! one and restoring it. The player then re-reads the mode and delivery recovers
-! without restarting playback. On Android 12-14 the reset costs about 80 ms, on
-! Android 10/11 it is more expensive, so there it is off by default while the
-! mode bump still works.
+! video - resets the player's rate ceiling once: by restarting the codec process
+! by default, or by bumping the display density if that fails. The player then
+! re-reads the mode and delivery recovers from the current playback position.
+! The reset costs a fraction of a second (measured: 0.26 s on Android 11,
+! 0.18-0.25 s on Android 12-14) and works on both paths.
 
 ! The "Fix frame rate clamping" item enables both mechanisms at once. Turn it off
 ! only if your content always plays at the TV's maximum rate: then there is
