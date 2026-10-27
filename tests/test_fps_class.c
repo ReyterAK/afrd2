@@ -179,7 +179,7 @@ static void t_live_scenario(void)
 	assert(fps_refine_declared(hz, 96000.0 / 3200.0, 5.0, &refined) == 0);
 }
 
-/* Точный представитель группы — для mode.use.fract=0 (режимы 24.000/30.000/60.000) */
+/* Точный представитель группы — для mode.use.fract=2 (режимы 24.000/30.000/60.000) */
 static void t_exact_member(void)
 {
 	assert(fps_rate_exact_member(fps_rate_hz(0)) == fps_rate_hz(1));  /* 23.976 -> 24.000 */

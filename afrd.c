@@ -4098,7 +4098,7 @@ cadence_done: ;
 				int exact = fps_rate_exact_member (hz);
 				if (exact)
 				{
-					trace (1, "mode.use.fract=0: режим " HZ_FMT " Гц вместо " HZ_FMT " Гц\n",
+					trace (1, "mode.use.fract=2: режим " HZ_FMT " Гц вместо " HZ_FMT " Гц\n",
 					       HZ_ARGS (exact), HZ_ARGS (hz));
 					hz = exact;
 				}

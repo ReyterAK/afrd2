@@ -84,7 +84,7 @@ static const int k_group [FPS_RATE_COUNT] = { 24, 24, 25, 30, 30, 50, 60, 60 };
  * а счётчик кадров эту пару не различает (0.1%). */
 static const int k_group_lead [FPS_RATE_COUNT] = { 0, 0, 2, 3, 3, 5, 6, 6 };
 
-/* Тот же выбор для `mode.use.fract=0` — точные (целочисленные) режимы. */
+/* Тот же выбор для `mode.use.fract=2` — точные (целочисленные) режимы. */
 static const int k_group_exact [FPS_RATE_COUNT] = { 1, 1, 2, 4, 4, 5, 7, 7 };
 
 int fps_rate_group (int hz)
