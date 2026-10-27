@@ -27,6 +27,18 @@ int display_mode_hz (display_mode_t *mode)
 	return mode->framerate * 256;
 }
 
+int display_mode_hz_actual (const display_mode_t *mode, bool fract)
+{
+	display_mode_t m = *mode;
+
+	/* Политику прикладываем к копии: у режимов без дробного варианта
+	 * display_mode_hz вернёт номинал сам (50 -> 50, 25 -> 25). */
+	if (fract)
+		m.fractional = true;
+
+	return display_mode_hz (&m);
+}
+
 void display_mode_set_hz (display_mode_t *mode, int hz)
 {
 	mode->fractional = true;

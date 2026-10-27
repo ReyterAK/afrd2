@@ -32,6 +32,28 @@ static bool ban_50 (int hz, void *ctx)
 	return hz != 50 * 256;
 }
 
+/* Отчётная частота: список disp_cap хранит номиналы, а фактическую частоту
+ * задаёт узел frac_rate_policy (1 — дробная). На вендорном пути (Android
+ * 10/11) имя режима одно на оба варианта, и без этого уточнения отчёт
+ * показывал 60.00 Гц при фактических 59.94 — это приняли за переключение
+ * базовой частоты демоном (вопрос тестера 27.10). */
+static void test_hz_actual (void)
+{
+	display_mode_t m60 = { "1080p60hz", 1920, 1080, 60, false, false };
+	display_mode_t m50 = { "1080p50hz", 1920, 1080, 50, false, false };
+	display_mode_t m24 = { "1080p24hz", 1920, 1080, 24, false, false };
+
+	/* политика целая — номинал */
+	assert (display_mode_hz_actual (&m60, false) == 60 * 256);
+
+	/* политика дробная — те же значения, что даёт таблица частот */
+	assert (display_mode_hz_actual (&m60, true) == (5994 * 256 + 50) / 100);
+	assert (display_mode_hz_actual (&m24, true) == (2997 * 256 + 62) / 125);
+
+	/* у 50/25 дробного варианта нет — политика число не меняет */
+	assert (display_mode_hz_actual (&m50, true) == 50 * 256);
+}
+
 /* 25 fps: при prefer_exact=0 предпочитается удвоение 2:1 (50 Гц) — как в
  * legacy-пути, чтобы плеер не «зажимал» темп. */
 static void test_25_doubling (void)
@@ -160,6 +182,7 @@ static void test_find_name (void)
 
 int main (void)
 {
+	test_hz_actual ();
 	test_25_doubling ();
 	test_find_name ();
 	test_25_exact ();

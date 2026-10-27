@@ -2289,6 +2289,35 @@ static int atv14_mode_hz (const platform_t *plat, int id)
 	return sfmodes_current_hz (g_sf_modes, g_sf_modes_n, id);
 }
 
+/* Частота режима для ОТЧЁТА (GUI, `afrd -s`, уведомление).
+ *
+ * На Android 10/11 имя режима одно на оба варианта, а дробность задаёт узел
+ * `frac_rate_policy`: `1080p60hz` при нём = 1 — это 59.94, при 0 — 60.000.
+ * Список disp_cap хранит номиналы, и отчёт брал их напрямую: работающий демон
+ * показывал 60.00 Гц при фактических 59.940061, и это приняли за переключение
+ * «базовой частоты» (вопрос тестера 27.10: «с демоном 60, без демона 59.94»).
+ * Решения цикла остаются в номиналах (atv14_mode_hz): там сравнение идёт с
+ * целью выбора из того же списка.
+ *
+ * Дробность — свойство дисплея, а не имени режима, и узел читается на месте:
+ * отчёт нужен и на простое, когда цикл видео не обновляет g_current_mode.
+ * Узла нет или он нечитаем — считаем политику целой (номинал). */
+static int atv14_report_hz (const platform_t *plat, int id)
+{
+	if ((plat->sink != SINK_VENDOR_MODE) || (id < 0) || (id >= g_modes_n))
+		return atv14_mode_hz (plat, id);
+
+	bool fract = false;
+	char *p = sysfs_get_str (g_hdmi_dev, "frac_rate_policy");
+	if (p)
+	{
+		fract = (strtol (p, NULL, 10) != 0);
+		free (p);
+	}
+
+	return display_mode_hz_actual (&g_modes [id], fract);
+}
+
 /* Сброс «потолка» частоты у плеера (switch.ceiling.reset, журнал §47.9).
  *
  * Плеер на Android 11+ фиксирует частоту дисплея в начале сессии проигрывания
@@ -2566,8 +2595,8 @@ static void atv14_stats_sync (const platform_t *plat, int cur_id, int orig_id, b
 {
 	g_atv14_state.valid = true;
 	g_atv14_state.switched = held;
-	g_atv14_state.current_hz = atv14_mode_hz (plat, cur_id);
-	g_atv14_state.original_hz = atv14_mode_hz (plat, held ? orig_id : cur_id);
+	g_atv14_state.current_hz = atv14_report_hz (plat, cur_id);
+	g_atv14_state.original_hz = atv14_report_hz (plat, held ? orig_id : cur_id);
 }
 
 /* Пассивный режим (нет backdoor или enable=0): переключать нечем/нельзя, но
