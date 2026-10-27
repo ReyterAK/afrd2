@@ -107,16 +107,16 @@
 
 ## Артефакты
 
-Комплект — `out/afrd2-1.1.0/`, собран 27.10.2026 (пересборка после правки отчёта о
-частоте). `versionName=1.1.0`, `versionCode=10100`.
+Комплект — `out/afrd2-1.1.0/`, собран 27.10.2026 (пересборка после правки имени ключа в
+строке о целом режиме). `versionName=1.1.0`, `versionCode=10100`.
 
 | файл | MD5 | размер |
 |---|---|---|
-| `ru.reyter.afrd2-1.1.0-release.apk` | `8f38c8d05a59abe384a476577dedee8e` | 450 343 Б |
-| `afrd2-magisk-armeabi-v7a.zip` | `0722bb1fd064f73286edc4f4f18175be` | 66 427 Б |
-| `afrd2-magisk-arm64-v8a.zip` | `e58f0f0caa857f81a658d10a6bb5420c` | 77 317 Б |
+| `ru.reyter.afrd2-1.1.0-release.apk` | `3bb947059e3d140da9d1b6848840dcde` | 450 359 Б |
+| `afrd2-magisk-armeabi-v7a.zip` | `a1051d584be5ed06dac876d76eb0cf14` | 66 435 Б |
+| `afrd2-magisk-arm64-v8a.zip` | `47e49cb4df4f95e927d0022b63ec3d28` | 77 313 Б |
 | `README.md.zip` | `a16c3481910986c2ad873adfa4e825c5` | 41 017 Б |
 
-Демоны: `libs/armeabi-v7a/afrd` — `38c16ac7f8d004205585a4b016ba4238`,
-`libs/arm64-v8a/afrd` — `8eb7b085315d89f7691f7559d983ed2c`; ровно они лежат внутри APK
+Демоны: `libs/armeabi-v7a/afrd` — `efa0d52b00b6422dff603b4d8c3a047c`,
+`libs/arm64-v8a/afrd` — `ba6fc0a1d6992e3cd0d451233480c46e`; ровно они лежат внутри APK
 (`res/raw/afrd_*`) и обоих Magisk-модулей.
