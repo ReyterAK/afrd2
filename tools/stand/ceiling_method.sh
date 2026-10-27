@@ -62,9 +62,17 @@ say () { echo "$@"; echo "$@" >> "$OUT"; }
 stats () {
 	# Имя видео-слоя зависит от версии: на Android 12+ это
 	# `SurfaceView[...](BLAST)#N`, на 8-11 — `SurfaceView - pkg/Activity#N`.
-	L=$(dumpsys SurfaceFlinger --list 2>/dev/null | grep 'SurfaceView' \
-	    | grep -v -i background | grep -E '\(BLAST\)|SurfaceView - ' | head -1)
-	[ -z "$L" ] && { echo "n/a n/a n/a n/a"; return; }
+	# Слой ищем в пакете на переднем плане: в списке бывают и чужие SurfaceView
+	# (оверлеи, остатки прежних плееров), а период у них свой. Именно так первый
+	# прогон 27.10 на `.42` показал «подача 54.71 при 1.00 периода» под 24 Гц —
+	# число из чужого 60-герцового слоя, а не из видео (журнал §80).
+	FG=$(fgpkg)
+	LST=$(dumpsys SurfaceFlinger --list 2>/dev/null | grep 'SurfaceView' \
+	      | grep -v -i background | grep -E '\(BLAST\)|SurfaceView - ')
+	L=""
+	[ -n "$FG" ] && L=$(printf '%s\n' "$LST" | grep -F "$FG" | head -1)
+	[ -z "$L" ] && L=$(printf '%s\n' "$LST" | head -1)
+	[ -z "$L" ] && { echo "n/a n/a n/a n/a n/a"; return; }
 	dumpsys SurfaceFlinger --latency "$L" > /data/local/tmp/cm.lat 2>/dev/null
 	awk 'NR == 1 { p = $1 / 1e6; next }
 	     NF == 3 && $2 + 0 > 0 && $2 + 0 < 1e17 { n++; t[n] = $2 + 0 }
@@ -86,8 +94,16 @@ stats () {
 	           for (i = 1; i <= m; i++) { k = int (med[i] / p + 0.5); h[k]++ }
 	           hist = ""
 	           for (k = 1; k <= 6; k++) if (h[k]) hist = hist sprintf ("%dx%d ", k, h[k])
-	           printf "%.2f %.2f %.2f %s", 1000 / (s / m), mm / p, p, hist }' \
+	           # Корзины через «/»: пробел в выводе разбивал бы поле на слова, и
+	           # печать показывала только первую корзину (найдено 27.10 при разборе
+	           # «зажима» на `.42` — вывод «[1x119 2x5]» печатался как «[1x119]»).
+	           for (i = 1; i <= 6; i++) if (h[i]) { hs = hs (hs == "" ? "" : "/") sprintf ("%dx%d", i, h[i]) }
+	           printf "%.2f %.2f %.2f %s", 1000 / (s / m), mm / p, p, hs }' \
 		/data/local/tmp/cm.lat
+	# Имя измеренного слоя — отдельной строкой: в общем выводе оно ломало
+	# разбиение на поля, а знать его нужно (на стенде бывает несколько SurfaceView).
+	printf '%s\n' "$L" > /data/local/tmp/cm.layer
+
 }
 
 # Позиция ролика: берём сессию с `active=true` (или сессию указанного пакета),
@@ -342,11 +358,11 @@ clamp () { # создать зажим: старт под LOW, подъём до
 	ensure_playing || { say "  !! измерение невозможно: видео не идёт"; return 1; }
 	sleep 3
 	set -- $(stats)
-	say "    под $LOW:      подача $1 к/с, интервал $2 периода(ов) [$4], декодер $(decrate) к/с"
+	say "    под $LOW (режим $(cat /sys/class/display/mode)):      подача $1 к/с, интервал $2 периода(ов) [$4], декодер $(decrate) к/с, слой $(cat /data/local/tmp/cm.layer 2>/dev/null)"
 	mode_set "$HIGH" || { say "  !! режим $HIGH не выставился"; return 1; }
 	sleep 7
 	set -- $(stats)
-	say "    при $HIGH:     подача $1 к/с, интервал $2 периода(ов) [$4], декодер $(decrate) к/с  <- зажим, если подача много ниже декодера"
+	say "    при $HIGH (режим $(cat /sys/class/display/mode)):     подача $1 к/с, интервал $2 периода(ов) [$4], декодер $(decrate) к/с, слой $(cat /data/local/tmp/cm.layer 2>/dev/null)  <- зажим, если подача много ниже декодера"
 }
 
 # --- 1. устройство -----------------------------------------------------------
@@ -381,7 +397,7 @@ if clamp; then
 		say "    перезапуск: ${t} мс"
 		sleep 10
 		set -- $(stats)
-		say "    после:         подача $1 к/с, интервал $2 периода(ов) [$4], декодер $(decrate) к/с"
+		say "    после (режим $(cat /sys/class/display/mode)):         подача $1 к/с, интервал $2 периода(ов) [$4], декодер $(decrate) к/с, слой $(cat /data/local/tmp/cm.layer 2>/dev/null)"
 		say "    позиция: ${p0:-н/д} -> $(vpos)"
 	fi
 fi
@@ -393,7 +409,7 @@ if clamp; then
 	d=$(density_cost); say "    смена плотности: ${d} мс"
 	sleep 10
 	set -- $(stats)
-	say "    после:         подача $1 к/с, интервал $2 периода(ов) [$4], декодер $(decrate) к/с"
+	say "    после (режим $(cat /sys/class/display/mode)):         подача $1 к/с, интервал $2 периода(ов) [$4], декодер $(decrate) к/с, слой $(cat /data/local/tmp/cm.layer 2>/dev/null)"
 	say "    позиция: ${p0:-н/д} -> $(vpos)"
 fi
 
@@ -402,7 +418,7 @@ say "=== контроль: без вмешательства"
 if clamp; then
 	sleep 10
 	set -- $(stats)
-	say "    остаётся:      подача $1 к/с, интервал $2 периода(ов) [$4], декодер $(decrate) к/с"
+	say "    остаётся (режим $(cat /sys/class/display/mode)):      подача $1 к/с, интервал $2 периода(ов) [$4], декодер $(decrate) к/с, слой $(cat /data/local/tmp/cm.layer 2>/dev/null)"
 fi
 
 am force-stop com.google.android.youtube.tv >/dev/null 2>&1
