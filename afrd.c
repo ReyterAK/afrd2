@@ -2819,6 +2819,13 @@ static int run_atv14 (const platform_t *plat)
 	/* §21.9: проверка, что после смены режима кадры реально идут на подачу */
 	mstime_t cadence_timer = 0;
 	bool cadence_armed = false;
+	/* Проверка подачи уже сделана для этого видео и режима. Без этого флага
+	 * ветка «решение есть, режим уже стоит» взводила её заново каждый оборот
+	 * цикла, и она шла всё видео каждые 2.5 с: журнал тестера 1.1.0 (ATV11,
+	 * 27.10) — 165 строк «подача в порядке» и 175 «цветовое пространство уже…»
+	 * за 16 минут, то есть ~330 вызовов `dumpsys SurfaceFlinger --latency` на
+	 * один ролик. Сбрасывается на новом видео и после смены режима. */
+	bool cadence_checked = false;
 	int cadence_fixes = 0;
 	/* ожидаемый интервал подачи контента (мс) — из измеренной частоты */
 	int cadence_expect_ms = 0;
@@ -2845,6 +2852,12 @@ static int run_atv14 (const platform_t *plat)
 	 * поправить (см. блок ниже). */
 	bool fast_applied = false;
 	int fast_class = 0;
+	/* Строка «заявлено X, замер дал Y — правлю режим» печатается один раз на
+	 * видео. Замер идёт непрерывно (огибающая перезапускается после каждого
+	 * решения), поэтому условие «расхождение с заявленной» остаётся истинным
+	 * и в следующих окнах: журнал тестера 1.1.0 (ATV11, 27.10) — 48 таких
+	 * строк на один ролик при 10 фактических переключениях. */
+	bool fast_mismatch_logged = false;
 
 	/* Поведенческие ключи профиля (R28). */
 	int prefer_api = cfg_get_int ("fps.prefer.api", 1);
@@ -3301,11 +3314,13 @@ static int run_atv14 (const platform_t *plat)
 				measure_failed = false;
 				retries = 0;
 				fast_applied = false;	/* новое видео — быстрое решение заново */
+				fast_mismatch_logged = false;
 				g_ceiling_no_fast = false;
 				fast_class = 0;
 				recheck_armed = false;	/* R56: перепроверка — на текущее видео */
 				mstime_disable (&recheck_timer);
 				cadence_armed = false;
+				cadence_checked = false;
 				mstime_disable (&cadence_timer);
 				cadence_fixes = 0;
 				hdrinfo_armed = false;
@@ -3462,6 +3477,7 @@ static int run_atv14 (const platform_t *plat)
 			measure_failed = false;
 			retries = 0;
 			fast_applied = false;	/* видео кончилось — решение не переносим */
+			fast_mismatch_logged = false;
 			fast_class = 0;
 			/* R56: перепроверка — тоже на текущее видео */
 			recheck_armed = false;
@@ -3473,6 +3489,7 @@ static int run_atv14 (const platform_t *plat)
 			fps_env_reset (&env);
 			env_growing = false;
 			cadence_armed = false;
+			cadence_checked = false;
 			mstime_disable (&cadence_timer);
 			cadence_fixes = 0;
 			hdrinfo_armed = false;
@@ -3495,6 +3512,7 @@ static int run_atv14 (const platform_t *plat)
 			 * режим «туда-обратно»: повторная выдача того же режима не
 			 * помогает, а смена его пересобирает vsync-путь HWC/SF. */
 			cadence_armed = false;
+			cadence_checked = true;
 
 			/* Свежий сброс потолка (особенно перезапуском кодека) оставляет
 			 * в окне подачи провал на время пересоздания декодера, и проверка
@@ -3919,11 +3937,15 @@ cadence_done: ;
 				/* Быстрое решение было — сверяем его с замером: расхождение
 				 * по ГРУППЕ частот значит, что драйвер заявил неверно (23.976 и
 				 * 24 — одна группа, их ложным расхождением не считаем). */
-				if (fast_applied && fps_group_differs (fast_class, hz))
+				if (fast_applied && !fast_mismatch_logged &&
+				    fps_group_differs (fast_class, hz))
+				{
+					fast_mismatch_logged = true;
 					trace (0, "заявлено %d.%02d Гц, замер дал " HZ_FMT
 					       " Гц — правлю режим\n",
 					       fast_class >> 8, (100 * (fast_class & 255) + 128) >> 8,
 					       HZ_ARGS (hz));
+				}
 
 				trace (1, "видео: " HZ_FMT " Гц по огибающей (%d с наблюдения, "
 				       "горизонт %d мс), ищу режим\n",
@@ -3966,7 +3988,7 @@ cadence_done: ;
 			 * подачи всё равно делаем — чтобы в журнале был ответ, если плеер
 			 * сам подаёт кадры неровно (переключение режима ему безразлично,
 			 * лечится перезапуском ролика). */
-			if (skip_pkg && (cadence_fix_ms > 0) && !cadence_armed)
+			if (skip_pkg && (cadence_fix_ms > 0) && !cadence_armed && !cadence_checked)
 			{
 				mstime_update ();
 				mstime_arm (&cadence_timer, (uint32_t)cadence_fix_ms);
@@ -4226,6 +4248,7 @@ cadence_done: ;
 					mstime_update ();
 					mstime_arm (&cadence_timer, (uint32_t)cadence_fix_ms);
 					cadence_armed = true;
+					cadence_checked = false;	/* новый режим — проверить заново */
 				}
 
 				/* HDR/SDR-атрибуты: перечитать, когда система выставит свои
@@ -4254,7 +4277,7 @@ cadence_done: ;
 			 * растянуты, а демон этого не видел). */
 			ceiling_pending_step (plat, cur_sf_id, video_eff);
 
-			if ((cadence_fix_ms > 0) && !cadence_armed)
+			if ((cadence_fix_ms > 0) && !cadence_armed && !cadence_checked)
 			{
 				mstime_update ();
 				mstime_arm (&cadence_timer, (uint32_t)cadence_fix_ms);
