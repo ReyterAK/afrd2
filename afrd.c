@@ -2075,6 +2075,11 @@ static int vendor_frac_ensure (const platform_t *plat, int want)
 /* Вернуть узлу прежнее значение (видео кончилось/режим возвращён). */
 static void vendor_frac_restore (void)
 {
+	/* Флаг «уже сообщали» снимаем всегда, даже когда писать не пришлось:
+	 * иначе следующий ролик остаётся без строки о дробности (живой лог
+	 * тестера 27.10, сборка 17:07: строка была один раз за две сессии). */
+	g_vendor_frac_logged = false;
+
 	if (g_vendor_frac_orig < 0)
 		return;
 
@@ -3993,7 +3998,10 @@ cadence_done: ;
 					: fps_env_decide (&env, env_us, env_skip_us, env_sub_us,
 					                  env_corr, av1_off, &env_hz);
 
-				if (env_early && env_decided)
+				/* Строку печатаем, только когда решение новое: замер идёт
+				 * непрерывно, и на одном ролике она повторялась каждые 14 с
+				 * (лог тестера 27.10). */
+				if (env_early && env_decided && (env_hz != g_dec_last_hz))
 					trace (1, "раннее решение огибающей: подокна согласны (%d мс наблюдения)\n",
 					       (int)(env_early_us / 1000));
 

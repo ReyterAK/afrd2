@@ -112,11 +112,11 @@
 
 | файл | MD5 | размер |
 |---|---|---|
-| `ru.reyter.afrd2-1.1.0-release.apk` | `65cf8a2cd362c2d9a161ff9338bcc483` | 450 267 Б |
-| `afrd2-magisk-armeabi-v7a.zip` | `288b60507cd61358e3df463c2de836da` | 66 361 Б |
-| `afrd2-magisk-arm64-v8a.zip` | `2c61e3db75c9c63426fc133da140429e` | 77 306 Б |
+| `ru.reyter.afrd2-1.1.0-release.apk` | `8f38c8d05a59abe384a476577dedee8e` | 450 343 Б |
+| `afrd2-magisk-armeabi-v7a.zip` | `0722bb1fd064f73286edc4f4f18175be` | 66 427 Б |
+| `afrd2-magisk-arm64-v8a.zip` | `e58f0f0caa857f81a658d10a6bb5420c` | 77 317 Б |
 | `README.md.zip` | `a16c3481910986c2ad873adfa4e825c5` | 41 017 Б |
 
-Демоны: `libs/armeabi-v7a/afrd` — `bec4186510ed08577a029a5c56fd215d`,
-`libs/arm64-v8a/afrd` — `f8e05164e81bd4bbe552987d43ab6499`; ровно они лежат внутри APK
+Демоны: `libs/armeabi-v7a/afrd` — `38c16ac7f8d004205585a4b016ba4238`,
+`libs/arm64-v8a/afrd` — `8eb7b085315d89f7691f7559d983ed2c`; ровно они лежат внутри APK
 (`res/raw/afrd_*`) и обоих Magisk-модулей.
