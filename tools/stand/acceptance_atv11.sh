@@ -28,13 +28,25 @@
 # попадать нельзя (живой прогон 2026-10-15 с log.enable=0 дал пять ложных FAIL).
 #
 # Использование:  ./tools/stand/acceptance_atv11.sh [устройство]
+# Переменные: PLAYER (пакет плеера), CLIPS (каталог), C23976/C25/C60/CSYNTH
+# (имена клипов), WAIT_MAX, LOG_WAIT. Клипы и плеер проверяются до первого
+# изменения на боксе: без них прогон заканчивается сообщением и кодом 3.
 
 set -u
 
 D=${1:-192.168.88.44:5555}
 PKG=ru.reyter.afrd2
-PLAYER=net.gtvbox.videoplayer
-CLIPS=/sdcard/Download/afr45
+# Плеер и набор клипов задаются переменными: на одном стенде стоит Vimu, на
+# другом только Just Player, и клипы лежат в разных каталогах. Раньше значения
+# были зашиты (net.gtvbox.videoplayer и /sdcard/Download/afr45), поэтому на
+# стенде без Vimu прогон не начинался вовсе (живая находка 27.10 на `.42`).
+PLAYER=${PLAYER:-net.gtvbox.videoplayer}
+CLIPS=${CLIPS:-/sdcard/Download/afr45}
+# Имена клипов в наборе: 23.976, 25, 60 и «синтетика 23.976».
+C23976=${C23976:-real_23976.mkv}
+C25=${C25:-real_25.mkv}
+C60=${C60:-t60.mp4}
+CSYNTH=${CSYNTH:-long_23976_synth.mp4}
 CACHE=/data/user/0/$PKG/cache
 INI=$CACHE/afrd.ini
 LOG=/data/local/afrd.log
@@ -81,7 +93,17 @@ wait_mode () { # wait_mode <режим> <секунд>
 	return 1
 }
 
-play () { sh_ "am start -a android.intent.action.VIEW -d file://$CLIPS/$1 -t video/x-matroska -n $PLAYER/.PlayerActivity" >/dev/null; }
+# MIME по расширению: набор бывает и .mkv, и .mp4 — с неверным типом плеер
+# молча открывает пустоту, и прогон получается ложным.
+mime_of () {
+	case "$1" in
+		*.mkv) echo video/x-matroska ;;
+		*.mp4) echo video/mp4 ;;
+		*.ts)  echo video/mp2t ;;
+		*)     echo video/* ;;
+	esac
+}
+play () { sh_ "am start -a android.intent.action.VIEW -d file://$CLIPS/$1 -t $(mime_of "$1") -n $PLAYER/.PlayerActivity" >/dev/null; }
 stop_player () { sh_ "am force-stop $PLAYER" >/dev/null; }
 
 restart_daemon () {
@@ -116,8 +138,37 @@ check_clip () { # $1 номер, $2 файл, $3 режим, $4 предел
 # --- предусловия -----------------------------------------------------------
 adb -s "$D" shell true >/dev/null 2>&1 || { say "нет устройства $D"; exit 2; }
 
+# Плеер и клипы проверяются ДО любых изменений на боксе: без них первые же
+# проверки дают «режим не сменился», и это выглядит как дефект демона, хотя
+# виноват набор стенда (живой прогон 27.10 на `.42`: Vimu не установлен).
+missing=""
+for c in "$C23976" "$C25" "$C60" "$CSYNTH"; do
+	# Проверка идёт через adb напрямую, без sh_: у sh_ вывод идёт через tr,
+	# и статус выхода всегда нулевой — отсутствие клипов не замечалось вовсе
+	# (живой прогон 27.10 на `.42`: все проверки упали, потому что каталога
+	# /sdcard/Download/afr45 на боксе нет, а предусловие это «пропустило»).
+	adb -s "$D" shell "test -f '$CLIPS/$c'" >/dev/null 2>&1 || missing="$missing $c"
+done
+if [ -n "$missing" ]; then
+	say "в $CLIPS нет клипов:$missing"
+	say "положите их (или задайте CLIPS=… C23976=… C25=… C60=… CSYNTH=…) и повторите;"
+	say "ничего на боксе не менялось."
+	exit 3
+fi
+if ! adb -s "$D" shell "pm list packages $PLAYER" 2>/dev/null | grep -q "package:$PLAYER"; then
+	say "плеер $PLAYER не установлен на $D; задайте PLAYER=<пакет> (нужен плеер без своего AFR,"
+	say "например com.brouken.player или net.gtvbox.videoplayer) — на боксе ничего не менялось."
+	exit 3
+fi
+
 ORIG_AFR=$(su_ "getprop persist.sys.autoframemode" | tail -1)
 MODE0=$(mode)
+# Фактическая частота исходного режима: 60.000 и 59.940 в узле называются
+# одинаково (1080p60hz), а `afrd -s` на вендорном пути печатает факт из vinfo.
+# Раньше проверка ждала литерал «60.00Hz» и на стенде с 59.94 падала (живой
+# прогон 27.10 на `.42`: единственный FAIL прогона).
+ORIG_HZ=$(su_ "cat /sys/class/display/vinfo" | awk '/sync_duration_num/{n=$2} /sync_duration_den/{d=$2} END{if(d+0>0) printf "%.2f", n/d}')
+case "$ORIG_HZ" in ""|*[!0-9.]*) ORIG_HZ=60.00 ;; esac
 say "стенд $D: исходный режим $MODE0; системный AFR был '$ORIG_AFR'"
 say ""
 
@@ -154,29 +205,29 @@ restore () {
 trap 'restore; exit 1' INT TERM
 
 # --- 1. 23.976 --------------------------------------------------------------
-check_clip 1 real_23976.mkv 1080p24hz "$WAIT_MAX"
+check_clip 1 "$C23976" 1080p24hz "$WAIT_MAX"
 stop_player
 secs=$(wait_mode "$MODE0" 15)
 [ "$(mode)" = "$MODE0" ] && pass "возврат $MODE0 за $secs с" || fail "после стопа $(mode), ожидался $MODE0"
 say ""
 
 # --- 2. 25 fps + статистика -------------------------------------------------
-check_clip 2 real_25.mkv 1080p50hz "$WAIT_MAX"
+check_clip 2 "$C25" 1080p50hz "$WAIT_MAX"
 st=$(su_ "$CACHE/afrd -s -p /dev/run/afrd.pid")
 say "$(echo "$st" | grep -E 'switched|refresh' | sed 's/^/       /')"
 case "$st" in *"switched: yes"*) pass "stats: switched=yes" ;; *) fail "stats: switched не yes" ;; esac
 case "$st" in *"Current display refresh rate: 50.00Hz"*) pass "stats: текущая 50.00 Гц" ;; *) fail "stats: текущая не 50.00 Гц" ;; esac
-case "$st" in *"Original display refresh rate: 60.00Hz"*) pass "stats: исходная 60.00 Гц" ;; *) fail "stats: исходная не 60.00 Гц" ;; esac
+case "$st" in *"Original display refresh rate: ${ORIG_HZ}Hz"*) pass "stats: исходная $ORIG_HZ Гц" ;; *) fail "stats: исходная не $ORIG_HZ Гц" ;; esac
 stop_player
 secs=$(wait_mode "$MODE0" 15)
 [ "$(mode)" = "$MODE0" ] && pass "возврат $MODE0 за $secs с" || fail "после стопа $(mode), ожидался $MODE0"
 say ""
 
 # --- 3. 60 fps: режим не трогается -----------------------------------------
-say "3. 60 fps (t60.mp4)"
+say "3. 60 fps ($C60)"
 sleep 3		# возврат исходного режима предыдущего клипа успевает дописаться в журнал
 mark=$(log_len)
-play t60.mp4
+play "$C60"
 sleep 5
 [ "$(mode)" = "1080p60hz" ] && pass "режим остался 1080p60hz" || fail "режим $(mode)"
 # Переключением считаем только уход в ДРУГОЙ режим: строка о применении того же
@@ -189,9 +240,9 @@ sleep 2
 say ""
 
 # --- 4. синтетика 23.976 ----------------------------------------------------
-say "4. синтетика (long_23976_synth.mp4)"
+say "4. синтетика ($CSYNTH)"
 mark=$(log_len)
-play long_23976_synth.mp4
+play "$CSYNTH"
 secs=$(wait_mode 1080p24hz "$WAIT_MAX")
 if [ "$(mode)" = "1080p24hz" ]; then
 	pass "режим 1080p24hz за $secs с"
@@ -215,7 +266,7 @@ say "5. fps.declare.fast=0 (решение только замером)"
 su_ "sed -i s@^fps.declare.fast=.*@fps.declare.fast=0@ $INI" >/dev/null
 restart_daemon
 mark=$(log_len)
-play real_25.mkv
+play "$C25"
 secs=$(wait_mode 1080p50hz "$WAIT_MAX")
 if [ "$(mode)" = "1080p50hz" ]; then
 	pass "замер вывел 1080p50hz за $secs с"
@@ -237,7 +288,7 @@ say ""
 say "6. помощник недоступен (dex испорчен)"
 mark=$(log_len)
 su_ "echo МУСОР > $CACHE/afrd-disp.dex" >/dev/null
-play real_25.mkv
+play "$C25"
 # Ждём с запасом: драйвер на этом стенде заявляет 30 fps и для честных 25-фпс
 # клипов, поэтому попытка применить режим приходит только от замера (~15 с).
 sleep 26
@@ -272,7 +323,7 @@ if [ "${hsize:-0}" -gt 10 ] 2>/dev/null; then pass "скрипт-заглушк�
 su_ "sed -i s@^vendor.disp.cli=.*@vendor.disp.cli=/data/local/tmp/hang.sh@ $INI" >/dev/null
 sleep 4		# демон перечитывает конфиг и переходит на заглушку
 mark=$(log_len)
-play real_25.mkv
+play "$C25"
 # Ждём не «12 секунд», а появления строки: попытка применить режим приходит от
 # замера (~15 с на этом стенде, драйвер заявляет 30 fps и для 25-фпс клипа), а
 # демон отвечает ещё через ~10 с — при фиксированных 12 с проверка ложно падала
@@ -314,7 +365,7 @@ su_ "sed -i s@^vendor.disp.cap=.*@vendor.disp.cap=/nonexistent/disp_cap@ $INI" >
 mark=$(log_len)
 sh_ "monkey -p $PKG -c android.intent.category.LAUNCHER 1" >/dev/null 2>&1
 sleep 9
-play real_25.mkv
+play "$C25"
 sleep 12
 lines=$(log_since "$mark")
 warng=$(echo "$lines" | grep -c 'список режимов ТВ не прочитан')
