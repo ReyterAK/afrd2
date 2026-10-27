@@ -96,7 +96,18 @@
   незнакомого бокса (`tools/stand/recon_box.sh`), замер времени переключения телевизора
   (`tools/stand/tv_switch_lat.sh`), документ для встраивания в прошивку.
 
-## Артефакт
+## Артефакты
 
-`ru.reyter.afrd2-1.1.0-release.apk` — 447 139 байт, MD5
-`b3ad39b471cb07137ab6d78afe42ed11`, versionCode 10100, versionName 1.1.0.
+Комплект — `out/afrd2-1.1.0/`, собран 27.10.2026. `versionName=1.1.0`,
+`versionCode=10100`.
+
+| файл | MD5 | размер |
+|---|---|---|
+| `ru.reyter.afrd2-1.1.0-release.apk` | `b3ad39b471cb07137ab6d78afe42ed11` | 447 139 Б |
+| `afrd2-magisk-armeabi-v7a.zip` | `fd86315abfdf120dcd49e46c93da5ec1` | 65 028 Б |
+| `afrd2-magisk-arm64-v8a.zip` | `c0ad8cf52e3efd0e8fe10d3d8abb3bfb` | 76 071 Б |
+| `README.md.zip` | `eb582de5dc983f7da05f82ec22cef222` | 40 722 Б |
+
+Демоны: `libs/armeabi-v7a/afrd` — `196b85234bcc01ef1bbb958480690784`,
+`libs/arm64-v8a/afrd` — `6fddcb33ec27ae193fee4f5a124abc3c`; ровно они лежат внутри APK
+(`res/raw/afrd_*`) и обоих Magisk-модулей.
