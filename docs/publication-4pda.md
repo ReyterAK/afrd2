@@ -225,10 +225,10 @@ adb shell 'cat /sys/class/vdec/vdec_status'               # состояние �
 
 | файл | MD5 | размер |
 |---|---|---|
-| APK `1.1.0` | `b3ad39b471cb07137ab6d78afe42ed11` | 447 139 Б |
-| модуль `1.1.0`, `armeabi-v7a` | `fd86315abfdf120dcd49e46c93da5ec1` | 65 028 Б |
-| модуль `1.1.0`, `arm64-v8a` | `c0ad8cf52e3efd0e8fe10d3d8abb3bfb` | 76 071 Б |
-| `README.md.zip` | `eb582de5dc983f7da05f82ec22cef222` | 40 722 Б |
+| APK `1.1.0` | `5bee609bfdb18d8b6a3e24c4d791f5fa` | 447 855 Б |
+| модуль `1.1.0`, `armeabi-v7a` | `1f044e215ca5157f0aefef808dbb3813` | 65 140 Б |
+| модуль `1.1.0`, `arm64-v8a` | `bb16616a1ed3f7aa917ac64d4d5cb19d` | 76 175 Б |
+| `README.md.zip` | `42293b834a7a18871bf5bf348722a956` | 40 680 Б |
 
 Версия **1.1.0** отличается от 1.0.0 семью группами изменений (подробно — `ChangeLog`):
 

@@ -1,20 +1,6 @@
 AFRd2 — a fork of AFRd (based on AFRd 0.3.2 by Andrey Zabolotnyi,
 anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
-1.1.1 Unreleased
-
-    * The rate report on Android 10/11 showed the mode's nominal value instead
-      of the actual rate. A mode name covers both variants (`1080p60hz` is both
-      60.000 and 59.940), the fractional policy comes from the frac_rate_policy
-      node, and the TV mode list (disp_cap) holds nominal values only. The
-      daemon reported 60.00 Hz while the display ran at 59.940061 - in the app,
-      in `afrd -s` and in the notification - and that was taken for the daemon
-      switching the "base frequency" (tester's question, 27.10: "60 with the
-      daemon, 59.94 without it"; the mode, the policy and the SurfaceFlinger
-      readings were identical in both cases). The report now honours the policy
-      node: 59.94 Hz at frac_rate_policy=1 and 60.00 at 0. Mode selection and
-      application are unchanged.
-
 1.1.0 Tue Oct 27 2026
 
     Release after the 1.0.0 publication: the main thing is that frame rate
@@ -89,6 +75,16 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       started under. Cost: the HAL is restarted, i.e. the
       decoder of every application at once (background playback in another
       app will be interrupted).
+
+    * Rate readings on Android 10/11 now match the actual rate. A mode name
+      covers both variants (`1080p60hz` is both 60.000 and 59.940), the
+      fractional policy comes from the frac_rate_policy node, and the TV mode
+      list holds nominal values only: the daemon showed 60.00 Hz while the
+      display ran at 59.940061 (in the app, in `afrd -s` and in the
+      notification), and that was taken for the daemon switching the "base
+      frequency". The report now honours the display policy: 59.94 at
+      frac_rate_policy=1 and 60.00 at 0. Mode selection and application are
+      unchanged.
 
     * Relative AV1 counter correction (fps.correct.av1.pct): the overcount is
       proportional to the rate (23.976 -> 25.40, 59.94 -> 63.30) and the previous
