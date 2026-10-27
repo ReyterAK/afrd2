@@ -2030,11 +2030,40 @@ static int g_vendor_frac_orig = -1;	/* значение узла до перво
  * одной строки про дробность. */
 static bool g_vendor_frac_logged = false;
 
+/* Вендорный SystemControl на Android 11 переписывает узел при КАЖДОМ
+ * применении режима (живая находка 27.10 на `.42`: `echo 0` в узел, затем
+ * `afrd-disp.sh 1080p60hz` → узел снова 1, тайминги 59.940). Значит, писать
+ * узел перед применением бессмысленно, а повторять попытку на каждой итерации
+ * цикла нельзя: это петля «пишу → переприменяю → узел снова не тот», где каждое
+ * переприменение — fork/exec sh + app_process (в живом прогоне 14 заходов за
+ * 10 с, режим при этом так и остался 59.94). Одна попытка на цель; не вышло —
+ * фиксируем и работаем с таймингами вендора. */
+static bool g_vendor_frac_reapply_done = false;
+static bool g_vendor_frac_vendor_wins = false;
+
+/* Новая цель по дробности — попытки начинаются заново: прежний отказ относился
+ * к другой цели (на 23.976 узел уже был 1 и писать не требовалось, на 60.000
+ * вендор вернул своё значение — это разные случаи). */
+static void vendor_frac_plan (int want)
+{
+	if (want != g_vendor_frac_wanted)
+	{
+		g_vendor_frac_reapply_done = false;
+		g_vendor_frac_vendor_wins = false;
+	}
+	g_vendor_frac_wanted = want;
+}
+
 /* Привести узел к нужной дробности. Возврат: 1 — узел изменён, 0 — уже такой
  * (или менять нечего), -1 — узел не читается. */
 static int vendor_frac_ensure (const platform_t *plat, int want)
 {
 	if ((plat->sink != SINK_VENDOR_MODE) || (want < 0))
+		return 0;
+
+	/* Вендор переписывает узел при применении режима — дальнейшие записи
+	 * только зря дёргают HAL (см. комментарий к g_vendor_frac_vendor_wins). */
+	if (g_vendor_frac_vendor_wins)
 		return 0;
 
 	int cur = sysfs_get_int (g_hdmi_dev, "frac_rate_policy");
@@ -2072,13 +2101,37 @@ static int vendor_frac_ensure (const platform_t *plat, int want)
 	return 1;
 }
 
+/* Проверка сразу после применения режима: удержал ли узел нашу дробность.
+ * Вендорный SystemControl на ATV11 возвращает своё значение при каждом
+ * применении (живой замер 27.10 на `.42`: писали 0, после помощника снова 1,
+ * на выходе 59.940), поэтому добиваться цели больше нечем — пишем один раз и
+ * оставляем фактические тайминги. Без этой проверки демон честно записывал бы
+ * узел заново на каждой итерации цикла. */
+static void vendor_frac_check_after_apply (void)
+{
+	if (g_vendor_frac_wanted < 0)
+		return;
+
+	int after = sysfs_get_int (g_hdmi_dev, "frac_rate_policy");
+	if ((after >= 0) && ((after != 0) != (g_vendor_frac_wanted != 0)))
+	{
+		g_vendor_frac_vendor_wins = true;
+		trace (1, "дробность дисплея: вендорный HAL вернул политику %d — "
+		       "тайминги остаются его\n", after);
+	}
+}
+
 /* Вернуть узлу прежнее значение (видео кончилось/режим возвращён). */
 static void vendor_frac_restore (void)
 {
 	/* Флаг «уже сообщали» снимаем всегда, даже когда писать не пришлось:
 	 * иначе следующий ролик остаётся без строки о дробности (живой лог
-	 * тестера 27.10, сборка 17:07: строка была один раз за две сессии). */
+	 * тестера 27.10, сборка 17:07: строка была один раз за две сессии).
+	 * Заодно снимаем признаки «переприменяли» и «вендор вернул своё»: они
+	 * относятся к прошлому видео. */
 	g_vendor_frac_logged = false;
+	g_vendor_frac_reapply_done = false;
+	g_vendor_frac_vendor_wins = false;
 
 	if (g_vendor_frac_orig < 0)
 		return;
@@ -3429,6 +3482,8 @@ static int run_atv14 (const platform_t *plat)
 				 * видно, жива ли правка и на нынешнем узле. */
 				g_vendor_frac_wanted = -1;
 				g_vendor_frac_logged = false;
+				g_vendor_frac_reapply_done = false;
+				g_vendor_frac_vendor_wins = false;
 				g_ceiling_no_fast = false;
 				fast_class = 0;
 				recheck_armed = false;	/* R56: перепроверка — на текущее видео */
@@ -3933,8 +3988,11 @@ cadence_done: ;
 								fast_class = dclass;
 								want_sf_id = did;
 								cur_sf_id = did;
-								g_vendor_frac_wanted = -1;
-								(void) mode_rate_fract_decide (dclass, &g_vendor_frac_wanted);
+								{
+									int wf = -1;
+									(void) mode_rate_fract_decide (dclass, &wf);
+									vendor_frac_plan (wf);
+								}
 								trace (0, "быстрое решение по заявленной частоте: %u fps — "
 								       "режим применён сразу, замер проверит\n", v0.decl_fps);
 							}
@@ -4147,8 +4205,11 @@ cadence_done: ;
 			want_sf_id = cur_sf_id;
 			/* Дробность под измеренную частоту (вендорный путь): имя режима
 			 * одно на 24.000 и 23.976, фактическую частоту задаёт узел. */
-			g_vendor_frac_wanted = -1;
-			(void) mode_rate_fract_decide (hz, &g_vendor_frac_wanted);
+			{
+				int wf = -1;
+				(void) mode_rate_fract_decide (hz, &wf);
+				vendor_frac_plan (wf);
+			}
 		}
 		/* Подсказка плеера — прямой запрос точной частоты (24.8 fixed-point,
 		 * живёт 1 с). Эта ветка ловит случай, когда режим уже выбран
@@ -4183,8 +4244,11 @@ cadence_done: ;
 				hint_seen = g_frame_rate_hint.stamp;
 				measure_failed = false;
 				want_sf_id = hint_id;
-				g_vendor_frac_wanted = -1;
-				(void) mode_rate_fract_decide (hint_hz, &g_vendor_frac_wanted);
+				{
+					int wf = -1;
+					(void) mode_rate_fract_decide (hint_hz, &wf);
+					vendor_frac_plan (wf);
+				}
 				trace (1, "видео: " HZ_FMT " Гц по подсказке плеера, режим id %d\n",
 				       HZ_ARGS (hint_hz), hint_id);
 			}
@@ -4336,6 +4400,13 @@ cadence_done: ;
 			vendor_frac_ensure (plat, g_vendor_frac_wanted);
 
 			int apply_rc = atv14_apply_mode (plat, want_sf_id, "переключение пропущено");
+
+			/* Вендорный SystemControl на ATV11 переписывает узел при применении
+			 * режима (живой замер 27.10 на `.42`: писали 0, после помощника
+			 * снова 1 и 59.940 на выходе). Проверяем сразу после применения:
+			 * тогда лишнее переприменение ради дробности не делается вовсе. */
+			if (apply_rc == 0)
+				vendor_frac_check_after_apply ();
 			if (apply_rc != 0)
 			{
 				/* Отказ применения (в том числе ненулевой код вендорного
@@ -4416,14 +4487,23 @@ cadence_done: ;
 			/* Имя режима уже нужное, но дробность могла быть другой (24.000
 			 * вместо 23.976): сама по себе запись узла тайминги не меняет —
 			 * режим надо применить заново, чтобы HAL пересобрал его с новой
-			 * политикой. */
-			if ((vendor_frac_ensure (plat, g_vendor_frac_wanted) == 1) &&
+			 * политикой. Попытка одна: на ATV11 вендорный SystemControl
+			 * возвращает узел к своему значению при любом применении режима, и
+			 * повтор давал бесконечную петлю «пишу → переприменяю» (живой
+			 * прогон 27.10 на `.42`). */
+			if (!g_vendor_frac_reapply_done &&
+			    (vendor_frac_ensure (plat, g_vendor_frac_wanted) == 1) &&
 			    (want_sf_id >= 0))
 			{
+				g_vendor_frac_reapply_done = true;
 				trace (0, "дробность изменилась при том же режиме — "
 				       "переприменяю %s\n", g_modes [want_sf_id].name);
 				if (atv14_apply_mode (plat, want_sf_id, "переприменение") == 0)
 					cur_sf_id = want_sf_id;
+
+				/* Удержал ли HAL политику? Если нет — тайминги остаются его:
+				 * пишем это один раз и работаем с фактической частотой. */
+				vendor_frac_check_after_apply ();
 			}
 
 			if ((cadence_fix_ms > 0) && !cadence_armed && !cadence_checked)
