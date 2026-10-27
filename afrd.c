@@ -1996,6 +1996,71 @@ static int atv14_wait (int ms)
 	return 0;
 }
 
+/* ---- Дробная политика дисплея на вендорном пути (Android 10/11) ----
+ *
+ * Имя режима в `disp_cap` одно на оба варианта: `1080p24hz` — это и 24.000, и
+ * 23.976. Какой из них отдаёт ТВ, решает узел `frac_rate_policy`, и штатная
+ * системная АПЧ (DroidLogic FrameRateAutoByNode) пишет его ПЕРЕД сменой режима.
+ * AFRd на вендорном пути этого не делал: он посылал только имя, поэтому фильм
+ * 23.976 на боксе с политикой 0 играл на 24.000 — раз в ~41 с лишний или
+ * пропущенный кадр (журнал §72.3, лог тестера 27.10).
+ *
+ * Политика — состояние ДИСПЛЕЯ, а не наше: как только видео кончилось, узел
+ * возвращается к прежнему значению, иначе рабочий стол остался бы на 59.94
+ * вместо 60.000 (ровно это владелец и заметил в §69). */
+static int g_vendor_frac_wanted = -1;	/* 0/1 — под текущую цель, -1 цели нет */
+static int g_vendor_frac_orig = -1;	/* значение узла до первой правки */
+
+/* Привести узел к нужной дробности. Возврат: 1 — узел изменён, 0 — уже такой
+ * (или менять нечего), -1 — узел не читается. */
+static int vendor_frac_ensure (const platform_t *plat, int want)
+{
+	if ((plat->sink != SINK_VENDOR_MODE) || (want < 0))
+		return 0;
+
+	int cur = sysfs_get_int (g_hdmi_dev, "frac_rate_policy");
+	if (cur < 0)
+	{
+		/* Узла нет (не Amlogic-драйвер?) — молча работаем как раньше: имя
+		 * режима всё равно применено, дробность остаётся системной. */
+		trace (1, "frac_rate_policy не читается — дробность не правлю\n");
+		return -1;
+	}
+	if ((cur != 0) == (want != 0))
+		return 0;
+
+	if (g_vendor_frac_orig < 0)
+		g_vendor_frac_orig = (cur != 0);
+
+	if (sysfs_set_str (g_hdmi_dev, "frac_rate_policy", want ? "1" : "0") != 0)
+	{
+		trace (0, "не удалось записать frac_rate_policy=%d — остаётся %d\n",
+		       want, cur);
+		return -1;
+	}
+
+	trace (0, "дробность дисплея: frac_rate_policy %d -> %d\n", cur, want);
+	return 1;
+}
+
+/* Вернуть узлу прежнее значение (видео кончилось/режим возвращён). */
+static void vendor_frac_restore (void)
+{
+	if (g_vendor_frac_orig < 0)
+		return;
+
+	int cur = sysfs_get_int (g_hdmi_dev, "frac_rate_policy");
+	if ((cur >= 0) && ((cur != 0) != (g_vendor_frac_orig != 0)))
+	{
+		if (sysfs_set_str (g_hdmi_dev, "frac_rate_policy",
+		                   g_vendor_frac_orig ? "1" : "0") == 0)
+			trace (0, "дробность дисплея: возвращаю frac_rate_policy %d\n",
+			       g_vendor_frac_orig);
+	}
+
+	g_vendor_frac_orig = -1;
+}
+
 /* Единственная точка, где id режима уходит в транзакцию 1035 (R44): id обязан
  * присутствовать в ТЕКУЩЕЙ таблице режимов, иначе SurfaceFlinger получил бы
  * чужой или уже не существующий id (сменилась нумерация, дамп не прочитался,
@@ -3813,6 +3878,7 @@ cadence_done: ;
 								fast_class = dclass;
 								want_sf_id = did;
 								cur_sf_id = did;
+								g_vendor_frac_wanted = mode_rate_is_fract (dclass) ? 1 : 0;
 								trace (0, "быстрое решение по заявленной частоте: %u fps — "
 								       "режим применён сразу, замер проверит\n", v0.decl_fps);
 							}
@@ -4019,6 +4085,9 @@ cadence_done: ;
 				continue;
 			}
 			want_sf_id = cur_sf_id;
+			/* Дробность под измеренную частоту (вендорный путь): имя режима
+			 * одно на 24.000 и 23.976, фактическую частоту задаёт узел. */
+			g_vendor_frac_wanted = mode_rate_is_fract (hz) ? 1 : 0;
 		}
 		/* Подсказка плеера — прямой запрос точной частоты (24.8 fixed-point,
 		 * живёт 1 с). Эта ветка ловит случай, когда режим уже выбран
@@ -4053,6 +4122,7 @@ cadence_done: ;
 				hint_seen = g_frame_rate_hint.stamp;
 				measure_failed = false;
 				want_sf_id = hint_id;
+				g_vendor_frac_wanted = mode_rate_is_fract (hint_hz) ? 1 : 0;
 				trace (1, "видео: " HZ_FMT " Гц по подсказке плеера, режим id %d\n",
 				       HZ_ARGS (hint_hz), hint_id);
 			}
@@ -4199,6 +4269,10 @@ cadence_done: ;
 
 		if (act == GUARD_SWITCH)
 		{
+			/* Дробность — ДО имени режима: вендорный HAL читает узел в момент
+			 * применения, как и штатная системная АПЧ DroidLogic. */
+			vendor_frac_ensure (plat, g_vendor_frac_wanted);
+
 			int apply_rc = atv14_apply_mode (plat, want_sf_id, "переключение пропущено");
 			if (apply_rc != 0)
 			{
@@ -4277,6 +4351,19 @@ cadence_done: ;
 			 * растянуты, а демон этого не видел). */
 			ceiling_pending_step (plat, cur_sf_id, video_eff);
 
+			/* Имя режима уже нужное, но дробность могла быть другой (24.000
+			 * вместо 23.976): сама по себе запись узла тайминги не меняет —
+			 * режим надо применить заново, чтобы HAL пересобрал его с новой
+			 * политикой. */
+			if ((vendor_frac_ensure (plat, g_vendor_frac_wanted) == 1) &&
+			    (want_sf_id >= 0))
+			{
+				trace (0, "дробность изменилась при том же режиме — "
+				       "переприменяю %s\n", g_modes [want_sf_id].name);
+				if (atv14_apply_mode (plat, want_sf_id, "переприменение") == 0)
+					cur_sf_id = want_sf_id;
+			}
+
 			if ((cadence_fix_ms > 0) && !cadence_armed && !cadence_checked)
 			{
 				mstime_update ();
@@ -4294,6 +4381,11 @@ cadence_done: ;
 			 * При switch.bump=1 возврат делается всегда: цель в этом режиме —
 			 * максимальная частота, с которой следующий ролик начнётся без
 			 * низкого «потолка» (журнал §47.6). */
+			/* Политику возвращаем ДО имени: иначе рабочий стол получил бы
+			 * 59.94 вместо 60.000 (владелец заметил это в §69). */
+			vendor_frac_restore ();
+			g_vendor_frac_wanted = -1;
+
 			if (restore_on_stop || v0.active || g_switch_bump)
 			{
 				int rc = atv14_apply_mode (plat, orig_sf_id,
@@ -4841,6 +4933,12 @@ int afrd_init ()
 
 void afrd_fini ()
 {
+	/* Дробность — состояние дисплея, а не наше: при выходе и перезагрузке
+	 * конфига возвращаем узел к прежнему значению, иначе рабочий стол
+	 * остался бы на 59.94 вместо 60.000 (журнал §69, §73). */
+	vendor_frac_restore ();
+	g_vendor_frac_wanted = -1;
+
 	/* Освобождение намеренное (переинициализация), поэтому без сообщения
 	 * «HDMI not active» — см. modes_release(). */
 	modes_release ();

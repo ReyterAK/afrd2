@@ -27,6 +27,14 @@ int display_mode_hz (display_mode_t *mode)
 	return mode->framerate * 256;
 }
 
+bool mode_rate_is_fract (int hz)
+{
+	/* Дробный представитель группы отличается от целого на 0.1 %, то есть
+	 * младшие 8 бит (дробная часть 24.8) ненулевые: 6138 против 6144,
+	 * 7672 против 7680. У 25/50/60 дробного варианта нет — там 0. */
+	return (hz > 0) && ((hz & 255) != 0);
+}
+
 int display_mode_hz_actual (const display_mode_t *mode, bool fract)
 {
 	display_mode_t m = *mode;

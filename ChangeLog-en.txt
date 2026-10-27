@@ -83,8 +83,16 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       display ran at 59.940061 (in the app, in `afrd -s` and in the
       notification), and that was taken for the daemon switching the "base
       frequency". The report now honours the display policy: 59.94 at
-      frac_rate_policy=1 and 60.00 at 0. Mode selection and application are
-      unchanged.
+      frac_rate_policy=1 and 60.00 at 0.
+
+    * The fractional rate on Android 10/11 follows the content. There a mode
+      name covers both 24.000 and 23.976 and the actual rate comes from the
+      frac_rate_policy node; the daemon never wrote it, so on a box with policy
+      0 a 23.976 film played at 24.000 (one repeated or dropped frame every
+      ~41 s). The policy is now written before the mode is applied - the same
+      way the stock DroidLogic AFR does it - and restored afterwards so the
+      desktop stays at 60.000. The mode.use.fract key applies here too: 2 is
+      the integer member, 0/1 the fractional one.
 
     * Relative AV1 counter correction (fps.correct.av1.pct): the overcount is
       proportional to the rate (23.976 -> 25.40, 59.94 -> 63.30) and the previous
