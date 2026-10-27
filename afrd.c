@@ -1666,6 +1666,14 @@ static int atv_current_target (const platform_t *plat, int *w, int *h)
  * вендорного помощника.
  *
  * Возврат: id/частота цели, -1 — подходящего режима нет. */
+/* Последнее РАЗРЕШЁННОЕ решение (частота контента + id режима). Замер идёт
+ * непрерывно, поэтому одно и то же решение принимается каждые 14-20 с, и пара
+ * строк «видео: … ищу режим» / «режим … выбран как …» повторялась на весь
+ * ролик (журнал тестера 27.10: 7 повторов за 90 секунд). Повтор пишется на
+ * уровне 2, то есть в обычный журнал не попадает. */
+static int g_dec_last_hz = -1;
+static int g_dec_last_id = -1;
+
 static int mode_resolve (const platform_t *plat, int hz, int w, int h, int floor)
 {
 	if (plat->sink != SINK_VENDOR_MODE)
@@ -1698,7 +1706,10 @@ static int mode_resolve (const platform_t *plat, int hz, int w, int h, int floor
 			break;
 		}
 
-	trace (1, "режим " HZ_FMT " Гц выбран как %s\n", HZ_ARGS (mhz), nm);
+	bool repeat = (hz == g_dec_last_hz) && (idx == g_dec_last_id);
+	trace (repeat ? 2 : 1, "режим " HZ_FMT " Гц выбран как %s\n", HZ_ARGS (mhz), nm);
+	g_dec_last_hz = hz;
+	g_dec_last_id = idx;
 	return idx;
 }
 
@@ -2010,6 +2021,11 @@ static int atv14_wait (int ms)
  * вместо 60.000 (ровно это владелец и заметил в §69). */
 static int g_vendor_frac_wanted = -1;	/* 0/1 — под текущую цель, -1 цели нет */
 static int g_vendor_frac_orig = -1;	/* значение узла до первой правки */
+/* Строка «дробность дисплея: нужна X, в узле Y» — один раз на видео. Без неё
+ * молчание узла неотличимо от неработающей правки: на боксе тестера политика
+ * уже была 1, поэтому писать было нечего и в журнале (27.10) не появилось ни
+ * одной строки про дробность. */
+static bool g_vendor_frac_logged = false;
 
 /* Привести узел к нужной дробности. Возврат: 1 — узел изменён, 0 — уже такой
  * (или менять нечего), -1 — узел не читается. */
@@ -2026,7 +2042,17 @@ static int vendor_frac_ensure (const platform_t *plat, int want)
 		trace (1, "frac_rate_policy не читается — дробность не правлю\n");
 		return -1;
 	}
-	if ((cur != 0) == (want != 0))
+	bool equal = ((cur != 0) == (want != 0));
+
+	if (!g_vendor_frac_logged)
+	{
+		g_vendor_frac_logged = true;
+		trace (1, "дробность дисплея: нужна %s, в узле %d%s\n",
+		       want ? "дробная" : "целая", cur,
+		       equal ? " — уже соответствует" : "");
+	}
+
+	if (equal)
 		return 0;
 
 	if (g_vendor_frac_orig < 0)
@@ -2059,6 +2085,7 @@ static void vendor_frac_restore (void)
 	}
 
 	g_vendor_frac_orig = -1;
+	g_vendor_frac_logged = false;
 }
 
 /* Единственная точка, где id режима уходит в транзакцию 1035 (R44): id обязан
@@ -3380,6 +3407,11 @@ static int run_atv14 (const platform_t *plat)
 				retries = 0;
 				fast_applied = false;	/* новое видео — быстрое решение заново */
 				fast_mismatch_logged = false;
+				g_dec_last_hz = -1;
+				g_dec_last_id = -1;
+				/* Политика прошлого видео к новому не относится: пока замер
+				 * молчит, дробность не трогаем (желание выставит решение). */
+				g_vendor_frac_wanted = -1;
 				g_ceiling_no_fast = false;
 				fast_class = 0;
 				recheck_armed = false;	/* R56: перепроверка — на текущее видео */
@@ -4013,7 +4045,8 @@ cadence_done: ;
 					       HZ_ARGS (hz));
 				}
 
-				trace (1, "видео: " HZ_FMT " Гц по огибающей (%d с наблюдения, "
+				trace ((hz == g_dec_last_hz) ? 2 : 1,
+				       "видео: " HZ_FMT " Гц по огибающей (%d с наблюдения, "
 				       "горизонт %d мс), ищу режим\n",
 				       HZ_ARGS (hz),
 				       (int)((env.s [env.n - 1].t_us - env.s [0].t_us) / 1000000),
