@@ -1707,7 +1707,10 @@ static int mode_resolve (const platform_t *plat, int hz, int w, int h, int floor
 		}
 
 	bool repeat = (hz == g_dec_last_hz) && (idx == g_dec_last_id);
-	trace (repeat ? 2 : 1, "режим " HZ_FMT " Гц выбран как %s\n", HZ_ARGS (mhz), nm);
+	/* Повтор уходит на уровень 3 — в файл журнала попадают только 0-2
+	 * (main.c: write_logh), поэтому шума нет, но при разборе с -vvv строка
+	 * видна. */
+	trace (repeat ? 3 : 1, "режим " HZ_FMT " Гц выбран как %s\n", HZ_ARGS (mhz), nm);
 	g_dec_last_hz = hz;
 	g_dec_last_id = idx;
 	return idx;
@@ -2902,6 +2905,11 @@ static int run_atv14 (const platform_t *plat)
 	/* Заморозка счётчика кадров (AV1 и т.п.): сколько живём без роста и
 	 * сообщили ли уже об этом (логируем один раз на видео) */
 	unsigned long long counter_last_grow_us = 0;
+	/* Время последней строки «наблюдение начато заново». Счётчик кадров на
+	 * паузе дрожит (растёт на кадр и снова стоит), и переход «рос → стоит»
+	 * повторяется: в журнале тестера 27.10 таких строк было 6 за 20 с одной
+	 * паузы. Сообщаем не чаще раза в 10 с. */
+	unsigned long long counter_restart_log_us = 0;
 
 	/* Вариант 3: последний опрос переднего плана и уже увиденный пакет */
 	unsigned long long fg_probe_us = 0;
@@ -3409,9 +3417,13 @@ static int run_atv14 (const platform_t *plat)
 				fast_mismatch_logged = false;
 				g_dec_last_hz = -1;
 				g_dec_last_id = -1;
+				counter_restart_log_us = 0;
 				/* Политика прошлого видео к новому не относится: пока замер
-				 * молчит, дробность не трогаем (желание выставит решение). */
+				 * молчит, дробность не трогаем (желание выставит решение).
+				 * Флаг «уже сообщали» тоже снимаем — по решению нового ролика
+				 * видно, жива ли правка и на нынешнем узле. */
 				g_vendor_frac_wanted = -1;
+				g_vendor_frac_logged = false;
 				g_ceiling_no_fast = false;
 				fast_class = 0;
 				recheck_armed = false;	/* R56: перепроверка — на текущее видео */
@@ -3797,10 +3809,16 @@ cadence_done: ;
 				}
 				else if (env_growing)
 				{
-					/* только переход «рос → стоит» (пауза/сброс счётчика):
-					 * иначе строка печаталась бы на каждой итерации паузы */
-					trace (1, "счётчик кадров не растёт — наблюдение начато заново\n");
+					/* только переход «рос → стоит» (пауза/сброс счётчика),
+					 * и не чаще раза в 10 с: на паузе счётчик дрожит, и
+					 * строка повторялась по нескольку раз подряд */
 					env_growing = false;
+					if ((counter_restart_log_us == 0) ||
+					    ((sample_t - counter_restart_log_us) > 10ULL * 1000000ULL))
+					{
+						counter_restart_log_us = sample_t;
+						trace (1, "счётчик кадров не растёт — наблюдение начато заново\n");
+					}
 				}
 
 				/* Заморозка счётчика: декодер числится активным, но кадры не
@@ -3910,7 +3928,8 @@ cadence_done: ;
 								fast_class = dclass;
 								want_sf_id = did;
 								cur_sf_id = did;
-								g_vendor_frac_wanted = mode_rate_is_fract (dclass) ? 1 : 0;
+								g_vendor_frac_wanted = -1;
+								(void) mode_rate_fract_decide (dclass, &g_vendor_frac_wanted);
 								trace (0, "быстрое решение по заявленной частоте: %u fps — "
 								       "режим применён сразу, замер проверит\n", v0.decl_fps);
 							}
@@ -4045,7 +4064,7 @@ cadence_done: ;
 					       HZ_ARGS (hz));
 				}
 
-				trace ((hz == g_dec_last_hz) ? 2 : 1,
+				trace ((hz == g_dec_last_hz) ? 3 : 1,
 				       "видео: " HZ_FMT " Гц по огибающей (%d с наблюдения, "
 				       "горизонт %d мс), ищу режим\n",
 				       HZ_ARGS (hz),
@@ -4120,7 +4139,8 @@ cadence_done: ;
 			want_sf_id = cur_sf_id;
 			/* Дробность под измеренную частоту (вендорный путь): имя режима
 			 * одно на 24.000 и 23.976, фактическую частоту задаёт узел. */
-			g_vendor_frac_wanted = mode_rate_is_fract (hz) ? 1 : 0;
+			g_vendor_frac_wanted = -1;
+			(void) mode_rate_fract_decide (hz, &g_vendor_frac_wanted);
 		}
 		/* Подсказка плеера — прямой запрос точной частоты (24.8 fixed-point,
 		 * живёт 1 с). Эта ветка ловит случай, когда режим уже выбран
@@ -4155,7 +4175,8 @@ cadence_done: ;
 				hint_seen = g_frame_rate_hint.stamp;
 				measure_failed = false;
 				want_sf_id = hint_id;
-				g_vendor_frac_wanted = mode_rate_is_fract (hint_hz) ? 1 : 0;
+				g_vendor_frac_wanted = -1;
+				(void) mode_rate_fract_decide (hint_hz, &g_vendor_frac_wanted);
 				trace (1, "видео: " HZ_FMT " Гц по подсказке плеера, режим id %d\n",
 				       HZ_ARGS (hint_hz), hint_id);
 			}

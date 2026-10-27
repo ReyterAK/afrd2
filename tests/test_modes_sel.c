@@ -180,26 +180,28 @@ static void test_find_name (void)
 	assert (modes_find_name_by_hz (modes, N_MODES, 100 * 256, name, sizeof (name)) == -1);
 }
 
-/* Дробный представитель группы: нужно, чтобы решить, какое значение писать в
- * frac_rate_policy на вендорном пути (имя режима одно на 24.000 и 23.976). */
-static void test_rate_is_fract (void)
+/* Какая дробность нужна для частоты контента (решение для узла
+ * frac_rate_policy на вендорном пути). */
+static void test_rate_fract_decide (void)
 {
-	/* классы частот в 24.8: 23.976 -> 6138, 24.000 -> 6144 */
-	assert (mode_rate_is_fract (6138));
-	assert (!mode_rate_is_fract (6144));
-	/* 29.97 -> 7672 против 30.000 -> 7680 */
-	assert (mode_rate_is_fract (7672));
-	assert (!mode_rate_is_fract (7680));
-	/* у 25/50/60/120 дробного варианта нет */
-	assert (!mode_rate_is_fract (25 * 256));
-	assert (!mode_rate_is_fract (50 * 256));
-	assert (!mode_rate_is_fract (60 * 256));
-	assert (!mode_rate_is_fract (0));
+	int want = -1;
+
+	/* 23.976 (6138) — дробная, 24.000 (6144) — целая */
+	assert (mode_rate_fract_decide (6138, &want) && want == 1);
+	assert (mode_rate_fract_decide (6144, &want) && want == 0);
+	/* 29.97 (7672) и 59.94 (15345) — дробные, их целые пары — целые */
+	assert (mode_rate_fract_decide (7672, &want) && want == 1);
+	assert (mode_rate_fract_decide (15345, &want) && want == 1);
+	assert (mode_rate_fract_decide (15360, &want) && want == 0);
+	/* у 25 и 50 дробного варианта нет — политику не трогаем */
+	assert (!mode_rate_fract_decide (25 * 256, &want));
+	assert (!mode_rate_fract_decide (50 * 256, &want));
+	assert (!mode_rate_fract_decide (0, &want));
 }
 
 int main (void)
 {
-	test_rate_is_fract ();
+	test_rate_fract_decide ();
 	test_hz_actual ();
 	test_25_doubling ();
 	test_find_name ();

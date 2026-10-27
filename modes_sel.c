@@ -27,12 +27,30 @@ int display_mode_hz (display_mode_t *mode)
 	return mode->framerate * 256;
 }
 
-bool mode_rate_is_fract (int hz)
+bool mode_rate_fract_decide (int hz, int *want)
 {
-	/* Дробный представитель группы отличается от целого на 0.1 %, то есть
-	 * младшие 8 бит (дробная часть 24.8) ненулевые: 6138 против 6144,
-	 * 7672 против 7680. У 25/50/60 дробного варианта нет — там 0. */
-	return (hz > 0) && ((hz & 255) != 0);
+	if (hz <= 0)
+		return false;
+
+	/* Дробный член группы — из того же правила, что display_mode_hz: у 24/30/
+	 * 60/120/240 он есть (23.976/29.97/59.94/…), у 25 и 50 — нет, и тогда
+	 * frac_rate_policy на результат не влияет. */
+	display_mode_t m;
+	memset (&m, 0, sizeof (m));
+	/* Номинал режима из частоты контента: 6138 (23.976) — это режим 24,
+	 * поэтому с округлением, а не сдвигом (сдвиг дал бы 23). */
+	m.framerate = (hz + 128) >> 8;
+	m.fractional = true;
+
+	int frac = display_mode_hz (&m);
+	int integer = m.framerate * 256;
+	if (frac == integer)
+		return false;
+
+	if (want)
+		*want = (abs (hz - frac) < abs (hz - integer)) ? 1 : 0;
+
+	return true;
 }
 
 int display_mode_hz_actual (const display_mode_t *mode, bool fract)
