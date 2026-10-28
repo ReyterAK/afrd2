@@ -114,7 +114,12 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
     * "HDMI format (color space)" (cs.select) is a choice of three items instead
       of a line with regular expressions; the 4K bandwidth rule is kept in each.
 
-    * "Fix frame rate clamping" - one switch for both clamping mechanisms.
+    * "Fix frame rate clamping" - one switch for both clamping mechanisms. Both
+      mechanisms (raising the mode and resetting the rate ceiling) apply only to
+      the players listed in "Players to fix clamping for" (switch.bump.pkg, the
+      stock YouTube by default): for players with their own matching a codec
+      restart breaks playback - on OTT Navigator this shows as errors and a
+      frozen picture when switching channels.
 
     * The daemon re-reads the current display mode before deciding on a switch:
       it used to trust its cache, while the mode could be changed by someone else
