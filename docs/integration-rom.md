@@ -297,7 +297,7 @@ AFRd2 — форк AFRd (Andrey Zabolotnyi) под **GPL-3**. Размещени
 | `vendor.disp.cap` | Android 10–14 | — |
 | `trigger.poll.ms` | Android 10–14 | — |
 | `trigger.start.debounce.ms` | Android 10–14 | — |
-| `trigger.stop.debounce.ms` | Android 10–14 | — |
+| `trigger.stop.debounce.ms` | Android 10–14 | — (для IPTV-сценария 10000–12000: это задержка возврата исходного режима, и ожидание прерывается появлением нового видео) |
 | `fps.measure.envelope.ms` | Android 10–14 | — |
 | `fps.measure.envelope.early.ms` | Android 10–14 | — |
 | `fps.measure.envelope.max.ms` | Android 10–14 | — |
