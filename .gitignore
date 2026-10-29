@@ -17,6 +17,9 @@
 /android/app/*.jks
 /android/app/keystore.properties
 
+# путь к Android SDK у каждого свой; Gradle берёт его из ANDROID_HOME/ANDROID_SDK_ROOT
+/android/local.properties
+
 # артефакты сборки host-тестов
 *.o
 
