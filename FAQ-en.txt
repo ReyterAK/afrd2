@@ -404,3 +404,24 @@
 ! to the decoder than the nominal rate. The correction is set per player in
 ! "Corrections (package=percent)", computed as (measured / nominal - 1) * 100;
 ! see the README section "How to calibrate the frame rate correction".
+
+? Why does the screen blink when I zap through IPTV channels?
+
+! When a channel is dead or not yet delivering a stream, the decoder
+! disappears and AFRd2 treats it as end of video: after "Stop debounce, ms" it
+! restores the original mode (60 Hz, say), and on the next live channel it sets
+! the content rate again (50 Hz). While zapping this looks like a blink on every
+! dead channel.
+
+! The fix is in Settings, group "Android 11+ fine tuning": set "Stop debounce,
+! ms" to 10000-12000. A channel that takes 5-10 seconds to open then appears
+! inside the window and the mode is not restored at all. The restore after a
+! real end of video is delayed by the same amount - that is the price.
+
+! Also check the "Main" group: "Keep mode on pause" - on, "STOP delay" - 0 (on
+! Android 11-14 that key is pause patience: 0 keeps the mode until the pause
+! ends; it is not the return delay).
+
+! If no blinking matters more than the exact rate, add the player to "Players
+! that AFR disturbs" (group "Players"): AFRd2 will not touch the mode in that
+! player at all.

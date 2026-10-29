@@ -1815,6 +1815,35 @@ static void msleep (int ms)
 	}
 }
 
+/* Ожидание дебаунса остановки, прерываемое появлением нового видео.
+ *
+ * Раньше здесь стоял msleep (stop_deb): всё окно демон был слеп, и канал,
+ * открывшийся внутри него, замечался только по истечении окна. При
+ * trigger.stop.debounce.ms=12000 (рекомендация для IPTV, журнал §92) смена
+ * частоты на новом канале запаздывала на всё окно — живой замер на `.50`:
+ * 24 Гц приходили через 26 с вместо 14.
+ *
+ * Теперь раз в 300 мс проверяем, не появился ли декодер снова, и выходим
+ * сразу. Решение принимает следующая за окном проверка (vdec_probe_active),
+ * поэтому досрочный выход безопасен: если это дребезг, условие `again_active
+ * == new_video` не выполнится и цикл просто продолжится.
+ *
+ * Чтение — один и тот же vdec_status, который цикл и так опрашивает каждые
+ * trigger.poll.ms (300 мс), то есть лишней нагрузки нет. */
+static void stop_debounce_wait (const platform_t *plat, int ms)
+{
+	while (ms > 0 && !g_shutdown)
+	{
+		int chunk = (ms > 300) ? 300 : ms;
+		usleep (chunk * 1000);
+		ms -= chunk;
+
+		bool active = false;
+		if ((vdec_probe_active (plat->vdec_status, &active) == 0) && active)
+			return;
+	}
+}
+
 static void sf_modes_refresh (const platform_t *plat)
 {
 	/* На вендорном пути Android 10/11 таблицы режимов SurfaceFlinger нет
@@ -3446,7 +3475,12 @@ static int run_atv14 (const platform_t *plat)
 
 		if ((new_video != video) && !lost_after_reset)
 		{
-			msleep (new_video ? start_deb : stop_deb);
+			/* Остановку ждём с проверкой «видео вернулось»: на IPTV канал
+			 * открывается 5-10 с, и окно остановки бывает длинным (§92). */
+			if (new_video)
+				msleep (start_deb);
+			else
+				stop_debounce_wait (plat, stop_deb);
 
 			/* дебаунс не должен сдвигать состояние выбора канала (R61) */
 			bool again_active = false;

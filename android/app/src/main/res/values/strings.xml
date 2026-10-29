@@ -67,10 +67,11 @@
         detecting movie framerate
     </string>
     <string name="prefs_switch_delay_off">STOP switch delay</string>
-    <string name="prefsum_switch_delay_off">The delay in ms to wait before restoring original
-        refresh rate after movie ends. Set to 0 to tell afrd not to restore original refresh
-        rate.
-        On Android 11-14 - how long to keep the mode on pause; 0 - keep until the pause ends.
+    <string name="prefsum_switch_delay_off">Android 6-9: delay in ms before restoring the original
+        refresh rate after the video ends; 0 — do not restore it at all.
+        Android 11-14: this is NOT the return delay but pause patience — how long to keep the mode
+        when frames stop coming; 0 — keep until the pause ends. The return delay on 11-14 is set by
+        "Stop debounce, ms" (group "Android 11+ fine tuning").
     </string>
     <string name="prefs_switch_delay_retry">Detect FPS retry delay</string>
     <string name="prefsum_switch_delay_retry">The delay between retries if movie frame rate cannot
@@ -168,9 +169,11 @@
     <string name="prefs_trigger_stop_debounce">Stop debounce, ms</string>
     <string name="prefsum_trigger_stop_debounce">End-of-playback confirmation pause: after the
         decoder disappears the daemon waits this long and re-checks, so short gaps (seeking, quality
-        switch, splice) are not taken for the end of the file. 0 — confirm immediately (the end is
-        handled sooner, but gaps are taken as the end too). Restoring the mode is controlled by the
-        separate "Restore mode on stop" item.</string>
+        switch, splice, IPTV channel opening) are not taken for the end of the file. If video
+        reappears within the window the wait ends immediately, so a large value does not slow channel
+        zapping down. 0 — confirm immediately. For IPTV with slow stream opening use 10000-12000: the
+        original mode is then not restored on a dead channel at all. Restoring is also governed by
+        "Restore mode on stop", but with "Fix rate clamping" on it happens anyway.</string>
     <string name="prefs_pause_keep">Keep mode while paused</string>
     <string name="prefsum_pause_keep">On — the mode is kept on pause; off — the original mode is restored
         on pause and set again on resume.</string>

@@ -126,6 +126,15 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       (the built-in Amlogic AFR, a player with its own matching), and a 60 fps
       video stayed at 25 Hz.
 
+    * The end-of-video wait no longer slows IPTV channel zapping down. The stop
+      debounce ("Stop debounce, ms") is now interrupted as soon as the decoder
+      reappears: previously the daemon was blind for the whole window, and with
+      10000-12000 (the recommendation for IPTV whose channel takes 5-10 s to
+      open) the rate on a new channel lagged by the whole window - a live
+      measurement showed 24 Hz arriving after 26 s instead of 14. The same
+      change cures blinking while zapping: a dead channel no longer restores
+      60 Hz, and the next live channel sets its own rate.
+
     * The post-switch delivery check no longer fires falsely after a pause.
       Frame intervals are taken by median, not by mean: the SurfaceFlinger
       buffer still holds frames shown before the pause, and a single 28 s gap
