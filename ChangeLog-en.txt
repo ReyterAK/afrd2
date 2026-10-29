@@ -121,6 +121,14 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       restart breaks playback - on OTT Navigator this shows as errors and a
       frozen picture when switching channels.
 
+    * The delivery check now measures the video layer of the app that owns the
+      decoder instead of the first SurfaceView in the list: a foreign layer
+      (wallpaper, overlay, a leftover from a previous player) produced a bogus
+      rate and an extra mode switch. The expectation for that check comes from
+      the same rate the mode was chosen for, and the back-and-forth "heal" is
+      not repeated when the first attempt did not change delivery: the cause is
+      then not the display, and a repeat only blinks the screen.
+
     * The daemon re-reads the current display mode before deciding on a switch:
       it used to trust its cache, while the mode could be changed by someone else
       (the built-in Amlogic AFR, a player with its own matching), and a 60 fps
@@ -245,14 +253,7 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
     * The daemon verifies that frames actually reach the screen and fixes
       "half-rate" output; it also logs the case where the player itself sets the
-      pace (AFR gets in the way of such a player — see below). Delivery is
-      measured on the video layer of the app that owns the decoder: the first
-      SurfaceView in the list used to be taken, and a foreign layer (wallpaper,
-      overlay) produced a bogus rate and an extra mode switch (tester log of
-      29 Oct). The expectation for that check now comes from the same rate the
-      mode was chosen for, and the back-and-forth "heal" is not repeated when
-      the first attempt did not change delivery: the cause is then not the
-      display, and a repeat only blinks the screen.
+      pace (AFR gets in the way of such a player — see below).
 
     * Player exit and a stuck decoder channel are detected: the mode is not left
       behind when the video ends or the app leaves the screen.
