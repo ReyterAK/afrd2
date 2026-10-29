@@ -126,6 +126,16 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       (the built-in Amlogic AFR, a player with its own matching), and a 60 fps
       video stayed at 25 Hz.
 
+    * A doubled frame counter no longer sends 24 fps content to 50 Hz. On some
+      boxes the driver counts twice as many frames as reach the screen: the
+      tester's live log (29.10) shows 30 fps declared, 33 ms layer delivery and
+      a 59.94 counter. The signature is a measurement exactly twice the
+      declared rate (5 % tolerance); the daemon then trusts the declared rate,
+      as the stock Amlogic AFR does. Without the correction 47.95 classified as
+      50 Hz, so a 23.976 movie would play at 50 Hz; 25 and 30 fps were not
+      affected, since their doubling yields the same 50 and 60 Hz. The bogus
+      "delivery twice as rare" line disappears on such boxes too.
+
     * The post-switch delivery check no longer fires falsely after a pause.
       Frame intervals are taken by median, not by mean: the SurfaceFlinger
       buffer still holds frames shown before the pause, and a single 28 s gap

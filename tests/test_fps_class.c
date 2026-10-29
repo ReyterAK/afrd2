@@ -328,6 +328,31 @@ static void t_correct_av1_pct(void)
 	assert(fps_correct_av1_factor("amvdec_av1_v4l", NULL) == 1.0);
 }
 
+static void t_declared_doubled(void)
+{
+	/* Живой журнал тестера 29.10 (§90): Aerial Views, драйвер заявляет 30 fps,
+	 * подача слоя 33 мс, счётчик кадров даёт 59.94 — счётчик считает вдвое. */
+	assert(fps_declared_doubled(fps_classify(59.94), 30) == fps_rate_hz(3));
+	assert(fps_declared_doubled(fps_classify(60.0), 30) == fps_rate_hz(3));
+
+	/* 24-фпс контент на таком боксе: удвоенный счётчик даёт 47.95, ближайший
+	 * класс — 50. Поправка возвращает группу 24 (иначе режим 50 Гц). */
+	assert(fps_declared_doubled(fps_classify(47.952), 24) == fps_rate_hz(0));
+	assert(fps_declared_doubled(fps_classify(48.0), 24) == fps_rate_hz(0));
+
+	/* Штатный случай: замер и заявленная частота совпадают — поправки нет. */
+	assert(fps_declared_doubled(fps_classify(25.0), 25) == 0);
+	assert(fps_declared_doubled(fps_classify(23.976), 24) == 0);
+	assert(fps_declared_doubled(fps_classify(59.94), 60) == 0);
+
+	/* Заявленная частота — мусор: поправки нет (на синтетическом клипе
+	 * драйвер рапортует 30 fps при реальных 23.976). */
+	assert(fps_declared_doubled(fps_classify(23.976), 30) == 0);
+	assert(fps_declared_doubled(fps_classify(59.94), 0) == 0);
+	assert(fps_declared_doubled(0, 30) == 0);
+	assert(fps_declared_doubled(fps_classify(59.94), 1000) == 0);
+}
+
 int main(void)
 {
 	t_classify();
@@ -342,6 +367,7 @@ int main(void)
 	t_corrected();
 	t_correct_av1();
 	t_correct_av1_pct();
+	t_declared_doubled();
 	printf("fps_class: OK\n");
 	return 0;
 }
