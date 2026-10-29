@@ -380,25 +380,6 @@ int fps_refine_declared (int measured_hz, double declared_fps, double max_pct, i
 	return 1;
 }
 
-int fps_declared_doubled (int measured_hz, int declared_fps)
-{
-	int dclass = fps_declared_class (declared_fps);
-	if (!measured_hz || !dclass)
-		return 0;
-
-	double measured = (double) measured_hz / 256.0;
-	double decl = (double) dclass / 256.0;
-
-	/* Ровно вдвое (допуск 5 %): 47.95 против 48, 59.94 против 60, 50 против
-	 * 50. Ближе — обычное расхождение замера с заявленной частотой, его
-	 * правит fps_refine_declared, а не эта поправка. */
-	double ratio = measured / decl;
-	if ((ratio < 1.9) || (ratio > 2.1))
-		return 0;
-
-	return fps_rate_hz (k_group_lead [fps_rate_index_for_hz (dclass)]);
-}
-
 int fps_declared_class (int declared_fps)
 {
 	/* Драйвер заявляет целые fps; мусор (0, 255, 1000) не берём — такую
