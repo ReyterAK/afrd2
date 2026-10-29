@@ -144,7 +144,7 @@ Android 11–14 (Amlogic); старый путь (Android 6–9) не измен
 | `ru.reyter.afrd2-1.1.0-release.apk` | `84840104671ca47de74cb6581a0f635b` | 455 451 Б |
 | `afrd2-magisk-armeabi-v7a.zip` | `bfdb8cc1f02336a9479d3be0252e8599` | 66 964 Б |
 | `afrd2-magisk-arm64-v8a.zip` | `1cc0f9d2bf3d523dec23eae6cf72e717` | 77 718 Б |
-| `README.md.zip` | `31937d136452a439749e9037f1140355` | 42 320 Б |
+| `README.md.zip` | `a6929e300bc313a31af3aabd54bfd39a` | 42 310 Б |
 
 Демоны: `libs/armeabi-v7a/afrd` — `44c668d6bc38f7e4f5afbb5e0933c22d`,
 `libs/arm64-v8a/afrd` — `14623432ee949066f3524c15aa747281`; ровно они лежат внутри APK
