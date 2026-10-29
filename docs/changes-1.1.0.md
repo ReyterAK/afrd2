@@ -124,15 +124,15 @@ Android 11–14 (Amlogic); старый путь (Android 6–9) не измен
 Комплект — `out/afrd2-1.1.0/`, собран 29.10.2026 (пересборка после возврата гейта
 `switch.bump.pkg` в сброс потолка, §81; после правки повторов отказа применения режима,
 §86; после правок по журналу тестера — слой подачи, ожидание проверки и бесполезное
-«лечение», §87–88). `versionName=1.1.0`, `versionCode=10100`.
+«лечение», §87–89). `versionName=1.1.0`, `versionCode=10100`.
 
 | файл | MD5 | размер |
 |---|---|---|
-| `ru.reyter.afrd2-1.1.0-release.apk` | `efc150a1eda40638552a2b0dcb1c6055` | 453 239 Б |
-| `afrd2-magisk-armeabi-v7a.zip` | `467066688c32196064af39a57aba75d4` | 67 159 Б |
-| `afrd2-magisk-arm64-v8a.zip` | `5b10582520014acf0b869c7558a8a0d5` | 78 112 Б |
-| `README.md.zip` | `3bc8b612c3a97c6ac3708a7a55ba90e5` | 41 613 Б |
+| `ru.reyter.afrd2-1.1.0-release.apk` | `0caa351c8af9291c2f985481b440b444` | 453 943 Б |
+| `afrd2-magisk-armeabi-v7a.zip` | `2d2a4637c84822f276d2bfeae783ef57` | 67 287 Б |
+| `afrd2-magisk-arm64-v8a.zip` | `c51e802a85c174602c74eba0f1196d7e` | 78 328 Б |
+| `README.md.zip` | `fefab61ed37787a956d95727c9ffa431` | 41 777 Б |
 
-Демоны: `libs/armeabi-v7a/afrd` — `98b2d51b26923be6fcbe7e37e441dc6b`,
-`libs/arm64-v8a/afrd` — `4300ca07d9739b15ce072b492a8416a5`; ровно они лежат внутри APK
+Демоны: `libs/armeabi-v7a/afrd` — `b312bc4c68bc09948dfe2e28f3a52af7`,
+`libs/arm64-v8a/afrd` — `3a6bd875ef62db90de5eb5d109825087`; ровно они лежат внутри APK
 (`res/raw/afrd_*`) и обоих Magisk-модулей.

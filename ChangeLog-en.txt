@@ -126,6 +126,12 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       (the built-in Amlogic AFR, a player with its own matching), and a 60 fps
       video stayed at 25 Hz.
 
+    * The post-switch delivery check no longer fires falsely after a pause.
+      Frame intervals are taken by median, not by mean: the SurfaceFlinger
+      buffer still holds frames shown before the pause, and a single 28 s gap
+      made the mean 272 ms against the real 42 ms, so the daemon switched the
+      mode back and forth right on resume (live finding 29.10 on ATV14, §89).
+
     * Fixed an app crash when launched on a sleeping box (Android 8-9): the root
       check ran in a background task and the system refused the service start;
       the service now starts via startForegroundService, a refusal no longer

@@ -2273,9 +2273,20 @@ static void layer_pick_cmd (char *dst, size_t size)
 	          "[ -z \"$L\" ] && exit 0; ", pkg);
 }
 
-static bool atv14_layer_stats (double *period_ms, double *avg_ms, int *count)
+/* Статистика подачи слоя: период дисплея, средний и медианный интервалы.
+ *
+ * Среднее годится для оценки частоты контента (запасной источник), но не для
+ * поиска «половинной подачи»: буфер SurfaceFlinger хранит и кадры ДО паузы, а
+ * один провал в 28 с (пауза) даёт среднее 272 мс при фактических 42 мс — демон
+ * зря переключал режим туда-обратно сразу после возобновления (живой прогон
+ * `.50` 29.10, §89). Медиана такой выброс не замечает, поэтому решение
+ * «подача вдвое реже» принимается по ней. */
+static bool atv14_layer_stats (double *period_ms, double *avg_ms, double *median_ms,
+                               int *count)
 {
 	*period_ms = *avg_ms = 0.0;
+	if (median_ms)
+		*median_ms = 0.0;
 	if (count)
 		*count = 0;
 
@@ -2290,19 +2301,25 @@ static bool atv14_layer_stats (double *period_ms, double *avg_ms, int *count)
 	          "NR==1 { p=$1/1e6; next } "
 	          "NF==3 && $2+0>0 && $2+0<1e17 { n++; t[n]=$2+0 } "
 	          "END { if (n<3) exit; m=0; s=0; "
-	          "for (i=2;i<=n;i++) { d=(t[i]-t[i-1])/1e6; if (d>0) { m++; s+=d } } "
-	          "if (m>0) printf \"%%.2f %%.2f %%d\", p, s/m, m }'");
+	          "for (i=2;i<=n;i++) { iv=(t[i]-t[i-1])/1e6; if (iv>0) { m++; s+=iv; q[m]=iv } } "
+	          "if (m>0) { for (i=2;i<=m;i++) { v=q[i]; for (j=i-1;(j>=1) && (q[j]>v);j--) q[j+1]=q[j]; "
+	          "q[j+1]=v } "
+	          "if (m %% 2) md=q[(m+1)/2]; else md=(q[m/2]+q[m/2+1])/2; "
+	          "printf \"%%.2f %%.2f %%.2f %%d\", p, s/m, md, m } }'");
 
 	if (exec_capture (cmd, out, sizeof (out)) != 0)
 		return false;
 
-	double p = 0, a = 0;
+	double p = 0, a = 0, md = 0;
 	int n = 0;
-	if ((sscanf (out, "%lf %lf %d", &p, &a, &n) != 3) || (a <= 0) || (p <= 0))
+	if ((sscanf (out, "%lf %lf %lf %d", &p, &a, &md, &n) != 4) ||
+	    (a <= 0) || (md <= 0) || (p <= 0))
 		return false;
 
 	*period_ms = p;
 	*avg_ms = a;
+	if (median_ms)
+		*median_ms = md;
 	if (count)
 		*count = n;
 
@@ -2380,17 +2397,19 @@ static int atv14_layer_stretched (int expect_ms, int *period_ms, int *avg_ms,
 	return (bad * 100) / n;
 }
 
-static bool atv14_cadence_halved (int expect_ms, int *period_ms, int *avg_ms)
+static bool atv14_cadence_halved (int expect_ms, int *period_ms, int *median_ms)
 {
-	double p = 0, a = 0;
-	if (!atv14_layer_stats (&p, &a, NULL))
+	double p = 0, a = 0, md = 0;
+	if (!atv14_layer_stats (&p, &a, &md, NULL))
 		return false;
 
 	*period_ms = (int) (p + 0.5);
-	*avg_ms = (int) (a + 0.5);
+	*median_ms = (int) (md + 0.5);
 
+	/* Решение — по медиане: один провал в буфере (пауза) сдвигает среднее
+	 * в разы и давал ложное «вдвое реже» сразу после возобновления. */
 	double base = ((double) expect_ms > p) ? (double) expect_ms : p;
-	return (a > 1.5 * base);
+	return (md > 1.5 * base);
 }
 
 /* Запасной источник частоты: средний интервал подачи видео-слоя. Он не зависит
@@ -2402,7 +2421,7 @@ static int atv14_layer_fps_hz (void)
 {
 	double p = 0, a = 0;
 	int n = 0;
-	if (!atv14_layer_stats (&p, &a, &n))
+	if (!atv14_layer_stats (&p, &a, NULL, &n))
 		return 0;
 
 	if ((n < 60) || (a <= 0.0))
@@ -3794,9 +3813,9 @@ static int run_atv14 (const platform_t *plat)
 				}
 			}
 
-			int pm = 0, am = 0;
+			int pm = 0, md = 0;
 			int expect_ms = cadence_expect_ms;
-			if (atv14_cadence_halved (expect_ms, &pm, &am))
+			if (atv14_cadence_halved (expect_ms, &pm, &md))
 			{
 				/* preferred_id — id из пространства DisplayManager: как
 				 * цель транзакции 1035 он годится, только если есть в
@@ -3816,7 +3835,7 @@ static int run_atv14 (const platform_t *plat)
 					cadence_fixes++;
 					cadence_heal_wait = true;
 					trace (0, "подача вдвое реже ожидаемого (%d мс при периоде %d мс, ожидание %d мс) — переключаю режим туда-обратно (лечение %d)\n",
-					       am, pm, expect_ms, cadence_fixes);
+					       md, pm, expect_ms, cadence_fixes);
 					if (atv14_apply_mode (plat, back, "лечение подачи: возврат") == 0)
 					{
 						msleep (200);
@@ -3841,7 +3860,7 @@ static int run_atv14 (const platform_t *plat)
 					}
 
 					trace (0, "подача вдвое реже ожидаемого (%d мс при периоде %d мс, ожидание %d мс) — лечение не применяю%s\n",
-					       am, pm, expect_ms,
+					       md, pm, expect_ms,
 					       cadence_heal_useless
 					       ? " (переключение уже пробовали — подача не изменилась)"
 					       : (want_sf_id < 0)
@@ -3849,7 +3868,7 @@ static int run_atv14 (const platform_t *plat)
 					       : "");
 				}
 			}
-			else if (am > 0)
+			else if (md > 0)
 			{
 				/* Подача пришла в норму — если перед этим лечили, лечение
 				 * помогло; состояние «бесполезно» относится к видео и
@@ -3865,10 +3884,9 @@ static int run_atv14 (const platform_t *plat)
 				 * ожидании 17, то есть 1.18×) и раньше проходил как
 				 * «подача в порядке». */
 				/* Зажим у плеера: часть кадров идёт реже, чем позволяет
-				 * режим. Средняя подача при этом смещается всего на
-				 * 7-9 %, и порог ниже его не ловит (живой замер `.42`,
-				 * §65: 11 удвоенных кадров из 122 → 55 к/с при декодере
-				 * 60). Поэтому смотрим долю растянутых интервалов. */
+				 * режим. Медиана такой картины не видит (растянута часть
+				 * интервалов), поэтому в журнал пишется ещё и доля
+				 * растянутых кадров — atv14_layer_stretched ниже. */
 				/* Доля растянутых кадров — только для журнала: как признак
 				 * зажима она ненадёжна. Счётчик декодера на AV1 завышен на
 				 * ~5 % (§15.4), поэтому «дефицит 5 %» ловит не зажим, а
@@ -3879,12 +3897,12 @@ static int run_atv14 (const platform_t *plat)
 				int share = atv14_layer_stretched (expect_ms, &sp, &sa, &dec);
 				(void) share;
 				(void) dec;
-				if (am * 8 > base * 9)
+				if (md * 8 > base * 9)
 					trace (0, "подача неровная: %d мс при периоде %d мс, ожидание %d мс — плеер, вероятно, выбрал темп при старте под другим режимом; помогает перезапуск ролика\n",
-					       am, pm, expect_ms);
+					       md, pm, expect_ms);
 				else
 					trace (2, "подача в порядке: %d мс при периоде %d мс, ожидание %d мс\n",
-					       am, pm, expect_ms);
+					       md, pm, expect_ms);
 			}
 cadence_done: ;
 		}
