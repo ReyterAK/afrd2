@@ -2239,6 +2239,40 @@ static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skip
  * Возврат true — подача вдвое реже ожидаемого; period_ms и avg_ms — для лога.
  * Разбор делает awk на устройстве (`dumpsys SurfaceFlinger --latency`):
  * первая строка — период дисплея в нс, дальше интервалы фактической подачи. */
+
+/* Команда поиска слоя видео. Имя слоя зависит от версии: на Android 12+ это
+ * `SurfaceView[...](BLAST)#N`, на 8-11 — `SurfaceView - pkg/Activity#N`.
+ * Прежний шаблон искал только первый вид, поэтому на Android 11 проверка
+ * подачи молча не срабатывала никогда (живая находка `.42`, §65).
+ *
+ * Предпочитаем слой пакета, которому принадлежит видео (g_cur_pkg): в списке
+ * SurfaceFlinger бывают и чужие SurfaceView — оверлеи, остатки прежних плееров,
+ * а период у них свой. Живой журнал тестера 29.10 (§87): демон взял чужой слой,
+ * получил «25.00 Гц» и переключил режим на 50 Гц, тогда как подача видео в это
+ * же время шла с интервалом 33 мс. Если пакет неизвестен или его слоя в списке
+ * нет — первый SurfaceView, как раньше (поведение на одном слое не меняется).
+ *
+ * Имя пакета фильтруется по [A-Za-z0-9._]: оно приходит из `dumpsys window` и
+ * подставляется в командную строку. */
+static void layer_pick_cmd (char *dst, size_t size)
+{
+	char pkg [PKG_NAME_LEN];
+	size_t n = 0;
+
+	for (const char *s = g_cur_pkg; *s && (n + 1 < sizeof (pkg)); s++)
+		if (((*s >= 'a') && (*s <= 'z')) || ((*s >= 'A') && (*s <= 'Z')) ||
+		    ((*s >= '0') && (*s <= '9')) || (*s == '.') || (*s == '_'))
+			pkg [n++] = *s;
+	pkg [n] = 0;
+
+	snprintf (dst, size,
+	          "L=$(dumpsys SurfaceFlinger --list 2>/dev/null | grep 'SurfaceView' "
+	          "| grep -v -i background | grep -E '\\(BLAST\\)|SurfaceView - ' "
+	          "| awk -v p='%s' 'p != \"\" && !f && index ($0, p) { print; f = 1 } "
+	          "!h { first = $0; h = 1 } END { if (!f && h) print first }'); "
+	          "[ -z \"$L\" ] && exit 0; ", pkg);
+}
+
 static bool atv14_layer_stats (double *period_ms, double *avg_ms, int *count)
 {
 	*period_ms = *avg_ms = 0.0;
@@ -2246,20 +2280,18 @@ static bool atv14_layer_stats (double *period_ms, double *avg_ms, int *count)
 		*count = 0;
 
 	char out [4096];
-	/* Имя видео-слоя зависит от версии: на Android 12+ это
-	 * `SurfaceView[...](BLAST)#N`, на 8-11 — `SurfaceView - pkg/Activity#N`.
-	 * Прежний шаблон искал только первый вид, поэтому на Android 11 проверка
-	 * подачи молча не срабатывала никогда (живая находка `.42`, §65). */
-	const char *cmd =
-		"L=$(dumpsys SurfaceFlinger --list 2>/dev/null | grep 'SurfaceView' "
-		"| grep -v -i background | grep -E '\\(BLAST\\)|SurfaceView - ' | head -1); "
-		"[ -z \"$L\" ] && exit 0; "
-		"dumpsys SurfaceFlinger --latency \"$L\" 2>/dev/null | awk -v expect=%d '"
-		"NR==1 { p=$1/1e6; next } "
-		"NF==3 && $2+0>0 && $2+0<1e17 { n++; t[n]=$2+0 } "
-		"END { if (n<3) exit; m=0; s=0; "
-		"for (i=2;i<=n;i++) { d=(t[i]-t[i-1])/1e6; if (d>0) { m++; s+=d } } "
-		"if (m>0) printf \"%.2f %.2f %d\", p, s/m, m }'";
+	char cmd [EXEC_CMD_MAX];
+	size_t used;
+
+	layer_pick_cmd (cmd, sizeof (cmd));
+	used = strlen (cmd);
+	snprintf (cmd + used, sizeof (cmd) - used,
+	          "dumpsys SurfaceFlinger --latency \"$L\" 2>/dev/null | awk '"
+	          "NR==1 { p=$1/1e6; next } "
+	          "NF==3 && $2+0>0 && $2+0<1e17 { n++; t[n]=$2+0 } "
+	          "END { if (n<3) exit; m=0; s=0; "
+	          "for (i=2;i<=n;i++) { d=(t[i]-t[i-1])/1e6; if (d>0) { m++; s+=d } } "
+	          "if (m>0) printf \"%%.2f %%.2f %%d\", p, s/m, m }'");
 
 	if (exec_capture (cmd, out, sizeof (out)) != 0)
 		return false;
@@ -2305,16 +2337,16 @@ static int atv14_layer_stretched (int expect_ms, int *period_ms, int *avg_ms,
 	*decoder_fps = 0;
 
 	char out [4096];
-	char cmd [2048];
+	char cmd [EXEC_CMD_MAX];
+	size_t used;
 
 	/* Порог — ожидаемый интервал контента, а не период дисплея: 30-фпс ролик
 	 * при 60 Гц идёт с интервалом в два периода, и порог «1.5 периода»
 	 * объявлял растянутыми ВСЕ кадры (живая находка `.42`, §65). Ожидание
 	 * подставляется в awk числом. */
-	snprintf (cmd, sizeof (cmd),
-	          "L=$(dumpsys SurfaceFlinger --list 2>/dev/null | grep 'SurfaceView' "
-	          "| grep -v -i background | grep -E '\\(BLAST\\)|SurfaceView - ' | head -1); "
-	          "[ -z \"$L\" ] && exit 0; "
+	layer_pick_cmd (cmd, sizeof (cmd));
+	used = strlen (cmd);
+	snprintf (cmd + used, sizeof (cmd) - used,
 	          "dumpsys SurfaceFlinger --latency \"$L\" 2>/dev/null | awk -v expect=%d '"
 	          "NR==1 { p=$1/1e6; next } "
 	          "NF==3 && $2+0>0 && $2+0<1e17 { n++; t[n]=$2+0 } "
@@ -3012,6 +3044,13 @@ static int run_atv14 (const platform_t *plat)
 	 * один ролик. Сбрасывается на новом видео и после смены режима. */
 	bool cadence_checked = false;
 	int cadence_fixes = 0;
+	/* Состояние «лечения подачи»: ждём результата последнего лечения и знаем,
+	 * что оно уже не помогло. Живой журнал тестера 29.10 (§87): после лечения
+	 * подача осталась 34 мс при ожидании 17 мс, но лимит лечения считался на
+	 * клип — каждые 30 с снова тратились две смены режима. Признак относится к
+	 * видео: сбрасывается вместе с cadence_fixes. */
+	bool cadence_heal_wait = false;
+	bool cadence_heal_useless = false;
 	/* ожидаемый интервал подачи контента (мс) — из измеренной частоты */
 	int cadence_expect_ms = 0;
 	/* HDR/SDR-атрибуты: перечитать, когда система уже выставила свои значения
@@ -3519,6 +3558,8 @@ static int run_atv14 (const platform_t *plat)
 				cadence_checked = false;
 				mstime_disable (&cadence_timer);
 				cadence_fixes = 0;
+				cadence_heal_wait = false;
+				cadence_heal_useless = false;
 				hdrinfo_armed = false;
 				mstime_disable (&hdrinfo_timer);
 				/* плеер нового видео может быть другим — поправку
@@ -3688,6 +3729,8 @@ static int run_atv14 (const platform_t *plat)
 			cadence_checked = false;
 			mstime_disable (&cadence_timer);
 			cadence_fixes = 0;
+			cadence_heal_wait = false;
+			cadence_heal_useless = false;
 			hdrinfo_armed = false;
 			mstime_disable (&hdrinfo_timer);
 			counter_last_grow_us = 0;
@@ -3767,9 +3810,11 @@ static int run_atv14 (const platform_t *plat)
 				 * удержании и поднятом флаге backdoor до нового замера (~14 с).
 				 * Живая находка 2026-10-08 (прогон матрицы, клип long_50). */
 				if ((cadence_fixes < 2) && (back >= 0) &&
-				    (want_sf_id >= 0) && (back != want_sf_id))
+				    (want_sf_id >= 0) && (back != want_sf_id) &&
+				    !cadence_heal_useless)
 				{
 					cadence_fixes++;
+					cadence_heal_wait = true;
 					trace (0, "подача вдвое реже ожидаемого (%d мс при периоде %d мс, ожидание %d мс) — переключаю режим туда-обратно (лечение %d)\n",
 					       am, pm, expect_ms, cadence_fixes);
 					if (atv14_apply_mode (plat, back, "лечение подачи: возврат") == 0)
@@ -3783,14 +3828,33 @@ static int run_atv14 (const platform_t *plat)
 					cadence_armed = true;	/* проверить результат лечения */
 				}
 				else
+				{
+					/* Лечение уже пробовали на этом видео, а подача не
+					 * изменилась — причина не в vsync-пути HWC/SF, и вторая
+					 * пара переключений только мигает экраном. Живой журнал
+					 * тестера 29.10 (§87): 34 мс при периоде 17 мс до и после
+					 * лечения, две смены режима каждые 30 с. */
+					if (cadence_heal_wait)
+					{
+						cadence_heal_wait = false;
+						cadence_heal_useless = true;
+					}
+
 					trace (0, "подача вдвое реже ожидаемого (%d мс при периоде %d мс, ожидание %d мс) — лечение не применяю%s\n",
 					       am, pm, expect_ms,
-					       (want_sf_id < 0)
+					       cadence_heal_useless
+					       ? " (переключение уже пробовали — подача не изменилась)"
+					       : (want_sf_id < 0)
 					       ? " (цель переключения сброшена — жду нового замера)"
 					       : "");
+				}
 			}
 			else if (am > 0)
 			{
+				/* Подача пришла в норму — если перед этим лечили, лечение
+				 * помогло; состояние «бесполезно» относится к видео и
+				 * сбрасывается на новом. */
+				cadence_heal_wait = false;
 				int base = (expect_ms > pm) ? expect_ms : pm;
 				/* Смешанная картина (часть интервалов в норме, часть
 				 * растянута) — это не дисплейная «половинная подача»,
@@ -3944,6 +4008,13 @@ cadence_done: ;
 							 * «терпение» сняло бы только что выбранный режим
 							 * у играющего видео. */
 							still_since_us = sample_t;
+							/* Ожидание проверки подачи — от найденной
+							 * частоты, а не от прежнего решения: иначе она
+							 * сравнивает подачу с чужой целью (живой журнал
+							 * тестера 29.10, §87: режим выбран по 25 Гц, а
+							 * проверка ждала 17 мс от 59.94 и объявляла
+							 * «вдвое реже» исправную подачу 34 мс). */
+							cadence_expect_ms = (256000 + lhz / 2) / lhz;
 							trace (0, "частота по подаче видео-слоя: " HZ_FMT
 							       " Гц (счётчик кадров молчит) — переключаю режим\n",
 							       HZ_ARGS (lhz));
@@ -4496,6 +4567,10 @@ cadence_done: ;
 					mstime_arm (&cadence_timer, (uint32_t)cadence_fix_ms);
 					cadence_armed = true;
 					cadence_checked = false;	/* новый режим — проверить заново */
+					/* Новый целевой режим — новое лечение имеет смысл, даже
+					 * если прежнее на этом видео не помогло. */
+					cadence_heal_wait = false;
+					cadence_heal_useless = false;
 				}
 
 				/* HDR/SDR-атрибуты: перечитать, когда система выставит свои
