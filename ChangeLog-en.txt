@@ -1,7 +1,10 @@
 AFRd2 — a fork of AFRd (based on AFRd 0.3.2 by Andrey Zabolotnyi,
 anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
-Unreleased (work in progress) — 1.2.0
+1.2.0 Fri Oct 30 2026
+
+    Release after 1.1.0: AFR on demand (a session triggered by a button), a real
+    "auto" fractional rate policy, and a check of the actual display rate.
 
     * The "auto" fractional rate policy (mode.use.fract=0) is real now on
       Android 10-14: an integer rate is used only when the source declared an
