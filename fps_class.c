@@ -105,6 +105,48 @@ int fps_rate_exact_member (int hz)
 	return 0;
 }
 
+int fps_rate_declared_exact (int declared_hz)
+{
+	if (declared_hz <= 0)
+		return 0;
+
+	int i = fps_rate_index_for_hz (declared_hz);
+	int hz = fps_rate_hz (i);
+	int d = (declared_hz > hz) ? (declared_hz - hz) : (hz - declared_hz);
+
+	/* Допуск 2/256 Гц = 0.008 Гц (0.033 %): между 23.976 и 24.000 лежит
+	 * 0.024 Гц, то есть пара различается с трёхкратным запасом, а мусор
+	 * в поле (23.994 из frame dur 4001) остаётся целым. */
+	if ((d > 2) || (k_group_exact [i] != i))
+		return 0;
+
+	return hz;
+}
+
+int fps_rate_apply_policy (int hz, int declared_hz, int policy)
+{
+	if (hz <= 0)
+		return hz;
+
+	if (policy == 2)
+	{
+		int exact = fps_rate_exact_member (hz);
+		return exact ? exact : hz;
+	}
+
+	if (policy != 0)
+		return hz;
+
+	/* «Авто»: целое — только если источник заявил целое И заявленное
+	 * попадает в ту же группу, что замер. Гейт по группе отсекает мусор
+	 * (драйвер заявляет 30 fps при реальных 23.976 — журнал §4г). */
+	int exact = fps_rate_declared_exact (declared_hz);
+	if (exact && (fps_rate_group (exact) == fps_rate_group (hz)))
+		return exact;
+
+	return hz;
+}
+
 /* ---- Поправка частоты для конкретного плеера: см. fps_class.h ---- */
 
 static struct

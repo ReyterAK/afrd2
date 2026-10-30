@@ -4214,18 +4214,37 @@ cadence_done: ;
 			retries = 0;
 
 			/* mode.use.fract: 1 — предпочитать дробные (по умолчанию в профиле),
-			 * 2 — целые (24.000/30.000/60.000), 0 — «как уместно»: для нашего
-			 * класса это дробный представитель, потому что счётчик пару 0.1 %
-			 * не различает. Если точного режима в таблице SurfaceFlinger нет
+			 * 2 — целые (24.000/30.000/60.000), 0 — «Авто»: целое, если
+			 * источник заявил именно целое (подсказка плеера или frame dur),
+			 * иначе дробное. Если точного режима в таблице SurfaceFlinger нет
 			 * (ТВ не поддерживает), resolver подберёт ближайший. */
-			if (use_fract == 2)
+			if ((use_fract == 2) || (use_fract == 0))
 			{
-				int exact = fps_rate_exact_member (hz);
-				if (exact)
+				/* Источник «целое» — только точный: подсказка плеера (24.8
+				 * fixed-point) или frame dur (96000/4000 = 24.000 против
+				 * 96000/4004 = 23.976). Грубое поле `frame rate` (целые fps)
+				 * сюда не годится: оно целое всегда. */
+				int decl_hz = 0;
+				if (use_fract == 0)
 				{
-					trace (1, "mode.use.fract=2: режим " HZ_FMT " Гц вместо " HZ_FMT " Гц\n",
-					       HZ_ARGS (exact), HZ_ARGS (hz));
-					hz = exact;
+					if (api_hz)
+						decl_hz = api_hz;
+					else if (v0.decl_dur)
+						decl_hz = (int)((96000.0 * 256.0 / (double)v0.decl_dur) + 0.5);
+				}
+
+				int new_hz = fps_rate_apply_policy (hz, decl_hz, use_fract);
+				if (new_hz != hz)
+				{
+					if (use_fract == 2)
+						trace (1, "mode.use.fract=2: режим " HZ_FMT " Гц вместо "
+						       HZ_FMT " Гц\n", HZ_ARGS (new_hz), HZ_ARGS (hz));
+					else
+						trace (1, "mode.use.fract=0 (Авто): заявлено " HZ_FMT
+						       " Гц — беру целый режим " HZ_FMT " Гц вместо "
+						       HZ_FMT " Гц\n",
+						       HZ_ARGS (decl_hz), HZ_ARGS (new_hz), HZ_ARGS (hz));
+					hz = new_hz;
 				}
 			}
 

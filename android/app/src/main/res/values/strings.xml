@@ -37,8 +37,9 @@
         30fps movies
     </string>
     <string name="prefs_mode_use_fract">Fractional refresh rate policy</string>
-    <string name="prefsum_mode_use_fract">Tell AFRd2 to use fractional (23.976, 29.97, 59.94Hz) or
-        integer refresh rates, or both
+    <string name="prefsum_mode_use_fract">Auto — an integer rate when the source declared one
+        (player hint or frame duration), otherwise a fractional one; "fractional" and "integer"
+        always mean that
     </string>
     <string name="prefs_mode_blacklist_rates">Blacklisted refresh rates</string>
     <string name="prefsum_mode_blacklist_rates">Refresh rates not to be used; pick from the rates your
@@ -229,7 +230,7 @@
     <string name="apps_value_limit">No more than %1$d applications: that is how many entries the daemon supports</string>
     <string name="apps_value_truncated">The daemon keeps only %2$d entries: %1$d did not fit and were dropped</string>
     <string name="apps_value_pkg_too_long">Package name is longer than %1$d characters — the daemon would not apply it</string>
-    <string name="mode_use_fract_auto">Auto (use best)</string>
+    <string name="mode_use_fract_auto">Auto (as declared)</string>
     <string name="mode_use_fract_use">Only fractional</string>
     <string name="mode_use_fract_int">Only integer</string>
     <string name="menu_status">Status</string>

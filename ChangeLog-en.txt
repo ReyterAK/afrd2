@@ -1,6 +1,18 @@
 AFRd2 — a fork of AFRd (based on AFRd 0.3.2 by Andrey Zabolotnyi,
 anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
+Unreleased (work in progress) — 1.2.0
+
+    * The "auto" fractional rate policy (mode.use.fract=0) is real now on
+      Android 10-14: an integer rate is used only when the source declared an
+      integer one (player hint frame_rate_hint — 24.000 vs 23.976, or the
+      declared frame duration frame dur — 96000/4000 vs 96000/4004); otherwise
+      the fractional member stays. Before, "auto" and "fractional" were
+      indistinguishable: the frame counter cannot tell the 0.1 % pair apart.
+      A declared value from another rate group (garbage in the field: the
+      driver reports 30 fps for real 23.976) is ignored — verified on the
+      stand. The legacy path (Android 6-9) is unchanged.
+
 1.1.0 Tue Oct 27 2026
 
     Release after the 1.0.0 publication: the main thing is that frame rate

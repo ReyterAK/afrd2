@@ -37,8 +37,9 @@
         при частоте 30 кадр/сек
     </string>
     <string name="prefs_mode_use_fract">Политика использования дробных частот</string>
-    <string name="prefsum_mode_use_fract">Включить использование дробных частот (23.976, 29.97,
-        59.94Гц), целочисленных, или всех
+    <string name="prefsum_mode_use_fract">Авто — целая частота, если источник заявил целую
+        (подсказка плеера или длительность кадра), иначе дробная; «дробные» и «целые» — всегда
+        соответственно
     </string>
     <string name="prefs_mode_blacklist_rates">Запрещённые частоты развёртки</string>
     <string name="prefsum_mode_blacklist_rates">Частоты, которые не следует использовать: выбираются
@@ -98,7 +99,7 @@
     <string name="l_afrd_bdate">Дата сборки</string>
     <string name="l_yes">Да</string>
     <string name="l_no">Нет</string>
-    <string name="mode_use_fract_auto">Авто (наиболее подходящую)</string>
+    <string name="mode_use_fract_auto">Авто (по заявленной частоте)</string>
     <string name="mode_use_fract_use">Предпочитать дробные частоты</string>
     <string name="mode_use_fract_int">Предпочитать целые частоты</string>
     <string name="settings_misc">Прочее</string>

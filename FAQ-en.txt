@@ -280,6 +280,11 @@
 ! a slight error here will result in just a single frame inserted
 ! or removed every ~41 seconds.
 
+! On Android 10 and newer "auto" means: an integer rate when the source
+! declared an integer one (player hint or declared frame duration), and a
+! fractional one otherwise. On Android 6-9 "auto" still picks the variant
+! by the measured rate.
+
 ? Why is the chosen fractional/integer rate not applied on Android 10-11?
 
 ! On these versions the mode is switched by the vendor SystemControl, and it
@@ -287,7 +292,7 @@
 ! has no effect there: 23.976 matches, while exactly 24.000/60.000 run 0.1 %
 ! slower. AFRd says so in the log ("дробность дисплея: вендорный HAL вернул
 ! политику N - тайминги остаются его") and works with the actual rate. If the
-! TV supports fractional modes only, "auto" always yields the fractional
+! TV supports fractional modes only, "auto" yields the fractional
 ! member - that is normal.
 
 ? Why refresh rate doesn't switch in my media/IPTV player?

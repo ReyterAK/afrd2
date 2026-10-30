@@ -193,6 +193,68 @@ static void t_exact_member(void)
 	assert(fps_rate_exact_member(12345) == 0);                        /* не из таблицы */
 }
 
+/* «Авто» (mode.use.fract=0): целое берётся только если источник заявил целое.
+ * Заявленная частота приходит в 24.8 fixed-point — как frame_rate_hint (fps*1000
+ * -> *256/1000) или как 96000/frame dur. */
+static void t_declared_exact(void)
+{
+	/* hint: 24000 -> 6144 (24.000) против 23976 -> 6138 (23.976) */
+	assert(fps_rate_declared_exact(24000 * 256 / 1000) == fps_rate_hz(1));
+	assert(fps_rate_declared_exact(23976 * 256 / 1000) == 0);
+
+	/* frame dur: 96000/4000 = 24.000, 96000/4004 = 23.976 */
+	assert(fps_rate_declared_exact((int)(96000.0 * 256.0 / 4000.0 + 0.5)) == fps_rate_hz(1));
+	assert(fps_rate_declared_exact((int)(96000.0 * 256.0 / 4004.0 + 0.5)) == 0);
+
+	/* целые 30 и 60 заявляются так же, как дробные пары */
+	assert(fps_rate_declared_exact(30 * 256) == fps_rate_hz(4));
+	assert(fps_rate_declared_exact(29970 * 256 / 1000) == 0);
+	assert(fps_rate_declared_exact(60 * 256) == fps_rate_hz(7));
+	assert(fps_rate_declared_exact(59940 * 256 / 1000) == 0);
+
+	/* 25 и 50 дробного варианта не имеют: заявлены — значит «целое» */
+	assert(fps_rate_declared_exact(25 * 256) == fps_rate_hz(2));
+	assert(fps_rate_declared_exact(50 * 256) == fps_rate_hz(5));
+
+	/* мусор и границы: 0, 30 fps при реальных 23.976 (синтетика §4г),
+	 * значение вне таблицы, dur с округлением 4001 -> 23.994 */
+	assert(fps_rate_declared_exact(0) == 0);
+	assert(fps_rate_declared_exact(30 * 256) != 0);
+	assert(fps_rate_declared_exact(12345) == 0);
+	assert(fps_rate_declared_exact((int)(96000.0 * 256.0 / 4001.0 + 0.5)) == fps_rate_hz(1));
+}
+
+/* Политика mode.use.fract целиком (то, что делает afrd.c после замера) */
+static void t_policy(void)
+{
+	const int f24 = fps_rate_hz(1), f23976 = fps_rate_hz(0);
+
+	/* 1 — дробные: решение не меняется, даже если заявлено целое */
+	assert(fps_rate_apply_policy(f23976, 24000 * 256 / 1000, 1) == f23976);
+
+	/* 2 — целые: всегда точный представитель группы */
+	assert(fps_rate_apply_policy(f23976, 0, 2) == f24);
+	assert(fps_rate_apply_policy(fps_rate_hz(2), 0, 2) == fps_rate_hz(2));
+
+	/* 0 «Авто»: целое, если заявлено целое */
+	assert(fps_rate_apply_policy(f23976, 24000 * 256 / 1000, 0) == f24);
+	assert(fps_rate_apply_policy(fps_rate_hz(3), 30 * 256, 0) == fps_rate_hz(4));
+	assert(fps_rate_apply_policy(fps_rate_hz(6), 60 * 256, 0) == fps_rate_hz(7));
+
+	/* 0 «Авто»: заявлено дробное или источника нет — остаётся дробное */
+	assert(fps_rate_apply_policy(f23976, 23976 * 256 / 1000, 0) == f23976);
+	assert(fps_rate_apply_policy(f23976, 0, 0) == f23976);
+
+	/* 0 «Авто»: мусор в заявленном не перетягивает на чужую группу
+	 * (синтетика: драйвер заявляет 30 fps при реальных 23.976, §4г) */
+	assert(fps_rate_apply_policy(f23976, 30 * 256, 0) == f23976);
+	assert(fps_rate_apply_policy(f23976, 12345, 0) == f23976);
+
+	/* 25/50 дробной пары не имеют: «целое» и «дробное» совпадают */
+	assert(fps_rate_apply_policy(fps_rate_hz(2), 25 * 256, 0) == fps_rate_hz(2));
+	assert(fps_rate_apply_policy(fps_rate_hz(5), 50 * 256, 0) == fps_rate_hz(5));
+}
+
 static void t_table(void)
 {
 	assert(strcmp(fps_rate_name(0), "23.976") == 0);
@@ -334,6 +396,8 @@ int main(void)
 	t_classify_window();
 	t_refine_declared();
 	t_exact_member();
+	t_declared_exact();
+	t_policy();
 	t_live_scenario();
 	t_group();
 	t_table();
