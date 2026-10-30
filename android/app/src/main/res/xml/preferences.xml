@@ -16,6 +16,16 @@
                       android:key="main" android:title="@string/prefs_group_main">
         <SwitchPreference android:defaultValue="1" android:key="enable" android:summary="@string/prefsum_enable"
                           android:title="@string/prefs_enable"/>
+        <!-- Поведение на паузе — один пункт (pause.mode) вместо тумблера
+             «Удерживать режим на паузе» и числа «Задержка СТОП» в разных
+             категориях: это один выбор из трёх состояний. На Android 6-9
+             пункт скрыт, а тумблер и число остаются (там switch.delay.off
+             значит другое — задержку возврата после конца видео). -->
+        <ru.cobra.zap.xprefs.XListPreference android:defaultValue="keep"
+                        android:entries="@array/pause_mode"
+                        android:entryValues="@array/pause_mode_value" android:key="pause_mode"
+                        android:summary="@string/prefsum_pause_mode"
+                        android:title="@string/prefs_pause_mode"/>
         <SwitchPreference android:defaultValue="1" android:key="pause_keep"
                           android:summary="@string/prefsum_pause_keep"
                           android:title="@string/prefs_pause_keep"/>
@@ -53,10 +63,15 @@
         <ru.cobra.zap.xprefs.XAppsPreference android:key="fps_correct_list"
                           android:summary="@string/prefsum_fps_correct_list"
                           android:title="@string/prefs_fps_correct_list"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="0.1" android:key="fps_correct_av1_offset"
-                          android:selectAllOnFocus="false" android:singleLine="true"
-                          android:summary="@string/prefsum_fps_correct_av1_offset"
-                          android:title="@string/prefs_fps_correct_av1_offset"/>
+        <!-- Поправка AV1 — один пункт: модель завышения зависит от платформы,
+             поэтому «Авто» подставляет калиброванное значение, а не заставляет
+             пользователя выбирать между аддитивной и относительной (раньше это
+             были два ключа, применявшиеся одновременно). -->
+        <ru.cobra.zap.xprefs.XListPreference android:defaultValue="auto"
+                        android:entries="@array/av1_fix"
+                        android:entryValues="@array/av1_fix_value" android:key="fps_correct_av1"
+                        android:summary="@string/prefsum_fps_correct_av1"
+                        android:title="@string/prefs_fps_correct_av1"/>
         <ru.cobra.zap.xprefs.XAppsPreference android:key="fps_correct_av1_pkg"
                           android:summary="@string/prefsum_fps_correct_av1_pkg"
                           android:title="@string/prefs_fps_correct_av1_pkg"/>
@@ -152,34 +167,20 @@
         <ru.cobra.zap.xprefs.XAppsPreference android:key="switch_bump_pkg"
                           android:summary="@string/prefsum_switch_bump_pkg"
                           android:title="@string/prefs_switch_bump_pkg"/>
+        <!-- Огибающая: в интерфейсе два осмысленных значения — сколько
+             наблюдать и сколько прогреваться. Подокно, раннее решение и предел
+             расширения остались в ini (fps.measure.envelope.{sub,early,max}.ms):
+             это внутренние константы, а их значения связаны между собой
+             (горизонт молча поднимается до skip + sub, раннее решение — до
+             skip + 2*sub + 1 с), так что крутить их по отдельности нельзя. -->
         <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="20000" android:key="fps_measure_envelope_ms"
                           android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
                           android:singleLine="true" android:summary="@string/prefsum_fps_measure_envelope"
                           android:title="@string/prefs_fps_measure_envelope"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="30000" android:key="fps_measure_envelope_max_ms"
-                          android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
-                          android:singleLine="true" android:summary="@string/prefsum_fps_measure_envelope_max"
-                          android:title="@string/prefs_fps_measure_envelope_max"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="14000" android:key="fps_measure_envelope_early_ms"
-                          android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
-                          android:singleLine="true" android:summary="@string/prefsum_fps_measure_envelope_early"
-                          android:title="@string/prefs_fps_measure_envelope_early"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="5000" android:key="fps_measure_envelope_sub_ms"
-                          android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
-                          android:singleLine="true" android:summary="@string/prefsum_fps_measure_envelope_sub"
-                          android:title="@string/prefs_fps_measure_envelope_sub"/>
         <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="2000" android:key="fps_measure_envelope_skip_ms"
                           android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
                           android:singleLine="true" android:summary="@string/prefsum_fps_measure_envelope_skip"
                           android:title="@string/prefs_fps_measure_envelope_skip"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="3" android:key="fps_measure_retries"
-                          android:maxLength="3" android:numeric="integer" android:selectAllOnFocus="true"
-                          android:singleLine="true" android:summary="@string/prefsum_fps_measure_retries"
-                          android:title="@string/prefs_fps_measure_retries"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="5" android:key="fps_declared_crosscheck_pct"
-                          android:maxLength="3" android:numeric="integer" android:selectAllOnFocus="true"
-                          android:singleLine="true" android:summary="@string/prefsum_fps_declared_crosscheck"
-                          android:title="@string/prefs_fps_declared_crosscheck"/>
         <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="4000" android:key="fps_recheck_delay_ms"
                           android:maxLength="6" android:numeric="integer" android:selectAllOnFocus="true"
                           android:singleLine="true" android:summary="@string/prefsum_fps_recheck_delay"

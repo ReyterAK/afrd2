@@ -82,8 +82,9 @@ public class Config
         itemType.put ("fps.declare.fast", TYPE_BOOL);
         itemType.put ("fps.correct.enable", TYPE_BOOL);
         itemType.put ("fps.correct.list", TYPE_STR);
-        itemType.put ("fps.correct.av1.offset", TYPE_STR);
+        itemType.put ("fps.correct.av1", TYPE_STR);
         itemType.put ("fps.correct.av1.pkg", TYPE_STR);
+        itemType.put ("pause.mode", TYPE_STR);
         itemType.put ("pause.keep", TYPE_BOOL);
         itemType.put ("switch.restore.on.stop", TYPE_BOOL);
         /* «Устранять зажим частоты» (один пункт GUI): подъём режима до

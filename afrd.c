@@ -3369,7 +3369,24 @@ static int run_atv14 (const platform_t *plat)
 
 	/* Поведенческие ключи профиля (R28). */
 	int prefer_api = cfg_get_int ("fps.prefer.api", 1);
+	/* Поведение на паузе — один ключ pause.mode (keep|timeout|off), если он
+	 * задан: в GUI это один пункт вместо тумблера и числа в разных
+	 * категориях (журнал §99.3). Старые pause.keep + switch.delay.off
+	 * работают, когда ключа нет. */
 	int pause_keep = cfg_get_int ("pause.keep", 1);
+	int pause_patience_cfg = g_switch_delay_off;
+	{
+		const char *pm = cfg_get_str ("pause.mode", NULL);
+		int keep = pause_keep, pat = pause_patience_cfg;
+		if (pause_mode_apply (pm, &keep, &pat))
+		{
+			pause_keep = keep;
+			pause_patience_cfg = pat;
+			trace (1, "пауза: pause.mode=%s (режим %s%s)\n", pm,
+			       keep ? "удерживается" : "возвращается сразу",
+			       (keep && pat) ? ", предел удержания" : "");
+		}
+	}
 	int restore_on_stop = cfg_get_int ("switch.restore.on.stop", 1);
 
 	/* Отслеживание «паузы»: декодер активен, а счётчик кадров не растёт. */
@@ -3597,24 +3614,70 @@ static int run_atv14 (const platform_t *plat)
 		trace (1, "поправка частоты по плеерам: %s\n",
 		       (clist && *clist) ? clist : "(список пуст)");
 
-		/* Поправка AV1 задаётся отдельным ключом и ставится после
-		 * fps_correct_load: load() начинается с fps_correct_clear(), который
-		 * сбрасывает и её (см. fps_class.h). */
-		const char *av1_pct_val = cfg_get_str ("fps.correct.av1.pct", NULL);
-		if (av1_pct_val && av1_pct_val [0])
-			fps_correct_set_av1_pct (atof (av1_pct_val),
-			                         cfg_get_str ("fps.correct.av1.pkg", NULL));
-
-		const char *av1_val = cfg_get_str ("fps.correct.av1.offset", NULL);
+		/* Поправка AV1 — ОДНА настройка (fps.correct.av1), модель выбирает
+		 * демон: аддитивная и относительная описывают одно явление, и раньше
+		 * они применялись обе сразу (см. fps_class.h). Старые ключи .offset и
+		 * .pct читаются, только если нового ключа нет, и взаимоисключающе. */
 		const char *av1_pkg = cfg_get_str ("fps.correct.av1.pkg", NULL);
-		double av1_off_cfg = av1_val ? atof (av1_val) : 0.0;
-		fps_correct_set_av1 (av1_off_cfg, av1_pkg);
-		if (av1_off_cfg > 0.0)
+		double av1_legacy_add = 0.0, av1_legacy_pct = 0.0;
 		{
-			int p = (int)(av1_off_cfg * 100.0 + 0.5);
-			trace (1, "поправка AV1: минус %d.%02d кадра/с%s%s\n", p / 100, p % 100,
-			       (av1_pkg && *av1_pkg) ? ", только для " : "",
-			       (av1_pkg && *av1_pkg) ? av1_pkg : "");
+			const char *v = cfg_get_str ("fps.correct.av1.offset", NULL);
+			if (v)
+				av1_legacy_add = atof (v);
+			v = cfg_get_str ("fps.correct.av1.pct", NULL);
+			if (v)
+				av1_legacy_pct = atof (v);
+		}
+
+		/* Значения платформы для «auto». ATV14 (S905X5M, 5.15): завышение
+		 * аддитивное, калибровано A/B по 13 роликам (§90): 0.1 кадра/с.
+		 * Вендорный путь (Android 10/11, X4 5.4): завышение пропорциональное
+		 * (§49.18: +5.9 % на 24, +5.6 % на 60), но значение там не проверялось
+		 * контрольным A/B — поэтому «auto» его не включает: молчаливая
+		 * правка замера на непроверенном боксе хуже, чем её отсутствие. */
+		double auto_add = (plat->kind == PLAT_ATV14) ? 0.1 : 0.0;
+		double auto_pct = 0.0;
+
+		fps_av1_t av1;
+		fps_av1_resolve (cfg_get_str ("fps.correct.av1", NULL),
+		                 av1_legacy_add, av1_legacy_pct, auto_add, auto_pct, &av1);
+
+		fps_correct_set_av1 (av1.offset, av1_pkg);
+		fps_correct_set_av1_pct ((av1.factor > 1.0) ? (av1.factor - 1.0) * 100.0 : 0.0, av1_pkg);
+
+		switch (av1.src)
+		{
+		case FPS_AV1_OFF:
+			trace (1, "поправка AV1: выключена\n");
+			break;
+
+		case FPS_AV1_AUTO:
+			trace (1, "поправка AV1: авто для платформы — %s%s\n",
+			       (av1.offset > 0.0) ? "аддитивная" : "относительная",
+			       (av1_pkg && *av1_pkg) ? ", только для одного плеера" : "");
+			break;
+
+		case FPS_AV1_PCT:
+			trace (1, "поправка AV1: %.2f %% (fps.correct.av1)\n",
+			       (av1.factor - 1.0) * 100.0);
+			break;
+
+		case FPS_AV1_LEGACY_PCT:
+		case FPS_AV1_LEGACY_ADD:
+			trace (1, "поправка AV1: старое значение (fps.correct.av1.%s)\n",
+			       (av1.src == FPS_AV1_LEGACY_PCT) ? "pct" : "offset");
+			break;
+		}
+
+		if (av1.legacy_conflict)
+			trace (0, "fps.correct.av1.offset и fps.correct.av1.pct заданы "
+			       "одновременно — применяю только относительную (обе описывают "
+			       "одно явление); задайте fps.correct.av1=auto вместо обеих\n");
+
+		if (av1.offset > 0.0)
+		{
+			int p = (int)(av1.offset * 100.0 + 0.5);
+			trace (1, "поправка AV1: минус %d.%02d кадра/с\n", p / 100, p % 100);
 		}
 	}
 	else
@@ -4036,7 +4099,7 @@ static int run_atv14 (const platform_t *plat)
 		 * возвращается без нового замера. При switch.restore.on.stop=0 режим
 		 * с паузы не возвращается вовсе — тогда предел не нужен (решение
 		 * принимает pause.c, тест tests/test_pause.c). */
-		int pause_patience_ms = restore_on_stop ? g_switch_delay_off : 0;
+		int pause_patience_ms = restore_on_stop ? pause_patience_cfg : 0;
 		unsigned long long stall_us = still_since_us ? (sample_t - still_since_us) : 0;
 		pause_action_t pact = pause_step (paused, held, video, cur_sf_id,
 		                                  cur_sf_id, stall_us,

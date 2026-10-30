@@ -97,11 +97,18 @@ static const struct
 	{ "fps.cadence.fix.ms",		CFGKEY_ATV14, NULL },
 	{ "fps.prefer.api",		CFGKEY_ATV14, NULL },
 	{ "pause.keep",			CFGKEY_ATV14, NULL },
+	/* Один ключ на поведение при паузе (keep|timeout|off): в GUI заменяет
+	 * pause.keep и switch.delay.off, старые ключи продолжают работать. */
+	{ "pause.mode",			CFGKEY_ATV14, NULL },
 	{ "burst.ms",			CFGKEY_ATV14, NULL },
 	{ "burst.broadcast",		CFGKEY_ATV14, NULL },
 	{ "switch.restore.on.stop",	CFGKEY_ATV14, NULL },
 	{ "fps.correct.enable",		CFGKEY_ATV14, NULL },
 	{ "fps.correct.list",		CFGKEY_ATV14, NULL },
+	/* Одна настройка на поправку AV1: auto | off | проценты. Старые ключи
+	 * .offset и .pct остаются известными (старые конфиги) и читаются, только
+	 * если нового ключа нет, — взаимоисключающе (журнал §99.5). */
+	{ "fps.correct.av1",		CFGKEY_ATV14, NULL },
 	{ "fps.correct.av1.offset",	CFGKEY_ATV14, NULL },
 	/* Относительная поправка AV1 (проценты): на Android 10/11 завышение
 	 * пропорционально частоте (журнал §49.18). */

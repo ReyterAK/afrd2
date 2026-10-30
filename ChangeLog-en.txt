@@ -16,6 +16,29 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       "Android 11+ fine tuning" group and fps.correct.*. Before, they were grey
       rows with a "does not apply" note - a quarter of the screen.
 
+    * AV1 correction is one setting instead of two keys. The additive
+      (fps.correct.av1.offset) and relative (fps.correct.av1.pct) corrections
+      describe the same effect and were applied together: with pct=5.7 and
+      offset=0.1 a 25.000 fps clip measured 24.90, i.e. the correction worked
+      twice. Now the daemon picks the model by platform: fps.correct.av1=auto
+      applies the calibrated value (ATV14 - 0.1 frame/s), off disables it, and a
+      number sets a percentage. In the app: "AV1 counter correction" -
+      Auto / Off. The old keys are read only when the new one is absent, and
+      are mutually exclusive.
+
+    * Pause behaviour is one item "On pause" (pause.mode): keep the mode,
+      keep 20 s and then restore, or restore immediately. Before it was a toggle
+      "Keep the mode while paused" and a number "STOP delay" in different
+      categories, although it is one choice of three states. On Android 6-9 the
+      item is hidden: there switch.delay.off means something else (the delay
+      before restoring the mode after the video ends).
+
+    * The "fine tuning" group no longer shows the internal envelope constants
+      (subwindow, early decision, expansion limit) or fps.measure.retries /
+      fps.declared.crosscheck.pct: the UI keeps the two meaningful values - how
+      long to watch and how long to warm up. The other keys still work and are
+      set in the ini.
+
     * Restoring the mode when a video ends (switch.restore.on.stop): players
       from the "players to unclamp" list are no longer restored immediately -
       the mode is raised at the start of the next clip and restored once the

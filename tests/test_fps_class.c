@@ -280,6 +280,62 @@ static void t_sources_ratio(void)
 	assert(fps_sources_ratio_pct(fps_rate_hz(0), fps_rate_hz(0) / 2) == 200);
 }
 
+/* Одна настройка на поправку AV1 (fps.correct.av1): модель выбирает демон,
+ * двойной коррекции быть не может (журнал §99.5). */
+static void t_av1_resolve(void)
+{
+	fps_av1_t a;
+
+	/* ключа нет, старых значений нет -> выключено */
+	fps_av1_resolve (NULL, 0.0, 0.0, 0.1, 0.0, &a);
+	assert (a.src == FPS_AV1_OFF && a.factor == 1.0 && a.offset == 0.0);
+
+	/* ключа нет, задана только аддитивная -> она */
+	fps_av1_resolve (NULL, 0.1, 0.0, 0.1, 0.0, &a);
+	assert (a.src == FPS_AV1_LEGACY_ADD && a.offset == 0.1 && a.factor == 1.0);
+	assert (!a.legacy_conflict);
+
+	/* ключа нет, задана только относительная -> она */
+	fps_av1_resolve (NULL, 0.0, 5.7, 0.1, 0.0, &a);
+	assert (a.src == FPS_AV1_LEGACY_PCT && a.offset == 0.0);
+	assert (fabs (a.factor - 1.057) < 1e-9);
+
+	/* ключа нет, заданы ОБЕ -> только относительная, конфликт помечен */
+	fps_av1_resolve (NULL, 0.1, 5.7, 0.1, 0.0, &a);
+	assert (a.src == FPS_AV1_LEGACY_PCT && a.offset == 0.0 && a.legacy_conflict);
+
+	/* off / 0 — выключено, даже если старые значения заданы */
+	fps_av1_resolve ("off", 0.1, 5.7, 0.1, 0.0, &a);
+	assert (a.src == FPS_AV1_OFF && a.factor == 1.0 && a.offset == 0.0);
+	fps_av1_resolve ("0", 0.1, 5.7, 0.1, 0.0, &a);
+	assert (a.src == FPS_AV1_OFF);
+
+	/* auto на ATV14: аддитивная 0.1, относительной нет */
+	fps_av1_resolve ("auto", 0.0, 0.0, 0.1, 0.0, &a);
+	assert (a.src == FPS_AV1_AUTO && a.offset == 0.1 && a.factor == 1.0);
+
+	/* auto на некалиброванной платформе: ничего не делает */
+	fps_av1_resolve ("auto", 0.0, 0.0, 0.0, 0.0, &a);
+	assert (a.src == FPS_AV1_OFF);
+
+	/* auto перекрывает старые ключи: задан offset=0.5, но auto -> 0.1 */
+	fps_av1_resolve ("auto", 0.5, 5.7, 0.1, 0.0, &a);
+	assert (a.src == FPS_AV1_AUTO && a.offset == 0.1 && a.factor == 1.0);
+	assert (!a.legacy_conflict);
+
+	/* число — только относительная, аддитивной нет (двойной коррекции нет) */
+	fps_av1_resolve ("5.7", 0.1, 0.0, 0.1, 0.0, &a);
+	assert (a.src == FPS_AV1_PCT && a.offset == 0.0);
+	assert (fabs (a.factor - 1.057) < 1e-9);
+
+	/* «570» вместо «5.7» — опечатка: значение вне разумного, но формула та же;
+	 * проверяем, что отрицательное и мусорное не включают поправку */
+	fps_av1_resolve ("-3", 0.0, 0.0, 0.0, 0.0, &a);
+	assert (a.src == FPS_AV1_OFF);
+	fps_av1_resolve ("abc", 0.0, 0.0, 0.0, 0.0, &a);
+	assert (a.src == FPS_AV1_OFF);
+}
+
 static void t_table(void)
 {
 	assert(strcmp(fps_rate_name(0), "23.976") == 0);
@@ -424,6 +480,7 @@ int main(void)
 	t_declared_exact();
 	t_policy();
 	t_sources_ratio();
+	t_av1_resolve();
 	t_live_scenario();
 	t_group();
 	t_table();

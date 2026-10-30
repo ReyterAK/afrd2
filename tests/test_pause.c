@@ -59,6 +59,35 @@ int main (void)
 	assert (pause_step (true, true, true, -1, -1, 20000000ULL, 10000, &st) == PAUSE_NONE);
 	assert (!st.armed);
 
+	/* Один ключ на поведение при паузе (pause.mode): три состояния вместо
+	 * тумблера и числа в разных категориях (журнал §99.3). */
+	{
+		int keep = -1, pat = -1;
+
+		assert (pause_mode_apply ("keep", &keep, &pat) == 1);
+		assert (keep == 1 && pat == 0);
+
+		/* timeout берёт switch.delay.off, а при нуле — умолчание 20 с */
+		keep = -1; pat = 0;
+		assert (pause_mode_apply ("timeout", &keep, &pat) == 1);
+		assert (keep == 1 && pat == PAUSE_MODE_DEFAULT_TIMEOUT_MS);
+
+		keep = -1; pat = 5000;
+		assert (pause_mode_apply ("timeout", &keep, &pat) == 1);
+		assert (keep == 1 && pat == 5000);
+
+		keep = -1; pat = 5000;
+		assert (pause_mode_apply ("off", &keep, &pat) == 1);
+		assert (keep == 0 && pat == 0);
+
+		/* нет ключа / неизвестное значение — вызывающий берёт старые ключи */
+		keep = 7; pat = 7;
+		assert (pause_mode_apply (NULL, &keep, &pat) == 0);
+		assert (keep == 7 && pat == 7);
+		assert (pause_mode_apply ("", &keep, &pat) == 0);
+		assert (pause_mode_apply ("hold", &keep, &pat) == 0);
+	}
+
 	printf ("pause: OK\n");
 	return 0;
 }

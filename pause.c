@@ -1,4 +1,37 @@
+#include <string.h>
+
 #include "pause.h"
+
+int pause_mode_apply (const char *mode, int *keep, int *patience_ms)
+{
+	if (!mode || !mode [0])
+		return 0;
+
+	if (!strcmp (mode, "keep"))
+	{
+		*keep = 1;
+		*patience_ms = 0;		/* держать до конца паузы */
+		return 1;
+	}
+
+	if (!strcmp (mode, "timeout"))
+	{
+		*keep = 1;
+		if (*patience_ms <= 0)
+			*patience_ms = PAUSE_MODE_DEFAULT_TIMEOUT_MS;
+		return 1;
+	}
+
+	if (!strcmp (mode, "off"))
+	{
+		*keep = 0;
+		*patience_ms = 0;
+		return 1;
+	}
+
+	return 0;
+}
+
 
 pause_action_t pause_step (bool paused, bool held, bool video, int cur_sf_id,
                            int held_sf_id, unsigned long long stall_us,

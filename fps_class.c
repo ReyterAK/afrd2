@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include "fps_class.h"
 #include "pkgdet.h"	/* PKG_NAME_LEN: буферы имён пакетов */
 
@@ -161,6 +162,62 @@ int fps_sources_ratio_pct (int a_hz, int b_hz)
 		return 0;
 
 	return (hi * 100 + lo / 2) / lo;
+}
+
+void fps_av1_resolve (const char *value, double legacy_add, double legacy_pct,
+                      double auto_add, double auto_pct, fps_av1_t *out)
+{
+	if (!out)
+		return;
+
+	out->factor = 1.0;
+	out->offset = 0.0;
+	out->src = FPS_AV1_OFF;
+	out->legacy_conflict = false;
+
+	if (value && value [0])
+	{
+		/* Имена проверяются ДО atof: "auto" даёт atof = 0 и был бы принят
+		 * за «выключено» (нашло host-тестом). */
+		if (!strcasecmp (value, "auto"))
+		{
+			/* Значение платформы: на ATV14 оно аддитивное, на ATV11 —
+			 * относительное; некалиброванная платформа не даёт ничего. */
+			out->offset = (auto_add > 0.0) ? auto_add : 0.0;
+			out->factor = (auto_pct > 0.0) ? (1.0 + auto_pct / 100.0) : 1.0;
+			if ((out->offset > 0.0) || (out->factor != 1.0))
+				out->src = FPS_AV1_AUTO;
+			return;
+		}
+
+		if (!strcasecmp (value, "off"))
+			return;			/* выключено */
+
+		double pct = atof (value);
+		if (pct > 0.0)
+		{
+			out->factor = 1.0 + pct / 100.0;
+			out->src = FPS_AV1_PCT;
+		}
+		return;
+	}
+
+	/* Ключа нет — старое поведение, но без двойной коррекции: обе поправки
+	 * одного явления, применяется одна (относительная точнее описывает
+	 * пропорциональное завышение и уже включает в себя аддитивную часть). */
+	if (legacy_pct > 0.0)
+	{
+		out->factor = 1.0 + legacy_pct / 100.0;
+		out->src = FPS_AV1_LEGACY_PCT;
+		out->legacy_conflict = (legacy_add > 0.0);
+		return;
+	}
+
+	if (legacy_add > 0.0)
+	{
+		out->offset = legacy_add;
+		out->src = FPS_AV1_LEGACY_ADD;
+	}
 }
 
 /* ---- Поправка частоты для конкретного плеера: см. fps_class.h ---- */

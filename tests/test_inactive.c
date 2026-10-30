@@ -26,6 +26,8 @@ static char g_atv14 [MAX_KEYS][KEY_LEN];
 static int g_atv14_n;
 static char g_legacy [MAX_KEYS][KEY_LEN];
 static int g_legacy_n;
+static char g_replaced [MAX_KEYS][KEY_LEN];
+static int g_replaced_n;
 
 static void fail (const char *fmt, const char *arg)
 {
@@ -242,6 +244,7 @@ int main (void)
 	parse_gui (xml);
 	g_atv14_n = parse_array (java, "kInactiveOnAtv14", g_atv14);
 	g_legacy_n = parse_array (java, "kInactiveOnLegacy", g_legacy);
+	g_replaced_n = parse_array (java, "kReplacedOnAtv14", g_replaced);
 
 	/* Санитарные проверки самого разбора: «ноль найденного» не должен
 	 * выглядеть как согласованность. */
@@ -285,6 +288,20 @@ int main (void)
 	for (int i = 0; i < g_legacy_n; i++)
 		if (!in_list (g_gui, g_gui_n, g_legacy [i]))
 			fail ("в kInactiveOnLegacy есть ключ, которого нет в preferences.xml: %s", g_legacy [i]);
+
+	/* Заменённые на ATV14 пункты (pause_keep, switch_delay_off) обязаны быть
+	 * в GUI: иначе список хранит память об удалённой настройке, и при возврате
+	 * её в XML она снова станет видимой молча. */
+	for (int i = 0; i < g_replaced_n; i++)
+	{
+		if (!in_list (g_gui, g_gui_n, g_replaced [i]))
+			fail ("в kReplacedOnAtv14 есть ключ, которого нет в preferences.xml: %s", g_replaced [i]);
+		/* Пересечение с kInactiveOnAtv14 запрещено (оба скрывают на ATV14 —
+		 * это дубль), а с kInactiveOnLegacy разрешено: pause_keep — ключ
+		 * нового пути, и на legacy он недействующий, а на ATV14 заменён. */
+		if (in_list (g_atv14, g_atv14_n, g_replaced [i]))
+			fail ("ключ и в kReplacedOnAtv14, и в kInactiveOnAtv14: %s", g_replaced [i]);
+	}
 
 	/* Списки не пересекаются: строка не может быть помечена двумя путями сразу. */
 	for (int i = 0; i < g_atv14_n; i++)

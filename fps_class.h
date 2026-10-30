@@ -75,6 +75,47 @@ void fps_correct_set_av1_pct (double pct, const char *package);
 /* Множитель (1.0 — поправки нет): измеренную частоту надо РАЗДЕЛИТЬ на него. */
 double fps_correct_av1_factor (const char *device, const char *package);
 
+/* ---- Одна настройка на поправку AV1 (fps.correct.av1) ----
+ *
+ * Раньше их было две и они применялись ОДНОВРЕМЕННО: аддитивная
+ * (fps.correct.av1.offset, кадр/с) и относительная (fps.correct.av1.pct, %).
+ * Обе описывают одно явление — завышение счётчика AV1-трактом, — и включить
+ * их вместе значит скорректировать дважды: при pct=5.7 и offset=0.1 контент
+ * 25.000 измеряется как 24.90 (см. журнал §99.5). Модель завышения — свойство
+ * платформы (на ATV14 оно аддитивное, на ATV11 пропорциональное), а не выбор
+ * пользователя, поэтому модель выбирает демон.
+ *
+ * Ключ fps.correct.av1:
+ *   "auto"  — значение платформы (калиброванное; 0 — не калибровано);
+ *   "off"/"0" — выключено;
+ *   число   — относительная поправка в процентах (только она).
+ * Если ключа нет — старое поведение (fps.correct.av1.offset / .pct), но
+ * взаимоисключающе: при pct > 0 аддитивная игнорируется (и это видно в логе). */
+typedef enum
+{
+	FPS_AV1_OFF = 0,	/* выключено */
+	FPS_AV1_AUTO,		/* значение платформы */
+	FPS_AV1_PCT,		/* задано числом, относительная */
+	FPS_AV1_LEGACY_ADD,	/* старый ключ .offset */
+	FPS_AV1_LEGACY_PCT,	/* старый ключ .pct */
+} fps_av1_src_t;
+
+typedef struct
+{
+	double factor;		/* 1 + pct/100, 1.0 — нет */
+	double offset;		/* кадр/с, 0.0 — нет */
+	fps_av1_src_t src;
+	bool legacy_conflict;	/* оба старых ключа заданы — аддитивная проигнорирована */
+} fps_av1_t;
+
+/* Разрешить настройку в пару (factor, offset).
+ *   value       — значение fps.correct.av1 или NULL, если ключа нет;
+ *   legacy_add  — fps.correct.av1.offset;
+ *   legacy_pct  — fps.correct.av1.pct;
+ *   auto_add / auto_pct — значения платформы для "auto" (0 — не калибровано). */
+void fps_av1_resolve (const char *value, double legacy_add, double legacy_pct,
+                      double auto_add, double auto_pct, fps_av1_t *out);
+
 /* ---- Поправка частоты для конкретного плеера (fps.correct.*) ----
  *
  * Разные плееры подают кадры в декодер по-разному: на живом стенде (2026-10-01)

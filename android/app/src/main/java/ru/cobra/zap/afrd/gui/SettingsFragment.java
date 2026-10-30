@@ -91,24 +91,42 @@ public class SettingsFragment extends PreferenceFragment
         "trigger_start_debounce_ms",
         "trigger_stop_debounce_ms",
         "fps_measure_envelope_ms",
-        "fps_measure_envelope_early_ms",
-        "fps_measure_envelope_max_ms",
-        "fps_measure_envelope_sub_ms",
         "fps_measure_envelope_skip_ms",
-        "fps_measure_retries",
-        "fps_declared_crosscheck_pct",
         "fps_recheck_delay_ms",
         "fps_cadence_fix_ms",
         "fps_prefer_api",
         "fps_declare_fast",
         "pause_keep",
+        "pause_mode",
         "switch_restore_on_stop",
         "switch_bump_pkg",
         /* калибровка по плееру */
         "fps_correct_list",
-        "fps_correct_av1_offset",
+        "fps_correct_av1",
         "fps_correct_av1_pkg",
     };
+
+    /* Строки, которые на Android 10-14 заменены другим пунктом и потому
+     * скрываются (сами ключи при этом действуют и читаются демоном).
+     * switch.delay.off — ключ обоих путей: на старом это задержка возврата
+     * после конца видео, на новом его роль играет pause.mode. */
+    private static final String [] kReplacedOnAtv14 =
+    {
+        "pause_keep",
+        "switch_delay_off",
+    };
+
+    private static boolean isReplacedOnAtv14 (String key)
+    {
+        if (!Control.isAtv14 ())
+            return false;
+
+        for (String k : kReplacedOnAtv14)
+            if (k.equals (key))
+                return true;
+
+        return false;
+    }
 
     private static boolean isInactiveLegacy (String key)
     {
@@ -152,7 +170,8 @@ public class SettingsFragment extends PreferenceFragment
                 if (((PreferenceGroup)p).getPreferenceCount () == 0)
                     group.removePreference (p);
             }
-            else if (isInactive (p.getKey ()) || isInactiveLegacy (p.getKey ()))
+            else if (isInactive (p.getKey ()) || isInactiveLegacy (p.getKey ()) ||
+                     isReplacedOnAtv14 (p.getKey ()))
                 group.removePreference (p);
         }
     }
