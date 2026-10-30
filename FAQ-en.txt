@@ -285,6 +285,18 @@
 ! fractional one otherwise. On Android 6-9 "auto" still picks the variant
 ! by the measured rate.
 
+? How do I switch AFR on by a button, just for a while?
+
+! On Android 10 and newer the daemon supports a "session": AFR is normally
+! off, and on an external command it switches on for a while, makes a single
+! mode switch, restores the previous mode and switches off again. The command
+! is "burst" (40 seconds by default) and can be sent four ways: over UDP to
+! 127.0.0.1:50505, by broadcast, by starting an activity, or with the afrd
+! --burst utility. The button itself is assigned in a key mapper (Button
+! Mapper, tvQuickActions and the like): choose "send broadcast" (action
+! ru.reyter.afrd2.action.BURST) or "start activity" (ru.cobra.afrd.BURST).
+! See the README section "AFR on demand".
+
 ? Why is the chosen fractional/integer rate not applied on Android 10-11?
 
 ! On these versions the mode is switched by the vendor SystemControl, and it

@@ -275,6 +275,18 @@ extern void apisock_handle (struct pollfd *pfd, int pfd_count);
 
 // afrd API: next video starting in <1.0 sec will use this frame rate
 extern void afrd_frame_rate_hint (int hz);
+
+/* Сеанс «AFR по требованию» (журнал §84): команда API `burst <ms>`,
+ * ms <= 0 — отмена. Состояние и срок — в burst.c. */
+extern int afrd_burst (int ms);
+/* Форма B: сеанс без работающего демона (`afrd --burst N`). */
+extern void afrd_burst_self (int ms);
+extern bool afrd_burst_running (void);
+extern bool afrd_burst_oneshot (void);
+extern int afrd_burst_left_ms (void);
+extern int afrd_burst_ms (void);
+extern const char *afrd_burst_state (void);
+extern int afrd_burst_hz (void);
 // afrd API: set display refresh rate
 extern void afrd_refresh_rate (int hz);
 // afrd API: reload configuration file

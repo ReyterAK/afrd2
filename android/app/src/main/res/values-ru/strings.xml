@@ -234,6 +234,9 @@
     </string>
     <string name="l_log_enable">Включить ведение журналира демоном</string>
     <string name="no_signal">НЕТ СИГНАЛА ОТ AFRD</string>
+    <string name="burst_started">Сеанс AFR запущен</string>
+    <string name="burst_cancelled">Сеанс AFR отменён</string>
+    <string name="burst_no_daemon">Демон AFRd2 не запущен</string>
     <string name="menu_status">Состояние</string>
     <string name="menu_log">Журнал</string>
     <string name="menu_settings">Настройки</string>

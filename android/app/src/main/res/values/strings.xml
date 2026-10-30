@@ -233,6 +233,9 @@
     <string name="mode_use_fract_auto">Auto (as declared)</string>
     <string name="mode_use_fract_use">Only fractional</string>
     <string name="mode_use_fract_int">Only integer</string>
+    <string name="burst_started">AFR session started</string>
+    <string name="burst_cancelled">AFR session cancelled</string>
+    <string name="burst_no_daemon">AFRd2 daemon is not running</string>
     <string name="menu_status">Status</string>
     <string name="menu_log">Log</string>
     <string name="menu_settings">Settings</string>

@@ -117,6 +117,7 @@ static void apisock_cmd (char *cmd, int fd, struct sockaddr *src_addr, socklen_t
 				"refresh_rate <rr>\n\ttell afrd to set display refresh rate as close to <rr>/1000 Hz as possible, no arg to restore original rate\n"
 				"color_space <cs>\n\toverride colorspace, empty arg to restore default behavior\n"
 				"status\n\tget current afrd status\n"
+				"burst <ms>\n\trun one AFR session for <ms> milliseconds (15000..120000, default 40000); 0 cancels; repeats extend the session\n"
 				"reconf\n\ttell afrd to reload configuration file as soon as possible\n";
 			sendto (fd, help, strlen (help), 0, src_addr, addrlen);
 		} else if (apisock_is_cmd (&cmd, "frame_rate_hint")) {
@@ -125,8 +126,8 @@ static void apisock_cmd (char *cmd, int fd, struct sockaddr *src_addr, socklen_t
 			if (!*cmd)
 				afrd_frame_rate_hint ((fr * 256) / 1000);
 		} else if (apisock_is_cmd (&cmd, "status")) {
-			/* +5 строк на атрибуты дисплея (hdrinfo): буфера 200 байт мало */
-			char status [320];
+			/* +5 строк на атрибуты дисплея (hdrinfo), +3 на сеанс burst */
+			char status [420];
 			const hdrinfo_t *hi = hdrinfo_get ();
 			int sl = snprintf (status, sizeof (status),
 				"stamp:%d\n"
@@ -141,7 +142,10 @@ static void apisock_cmd (char *cmd, int fd, struct sockaddr *src_addr, socklen_t
 				"hdr policy:%d\n"
 				"hdr priority:%d\n"
 				"sdr mode:%d\n"
-				"force hdr mode:%d\n",
+				"force hdr mode:%d\n"
+				"burst:%s\n"
+				"burst left ms:%d\n"
+				"burst hz:%d\n",
 				g_afrd_stats.crc32,
 				g_afrd_stats.enabled ? 1 : 0,
 				g_afrd_stats.switched ? 1 : 0,
@@ -154,12 +158,41 @@ static void apisock_cmd (char *cmd, int fd, struct sockaddr *src_addr, socklen_t
 				hi->valid ? hi->policy : -1,
 				hi->valid ? hi->priority : -1,
 				hi->valid ? hi->sdr_mode : -1,
-				hi->valid ? hi->force_hdr : -1);
+				hi->valid ? hi->force_hdr : -1,
+				afrd_burst_state (),
+				afrd_burst_left_ms (),
+				afrd_burst_hz () * 1000 / 256);
 			/* snprintf возвращает «сколько хотелось»: при усечении
 			 * sendto ушёл бы за буфер */
 			if (sl >= (int) sizeof (status))
 				sl = sizeof (status) - 1;
 			sendto (fd, status, sl, 0, src_addr, addrlen);
+		} else if (apisock_is_cmd (&cmd, "burst")) {
+			/* `burst` без аргумента — умолчание; `burst 0` — отмена.
+			 * Ответ — строка состояния, чтобы вызывающему (shell-скрипт,
+			 * маппер кнопок) было что показать без второго запроса. */
+			/* `burst` без аргумента — умолчание из burst.ms, `burst 0` —
+			 * отмена: parse_int вернул бы 0 в обоих случаях, поэтому
+			 * аргумент проверяем до разбора. */
+			cmd += strspn (cmd, spaces);
+			int ms = -1;
+			if (*cmd)
+			{
+				ms = parse_int (&cmd);
+				cmd += strspn (cmd, spaces);
+			}
+			if (!*cmd)
+			{
+				int res = afrd_burst (ms);
+				char rep [160];
+				int rl = snprintf (rep, sizeof (rep), "burst:%s ms:%d left:%d result:%s\n",
+				                   afrd_burst_state (), afrd_burst_ms (), afrd_burst_left_ms (),
+				                   (res == 1) ? "cancelled"
+				                   : (res == 2) ? "too-soon" : "ok");
+				if (rl >= (int) sizeof (rep))
+					rl = sizeof (rep) - 1;
+				sendto (fd, rep, rl, 0, src_addr, addrlen);
+			}
 		} else if (apisock_is_cmd (&cmd, "reconf")) {
 			afrd_reconf ();
 		} else if (apisock_is_cmd (&cmd, "refresh_rate")) {

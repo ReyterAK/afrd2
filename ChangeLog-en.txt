@@ -31,6 +31,21 @@ Unreleased (work in progress) — 1.2.0
       60 fps rendered by the app at 30, or does this driver's counter count
       double. Diagnostics only, it does not affect mode selection.
 
+    * AFR on demand: a session triggered by a button (slimBOXtv request). AFR is
+      normally off (enable=0); on an external command the daemon switches on for
+      a while, makes ONE mode switch, restores the previous mode and switches
+      off again. Inside a session the mode bump (switch.bump), the cadence
+      "healing" and the measurement recheck are disabled — only the measurement
+      and one switch remain; the ceiling reset stays as in the normal loop, for
+      switch.bump.pkg players only. Duration: 40000 ms default, 15000..120000
+      (burst.ms), repeats extend, burst 0 cancels, calls are limited to one per
+      second. Four interfaces: the API command burst <ms>, the broadcast
+      ru.reyter.afrd2.action.BURST, the activity ru.cobra.afrd.BURST and the
+      afrd --burst <sec> utility (a running daemon first; with no daemon it runs
+      a one-shot process that exits after the session). The daemon reports the
+      session itself: ru.reyter.afrd2.action.BURST_STATE with state, hz_milli
+      and left_ms (key burst.broadcast turns it off).
+
     * Less log noise: "счётчик кадров стоит" at most once per 10 s (was 42 lines
       in 8 minutes for a player that jitters the counter), "… не в
       switch.bump.pkg" at most once per minute per package (was 15 lines in

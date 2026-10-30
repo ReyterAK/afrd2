@@ -97,6 +97,8 @@ static const struct
 	{ "fps.cadence.fix.ms",		CFGKEY_ATV14, NULL },
 	{ "fps.prefer.api",		CFGKEY_ATV14, NULL },
 	{ "pause.keep",			CFGKEY_ATV14, NULL },
+	{ "burst.ms",			CFGKEY_ATV14, NULL },
+	{ "burst.broadcast",		CFGKEY_ATV14, NULL },
 	{ "switch.restore.on.stop",	CFGKEY_ATV14, NULL },
 	{ "fps.correct.enable",		CFGKEY_ATV14, NULL },
 	{ "fps.correct.list",		CFGKEY_ATV14, NULL },

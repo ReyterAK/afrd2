@@ -235,10 +235,12 @@ adb -s $D shell 'echo status | timeout 2 nc -u -w1 127.0.0.1 50505'   # стат
 раскладка файлов, API, замена вендорного помощника своим и порядок проверки. Сводка ключей в его
 приложении А сверяется с `cfgkeys.c` стражем `tests/test_integration_doc.sh`.
 
-Заявка «AFR по горячей кнопке» (временный сеанс по запросу внешнего приложения) разобрана отдельно:
-`docs/afr-on-demand.md` — механизмы, что уже есть в коде, что придётся добавить; список вопросов
-и вариантов ответа для разработчика прошивки — `docs/afr-on-demand-questions.md`. **Не реализовано**
-(план — после 1.1.0).
+Заявка «AFR по горячей кнопке» (временный сеанс по запросу внешнего приложения) **реализована в
+1.2.0**: `docs/afr-on-demand.md` — механизмы и интерфейсы, `docs/afr-on-demand-questions.md` —
+вопросы разработчику прошивки, `docs/afr-on-demand-answers.md` — его ответы. Коротко: команда
+`burst <мс>` по API, `afrd --burst <с>`, activity `ru.cobra.afrd.BURST` и broadcast
+`ru.reyter.afrd2.action.BURST`; состояние сеанса демон рассылает сам
+(`ru.reyter.afrd2.action.BURST_STATE`). Подробности — раздел «AFR по требованию» ниже.
 
 ### Профиль config/afrd2.ini
 
@@ -487,6 +489,47 @@ DASH/HLS-сегментов, AV1-тракт декодера добавляет 
 `fps.correct.*`. Стартовое занижение у SmartTube, как и у VLC, отсекается прогревочным
 подокном огибающей (`fps.measure.envelope.skip.ms`), а перепроверка `fps.recheck.delay.ms`
 остаётся страховкой.
+
+### AFR по требованию (сеанс по кнопке)
+
+Сценарий: AFR обычно выключен (`enable=0`), а когда плавность не устраивает — человек нажимает
+назначенную кнопку, AFR включается на время, достаточное для решения, делает **одно**
+переключение, возвращает прежний режим и снова выключается. Заявка разработчика slimBOXtv,
+разбор — `docs/afr-on-demand.md`, ответы прошивки — `docs/afr-on-demand-answers.md`.
+
+**Что гасится в сеансе** (иначе это лишние мигания): подъём режима до максимума
+(`switch.bump`), «лечение подачи» (переключение туда-обратно) и перепроверка замера
+(`fps.recheck.delay.ms`). Сброс потолка остаётся как в обычном цикле — только плеерам из
+`switch.bump.pkg`. Смена потока внутри сеанса его **завершает** (решение прошивки: «строго одно
+переключение»).
+
+**Длительность.** Умолчание 40 000 мс, допуск 15 000…120 000 (`burst.ms` в ini). Повтор команды
+**продлевает** сеанс от текущего момента, `burst 0` — отмена (сеанс заканчивается штатно, с
+возвратом режима). Лимит частоты: не чаще раза в секунду (защита от дребезга кнопки); отмена под
+лимит не попадает.
+
+Четыре интерфейса запуска — выбирайте тот, который поддерживает ваш маппер:
+
+| Интерфейс | Как | Кому |
+|---|---|---|
+| UDP API | `printf 'burst 40000\n' \| nc -u -w1 127.0.0.1 50505` | любому приложению и shell, root не нужен, приложение не нужно |
+| Broadcast | `am broadcast -p ru.reyter.afrd2 -a ru.reyter.afrd2.action.BURST --ei ms 40000` (отмена: `--ez cancel true`) | Button Mapper и подобным, root не нужен, нужно приложение |
+| Activity | `am start -n ru.reyter.afrd2/ru.cobra.zap.afrd.gui.BurstActivity --ei ms 40000` (или intent `ru.cobra.afrd.BURST`) | tvQuickActions: запуск activity |
+| Shell | `afrd --burst 40 <ini>` | Magisk-модулю и прошивке, root нужен |
+
+**`afrd --burst <сек>`** сначала пробует отправить команду живущему демону. Если демона нет —
+проводит сеанс сам и **завершается** по его окончании (процесса нет, пока не нажали). Если демон
+жив, но не ответил, второй не поднимается: команда завершается с ошибкой — иначе на боксе
+оказались бы два демона, дерущиеся за режим и порт.
+
+**Обратная связь.** Демон сам рассылает `ru.reyter.afrd2.action.BURST_STATE` с extras
+`state` (`started` / `switched` / `finished` / `cancelled`), `hz_milli` (принятая частота × 1000,
+0 — решения ещё нет) и `left_ms`. Рисует тот, кто хочет (прошивка — тост). Ключ
+`burst.broadcast=0` выключает рассылку.
+
+**Важно для прошивки.** Пока демон в пассиве, он обязан **оставаться запущенным**: команду
+принимать некому, если супервизор гасит процесс при `enable=0`. Гейт по `enable` в супервизоре —
+временная мера для сборок без сеанса; с 1.2.0 её надо снять.
 
 ### Как убедиться, что AFR работает
 
@@ -1309,8 +1352,17 @@ The following commands are available:
     * The color range (limit or full)
     Color space takes effect on next refresh rate switch.
 
+* *burst* <ms>
+    run one AFR session for <ms> milliseconds: measure the frame rate, switch
+    the mode once, then restore the previous mode and go back to idle. Allowed
+    range 15000..120000, no argument means the `burst.ms` default, 0 cancels a
+    running session. Repeats extend the session. Calls are rate limited to one
+    per second. Works with `enable=0` — the daemon stays resident in the passive
+    loop and a session is a temporary switch-on. The reply line is
+    `burst:<state> ms:<length> left:<ms> result:<ok|too-soon|cancelled>`.
+
 * *status*
-    get current afrd status
+    get current afrd status (includes `burst`, `burst left ms`, `burst hz`)
 
 * *reconf*
     tell afrd to reload configuration file as soon as possible

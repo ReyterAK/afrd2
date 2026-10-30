@@ -3,6 +3,11 @@
           xmlns:tools="http://schemas.android.com/tools"
           package="ru.cobra.zap.afrd.gui">
 
+    <!-- Сеанс «AFR по требованию»: команда уходит демону по UDP на loopback
+         (127.0.0.1:50505). Без INTERNET сокет не создаётся вовсе — проверено
+         живьём: команда молча не доходила, а приложение показывало «демон не
+         запущен». -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
 
@@ -35,6 +40,24 @@
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
         </activity>
+
+        <!-- Сеанс «AFR по требованию» (журнал §84): вызывается маппером кнопок.
+             Своего окна не показывает, только тост. -->
+        <activity android:name="ru.cobra.zap.afrd.gui.BurstActivity"
+                  android:exported="true" android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="ru.cobra.afrd.BURST"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+
+        <!-- Команда сеанса broadcast-ом: для Button Mapper и shell. -->
+        <receiver android:name="ru.cobra.zap.afrd.gui.BurstReceiver"
+                  android:enabled="true" android:exported="true">
+            <intent-filter>
+                <action android:name="ru.reyter.afrd2.action.BURST"/>
+            </intent-filter>
+        </receiver>
 
         <activity android:name="ru.cobra.zap.afrd.gui.AppsPickerActivity"
                   android:configChanges="orientation" android:exported="false"

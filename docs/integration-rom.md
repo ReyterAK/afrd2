@@ -309,6 +309,8 @@ AFRd2 — форк AFRd (Andrey Zabolotnyi) под **GPL-3**. Размещени
 | `fps.cadence.fix.ms` | Android 10–14 | — |
 | `fps.prefer.api` | Android 10–14 | — |
 | `pause.keep` | Android 10–14 | — |
+| `burst.ms` | Android 10–14 | умолчание для команды `burst` без аргумента (0 — 40 000 мс, допуск 15 000…120 000) |
+| `burst.broadcast` | Android 10–14 | сообщать о сеансе broadcast-ом `ru.reyter.afrd2.action.BURST_STATE` |
 | `switch.restore.on.stop` | Android 10–14 | — |
 | `fps.correct.enable` | Android 10–14 | — |
 | `fps.correct.list` | Android 10–14 | — |

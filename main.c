@@ -31,8 +31,13 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <errno.h>
 
 #include "afrd.h"
+#include "burst.h"
 
 const char *g_version = "1.1.0";
 const char *g_ver_sfx = "";
@@ -66,6 +71,10 @@ static void show_help (char *const *argv)
 {
 	show_version ();
 	printf ("usage: %s [options] [config-file]\n", argv [0]);
+	printf ("	--burst SEC	run one AFR session for SEC seconds and exit\n"
+	        "			(sends the command to a running daemon;\n"
+	        "			 with no daemon, runs the session itself)\n"
+	        "	--burst 0	cancel a running session\n");
 	printf ("	-D	daemonize the program\n");
 	printf ("	-p FILE	write PID to file when running as daemon\n");
 	printf ("	-k	kill the running daemon (can be used with -D)\n");
@@ -335,6 +344,54 @@ static void daemonize ()
 	setpriority (PRIO_PROCESS, getpid (), -16);
 }
 
+/* Отправить команду `burst <ms>` работающему демону по UDP API.
+ * Возврат: 0 — демон ответил; -1 — ответа нет (демона нет или он не
+ * отвечает); ответ печатается в out. */
+#define AFRD_API_PORT	50505
+
+static int api_send (const char *cmd, char *out, size_t out_sz)
+{
+	int fd = socket (AF_INET, SOCK_DGRAM, 0);
+	if (fd < 0)
+		return -1;
+
+	struct sockaddr_in sa;
+	memset (&sa, 0, sizeof (sa));
+	sa.sin_family = AF_INET;
+	sa.sin_port = htons (AFRD_API_PORT);
+	sa.sin_addr.s_addr = htonl (INADDR_LOOPBACK);
+
+	if (sendto (fd, cmd, strlen (cmd), 0, (struct sockaddr *)&sa, sizeof (sa)) < 0)
+	{
+		close (fd);
+		return -1;
+	}
+
+	/* Ответ короткий и приходит сразу; 700 мс — с запасом на занятый цикл
+	 * демона (он опрашивает сокет раз в trigger.poll.ms, по умолчанию 300). */
+	struct pollfd pfd = { fd, POLLIN, 0 };
+	int rc = -1;
+	if (poll (&pfd, 1, 700) > 0)
+	{
+		int n = recv (fd, out, out_sz - 1, 0);
+		if (n > 0)
+		{
+			out [n] = 0;
+			rc = 0;
+		}
+	}
+
+	close (fd);
+	return rc;
+}
+
+static int burst_send_command (int ms, char *out, size_t out_sz)
+{
+	char cmd [32];
+	snprintf (cmd, sizeof (cmd), "burst %d\n", ms);
+	return api_send (cmd, out, out_sz);
+}
+
 static void display_stats ()
 {
 	if (!shmem_init (true))
@@ -353,6 +410,15 @@ static void display_stats ()
 			g_afrd_stats.current_hz >> 8, (100 * (g_afrd_stats.current_hz & 255)) >> 8);
 		printf ("Original display refresh rate: %u.%02uHz\n",
 			g_afrd_stats.original_hz >> 8, (100 * (g_afrd_stats.original_hz & 255)) >> 8);
+		/* Состояние сеанса живёт в процессе демона, а не в shmem: берём его
+		 * из ответа API status (те же три строки, что видит любой клиент). */
+		char reply [512] = { 0 };
+		if (api_send ("status\n", reply, sizeof (reply)) == 0)
+		{
+			const char *b = strstr (reply, "burst:");
+			if (b)
+				printf ("AFR session: %s", b);
+		}
 	}
 
 	shmem_fini ();
@@ -366,6 +432,38 @@ int main (int argc, char *const *argv)
 	umask (022);
 
 	g_program = argv [0];
+
+	/* --burst <сек> — сеанс «AFR по требованию» (журнал §84). Разбирается
+	 * до getopt и ВЫРЕЗАЕТСЯ из argv: getopt длинных опций не знает, а на
+	 * "--burst" он разбирает "-" как опцию, дальше "b","u","r","s" — и "-s"
+	 * печатал статистику вместо запуска сеанса (живая находка). */
+	int burst_sec = -1;
+	{
+		/* argv приходит как char *const *: копируем указатели в свою
+		 * таблицу — иначе компилятор запрещает запись. */
+		static char *argv_own [64];
+		int w = 1;
+		argv_own [0] = (char *) argv [0];
+		for (int i = 1; i < argc; i++)
+		{
+			if (!strcmp (argv [i], "--burst"))
+			{
+				burst_sec = (i + 1 < argc) ? atoi (argv [i + 1]) : 0;
+				i++;			/* пропускаем и значение */
+				continue;
+			}
+			if (!strncmp (argv [i], "--burst=", 8))
+			{
+				burst_sec = atoi (argv [i] + 8);
+				continue;
+			}
+			if (w < (int) ARRAY_SIZE (argv_own) - 1)
+				argv_own [w++] = (char *) argv [i];
+		}
+		argv_own [w] = NULL;
+		argv = argv_own;
+		argc = w;
+	}
 
 	while ((ret = getopt (argc, argv, "Dp:kl:shvV")) >= 0)
 		switch (ret) {
@@ -410,6 +508,39 @@ int main (int argc, char *const *argv)
 		ret = kill_daemon ();
 		if (!g_daemon)
 			return ret;
+	}
+
+	/* --burst: сначала команда живущему демону. Если демона нет — сеанс
+	 * запускается этим же процессом (форма B): второго демона рядом не
+	 * появляется, потому что при живом (по pid-файлу) процессе мы отказываемся
+	 * стартовать, а не идём напролом. */
+	if (burst_sec >= 0)
+	{
+		int ms = (burst_sec == 0) ? 0 : burst_clamp_ms (burst_sec * 1000);
+		char reply [256] = { 0 };
+
+		if (burst_send_command (ms, reply, sizeof (reply)) == 0)
+		{
+			printf ("%s", reply);
+			return EXIT_SUCCESS;
+		}
+
+		pid_t dp = daemon_pid ();
+		if (dp > 0)
+		{
+			fprintf (stderr, "%s: daemon (pid %d) is running but did not answer "
+			         "the API — not starting a second one\n", g_program, (int)dp);
+			return EXIT_FAILURE;
+		}
+
+		if (ms <= 0)
+		{
+			fprintf (stderr, "%s: no running daemon, nothing to cancel\n", g_program);
+			return EXIT_FAILURE;
+		}
+
+		/* Демона нет: сеанс ведёт этот процесс. */
+		afrd_burst_self (ms);
 	}
 
 	if (g_daemon)

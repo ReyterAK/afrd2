@@ -27,6 +27,7 @@
 #include "ceiling.h"
 #include "dispserve.h"
 #include "vinfo.h"
+#include "burst.h"
 
 #define __USE_GNU
 #include <math.h>
@@ -113,6 +114,23 @@ static int g_switch_hdmi;
 
 static int g_mode_prefer_exact;
 static int g_mode_use_fract;
+
+/* Сеанс «AFR по требованию» (журнал §84): состояние живёт в глобале, чтобы
+ * пережить переинициализацию демона — сеанс начинается из пассивного цикла
+ * выходом на перезапуск, а заканчивается возвратом в пассив. */
+static burst_t g_burst;
+/* В сеансе видео сменилось: по ответу прошивки (вопрос 5) сеанс на этом
+ * заканчивается — «строго одно переключение» честнее, чем переизмерять
+ * каждый канал. */
+static bool g_burst_video_changed;
+/* Сеанс запущен самим вызовом `afrd --burst` (демона не было): только в этом
+ * случае `enable=0` в конфиге не должен уводить процесс в пассив. При
+ * перезапуске демона по reconf флаг уже снят. */
+static bool g_burst_self;
+/* Процесс запущен как `afrd --burst` (форма B): после сеанса он обязан
+ * завершиться, а не остаться пассивным демоном — «процесса нет, пока не
+ * нажали» (журнал §84.2). */
+static bool g_burst_oneshot;
 static int g_mode_blacklist_rates [10];
 static int g_mode_blacklist_rates_count;
 
@@ -1483,6 +1501,12 @@ static int atv14_bump (const platform_t *plat, int *orig_sf_id, int *cur_sf_id,
                        int *want_sf_id, bool *held)
 {
 	if (!g_switch_bump || (plat->sink == SINK_LEGACY))
+		return -1;
+
+	/* В сеансе «по кнопке» подъём режима не нужен: он существует только чтобы
+	 * плеер не запомнил низкую частоту ДО первого кадра, а в сеансе мы уже
+	 * смотрим живое видео. Это лишнее мигание (§84.3). */
+	if (burst_running (&g_burst))
 		return -1;
 
 	/* Механики зажима — только плеерам из switch.bump.pkg (журнал §55.9):
@@ -3097,6 +3121,144 @@ static bool fg_is_desktop (const char *pkg)
 	return false;
 }
 
+/* ---- Сеанс «AFR по требованию» (журнал §84) ---- */
+
+/* Команда API `burst <ms>`: ms <= 0 — отмена. Лимит частоты — в burst.c.
+ * Возврат: код результата (BURST_REQ_*) — его печатает API в ответе, чтобы
+ * вызывающий отличил «принято» от «отклонено лимитом». */
+int afrd_burst (int ms)
+{
+	unsigned long long now = now_us ();
+	if (ms < 0)
+		ms = burst_clamp_ms (cfg_get_int ("burst.ms", 0));
+	burst_req_t r = burst_request (&g_burst, ms, now);
+
+	switch (r)
+	{
+	case BURST_REQ_CANCELLED:
+		trace (0, "сеанс AFR: отменён\n");
+		break;
+
+	case BURST_REQ_TOO_SOON:
+		trace (1, "сеанс AFR: команда отклонена (лимит — не чаще раза в секунду)\n");
+		break;
+
+	case BURST_REQ_OK:
+	default:
+		if (ms <= 0)
+			trace (1, "сеанс AFR: отменять нечего\n");
+		else
+			trace (0, "сеанс AFR: запрошено %d мс (%s)\n",
+			       g_burst.ms, burst_state_name (&g_burst));
+		break;
+	}
+
+	return (int) r;
+}
+
+/* Broadcast состояния сеанса для прошивки и мапперов кнопок.
+ *
+ * Ответ прошивки (вопрос 4): «AFRd2 сообщает — рисует желающий». Поэтому
+ * сообщает сам демон, а не приложение: у прошивки демон встроен, приложения
+ * может не быть вовсе. Три события за сеанс (старт, переключение, конец) —
+ * три вызова `am`, и только когда сеанс действительно использован.
+ *
+ * Формат (согласован с прошивкой):
+ *   action  ru.reyter.afrd2.action.BURST_STATE
+ *   extras  state (String): started | switched | finished | cancelled
+ *           hz_milli (int): принятая частота * 1000, 0 — решения ещё нет
+ *           left_ms (int): остаток срока
+ * Ключ `burst.broadcast=0` выключает рассылку целиком. */
+static bool g_burst_bcast;
+
+static void burst_notify (const char *state)
+{
+	if (!g_burst_bcast)
+		return;
+
+	char cmd [256];
+	snprintf (cmd, sizeof (cmd),
+	          "am broadcast -a ru.reyter.afrd2.action.BURST_STATE "
+	          "--es state %s --ei hz_milli %d --ei left_ms %d >/dev/null 2>&1",
+	          state, g_burst.hz * 1000 / 256, burst_left_ms (&g_burst, now_us ()));
+
+	/* имя не `out`: проверка tests/test_pkgdet.c ищет объявления буферов по
+	 * имени аргумента во всём файле и спутала бы его с pkgdet_parse() */
+	char bout [64];
+	(void) exec_capture (cmd, bout, sizeof (bout));
+}
+
+/* Процесс — одноразовый сеанс (`afrd --burst`), а не демон. */
+bool afrd_burst_oneshot (void)
+{
+	return g_burst_oneshot;
+}
+
+/* Сеанс идёт? (API, `afrd -s`, гейты цикла) */
+bool afrd_burst_running (void)
+{
+	return burst_running (&g_burst);
+}
+
+int afrd_burst_left_ms (void)
+{
+	return burst_left_ms (&g_burst, now_us ());
+}
+
+const char *afrd_burst_state (void)
+{
+	return burst_state_name (&g_burst);
+}
+
+/* Действующий срок сеанса, мс. */
+int afrd_burst_ms (void)
+{
+	return g_burst.ms;
+}
+
+/* Частота, принятая в сеансе (24.8), 0 — решения ещё нет. */
+int afrd_burst_hz (void)
+{
+	return g_burst.hz;
+}
+
+/* Форма B (`afrd --burst N`): сеанс без работающего демона. Ставит состояние
+ * так, будто команда пришла по API, и разрешает активный цикл на время сеанса
+ * (иначе `enable=0` в конфиге сразу увёл бы процесс обратно в пассив). */
+void afrd_burst_self (int ms)
+{
+	unsigned long long now = now_us ();
+	burst_request (&g_burst, ms, now);
+	burst_take_pending (&g_burst, now);
+	g_burst_self = true;
+	g_burst_oneshot = true;
+	trace (0, "сеанс AFR: %d мс, демон запущен самим вызовом (--burst)\n", g_burst.ms);
+}
+
+/* Возврат режима и выход из сеанса: сеанс заканчивается так же, как обычное
+ * видео — режим возвращается, флаг backdoor снимается. */
+static void burst_session_end (const platform_t *plat, int *orig_sf_id,
+                               int *cur_sf_id, bool *held, const char *why)
+{
+	trace (0, "сеанс AFR: конец (%s), возвращаю режим\n", why);
+
+	if (*held)
+	{
+		int rc = atv14_apply_mode (plat, *orig_sf_id,
+		                           "сеанс AFR: возврат исходного режима");
+		if (rc == 0)
+			*cur_sf_id = *orig_sf_id;
+		guard_note_restored (held);
+		*orig_sf_id = -1;
+	}
+
+	sink_release_backdoor (plat->sink);
+	burst_notify (strcmp (why, "отмена") == 0 ? "cancelled" : "finished");
+	burst_finish (&g_burst);
+	g_burst_video_changed = false;
+	g_burst_self = false;
+}
+
 static int run_atv14 (const platform_t *plat)
 {
 	guard_action_t act;
@@ -3251,7 +3413,13 @@ static int run_atv14 (const platform_t *plat)
 	 * здесь: enable=0 снимается правкой файла, без перезапуска процесса.
 	 * Только для ATV14: на ATV11 (Android 10/11) переключаем вендорным
 	 * SystemControl, там пассивный режим не нужен (см. platform_detect). */
-	if ((plat->kind == PLAT_ATV14) && !plat->sf_backdoor)
+	if (g_burst_oneshot && !burst_running (&g_burst))
+	{
+		trace (1, "сеанс AFR закончен, процесс завершается (--burst)\n");
+		return 0;
+	}
+
+	if ((plat->kind == PLAT_ATV14) && !plat->sf_backdoor && !burst_running (&g_burst))
 	{
 		trace (0, "backdoor SurfaceFlinger недоступен — пассивный режим\n");
 		atv14_stats_sync_passive (plat);
@@ -3264,6 +3432,14 @@ static int run_atv14 (const platform_t *plat)
 				msleep (cur_hz);
 			if (atv14_reconf_pending (&config_timer))
 				return 1;
+			/* сеанс «по кнопке»: выходим на перезапуск, чтобы активный
+			 * цикл начался с чистого состояния */
+			if (burst_take_pending (&g_burst, now_us ()))
+			{
+				trace (0, "сеанс AFR: начинаю (%d мс)\n", g_burst.ms);
+				burst_notify ("started");
+				return 2;
+			}
 		}
 		return 0;
 	}
@@ -3291,8 +3467,14 @@ static int run_atv14 (const platform_t *plat)
 	 * его раньше игнорировала: демон продолжал измерять и слать 1035, а API
 	 * при этом отдавал `enabled: no`. Поведение как в пассивном режиме
 	 * (залипший флаг уже снят строкой выше). */
-	if (!g_enable)
+	if (!g_enable && !burst_running (&g_burst))
 	{
+		if (g_burst_oneshot)
+		{
+			trace (1, "сеанс AFR закончен, процесс завершается (--burst)\n");
+			return 0;
+		}
+
 		trace (0, "enable=0 — переключение частоты выключено, только API\n");
 		atv14_stats_sync_passive (plat);
 		while (!g_shutdown)
@@ -3303,6 +3485,14 @@ static int run_atv14 (const platform_t *plat)
 			/* enable=1 из новой версии файла подхватится на перезагрузке */
 			if (atv14_reconf_pending (&config_timer))
 				return 1;
+			/* сеанс «по кнопке»: выходим на перезапуск, чтобы активный
+			 * цикл начался с чистого состояния */
+			if (burst_take_pending (&g_burst, now_us ()))
+			{
+				trace (0, "сеанс AFR: начинаю (%d мс)\n", g_burst.ms);
+				burst_notify ("started");
+				return 2;
+			}
 		}
 		return 0;
 	}
@@ -3325,8 +3515,16 @@ static int run_atv14 (const platform_t *plat)
 	/* R56: через сколько мс после переключения перемерить частоту и поправить
 	 * режим, если класс однозначно другой (первое окно у некоторых плееров
 	 * смещено набором буфера — 60-фпс канал давал 50.3 fps и режим 50 Гц).
-	 * 0 — перепроверка выключена. Знание о плеерах не нужно. */
+	 * 0 — перепроверка выключена. Знание о плеерах не нужно.
+	 * В сеансе «по кнопке» перепроверка выключена: приоритет — одно
+	 * переключение, второе мигание заметнее ошибки на 1-2 Гц (§84.3). */
 	int recheck_ms = cfg_get_int ("fps.recheck.delay.ms", 8000);
+	bool session = burst_running (&g_burst);
+	if (session)
+	{
+		recheck_ms = 0;
+		trace (0, "сеанс AFR: перепроверка замера и «лечение подачи» выключены\n");
+	}
 	/* §21.9: через сколько после переключения проверить подачу (0 — не проверять) */
 	int cadence_fix_ms = cfg_get_int ("fps.cadence.fix.ms", 2500);
 
@@ -3434,6 +3632,22 @@ static int run_atv14 (const platform_t *plat)
 
 		if (g_shutdown)
 			break;
+
+		/* Сеанс «AFR по требованию»: конец по сроку, отмене или смене видео
+		 * (ответ прошивки, вопрос 5: «строго одно переключение»). Выходим тем
+		 * же путём, что и reconf: ниже снимается удержание, main.c перечитает
+		 * конфиг и вернёт демон в пассив. */
+		if (burst_running (&g_burst) &&
+		    (burst_expired (&g_burst, now_us ()) || g_burst_video_changed ||
+		     burst_cancel_requested (&g_burst)))
+		{
+			burst_session_end (plat, &orig_sf_id, &cur_sf_id, &held,
+			                   burst_cancel_requested (&g_burst) ? "отмена"
+			                   : g_burst_video_changed ? "видео сменилось"
+			                                           : "срок истёк");
+			reconf = true;
+			break;
+		}
 
 		/* Перезагрузка конфига: API reconf — сразу, правка файла — раз в
 		 * CONFIG_CHECK_PERIOD. Выходим штатным путём (ниже снимается
@@ -3638,6 +3852,12 @@ static int run_atv14 (const platform_t *plat)
 				 * сразу после переключения (живая находка 18.10 на .50). */
 				bool own_reset = ceiling_take_restart (cur_sf_id) ||
 				                 ceiling_recent_within (8000000ULL);
+
+				/* Сеанс «по кнопке» на смене потока заканчивается: новое
+				 * видео — это новый замер, то есть второе переключение,
+				 * которого в сеансе быть не должно. */
+				if (!own_reset && burst_running (&g_burst))
+					g_burst_video_changed = true;
 
 				trace (1, own_reset
 				       ? "счётчик кадров сброшен нашей сменой плотности — мерю заново\n"
@@ -3952,7 +4172,7 @@ static int run_atv14 (const platform_t *plat)
 				 * Живая находка 2026-10-08 (прогон матрицы, клип long_50). */
 				if ((cadence_fixes < 2) && (back >= 0) &&
 				    (want_sf_id >= 0) && (back != want_sf_id) &&
-				    !cadence_heal_useless)
+				    !cadence_heal_useless && !burst_running (&g_burst))
 				{
 					cadence_fixes++;
 					cadence_heal_wait = true;
@@ -4451,6 +4671,8 @@ cadence_done: ;
 			}
 			want_sf_id = cur_sf_id;
 			g_content_hz = hz;
+			if (burst_running (&g_burst))
+				g_burst.hz = hz;
 			/* Дробность под измеренную частоту (вендорный путь): имя режима
 			 * одно на 24.000 и 23.976, фактическую частоту задаёт узел. */
 			{
@@ -4657,7 +4879,11 @@ cadence_done: ;
 			 * снова 1 и 59.940 на выходе). Проверяем сразу после применения:
 			 * тогда лишнее переприменение ради дробности не делается вовсе. */
 			if (apply_rc == 0)
+			{
 				vendor_frac_check_after_apply ();
+				if (burst_running (&g_burst))
+					burst_notify ("switched");
+			}
 			if (apply_rc != 0)
 			{
 				/* Отказ применения (в том числе ненулевой код вендорного
@@ -4945,6 +5171,11 @@ int afrd_run ()
 
 	/* Подъём режима по выходу плеера на передний план: на Android 10/11 это
 	 * единственный способ успеть до того, как плеер запомнит частоту. */
+	/* Сеанс «по кнопке»: сообщать ли о нём broadcast-ом (ответ прошивки,
+	 * вопрос 4). На legacy-пути сеанса нет — ключ там не действует. */
+	g_burst_bcast = (cfg_get_int ("burst.broadcast", 1) != 0) &&
+	                (g_plat.kind != PLAT_LEGACY);
+
 	g_switch_bump_on_app = cfg_get_int ("switch.bump.on.app",
 	                                    (g_plat.kind == PLAT_LEGACY) ? 0 : 1);
 
@@ -5276,6 +5507,12 @@ int afrd_init ()
 	trace (1, "\tActive config file: %s\n", g_config);
 
 	g_enable = (cfg_get_int ("enable", 1) != 0);
+
+	/* Сеанс, запущенный самим вызовом (`afrd --burst N`): процесса-демона не
+	 * было, поэтому `enable=0` в конфиге не должен сразу увести нас обратно
+	 * в пассив — сеанс уже идёт. */
+	if (burst_running (&g_burst) && g_burst_self)
+		g_enable = true;
 
 	g_hdmi_dev = cfg_get_str ("hdmi.sysfs", DEFAULT_HDMI_DEV);
 	g_hdmi_state = cfg_get_str ("hdmi.state", DEFAULT_HDMI_STATE);
