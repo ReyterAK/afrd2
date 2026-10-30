@@ -2240,6 +2240,11 @@ static void vendor_frac_restore (void)
 /* Ожидаемая частота последнего применённого режима (24.8). */
 static int g_vinfo_expect_hz;
 
+/* Решение по контенту для последнего применённого режима (24.8): нужен для
+ * сверки источников — счётчика кадров и подачи видео-слоя. */
+static int g_content_hz;
+
+
 /* Фактическая частота дисплея из vinfo — независимая проверка «ядро получило
  * то, что просили»: 23.976 против 24.000 по имени режима не различить, а
  * вендорный путь ещё и переписывает frac_rate_policy (журнал §72–§73).
@@ -2491,6 +2496,38 @@ static int atv14_layer_fps_hz (void)
 		return 0;			/* интервал не уложился в класс */
 
 	return hz;
+}
+
+/* Сверка источников частоты после того, как режим устоялся.
+ *
+ * Зачем (журнал §87.4, §90.2, §91.2). На боксе тестера для h265-скринсейвера
+ * три источника разошлись ровно вдвое: счётчик кадров давал 59.94 Гц, подача
+ * видео-слоя — 33 мс (30 к/с), поля `frame rate` не было вовсе. Два объяснения
+ * (контент 60 к/с при отрисовке 30; счётчик считает вдвое) по журналу не
+ * различаются, а цена вопроса разная: при удвоении 23.976-контент уедет в
+ * 50 Гц. Решается одним взглядом на строку, поэтому печатаем её сами: оба
+ * числа рядом, с заявленными полями драйвера.
+ *
+ * Печатается только при расхождении ≥ 1.6 раза (то есть «вдвое»), один раз
+ * на видео: остальные расхождения — обычное несовпадение режима и контента,
+ * о них уже сказано другими строками. */
+static void sources_crosscheck_log (const vdec_status_t *v, int period_ms, int median_ms)
+{
+	if (!g_content_hz || (median_ms <= 0))
+		return;
+
+	int layer_hz = (int) (256000.0 / (double) median_ms + 0.5);
+	int ratio = fps_sources_ratio_pct (g_content_hz, layer_hz);
+	if (!ratio)
+		return;
+
+	trace (0, "сверка источников: счётчик " HZ_FMT " Гц, подача видео-слоя "
+	       HZ_FMT " Гц (%d мс при периоде дисплея %d мс), заявлено %u fps / "
+	       "frame dur %u, декодер %s status %u — расхождение в %d.%02d раза\n",
+	       HZ_ARGS (g_content_hz), HZ_ARGS (layer_hz), median_ms, period_ms,
+	       v ? v->decl_fps : 0u, v ? v->decl_dur : 0u,
+	       (v && v->device [0]) ? v->device : "-", v ? v->status : 0u,
+	       ratio / 100, ratio % 100);
 }
 
 /* Отказ от удержания режима: частоту определить не удалось — вернуть исходный
@@ -3079,6 +3116,8 @@ static int run_atv14 (const platform_t *plat)
 	/* R56: одноразовая перепроверка замера после смены режима */
 	mstime_t recheck_timer = 0;
 	bool recheck_armed = false;
+	/* сверка «счётчик против подачи слоя» — один раз на видео */
+	bool crosscheck_logged = false;
 	/* Залипший канал: состояние сторожа (пакет плеера, счётчик несовпадений,
 	 * флаг «про отказ пробы уже сказали») — см. stuck.h */
 	stuck_state_t stuck;
@@ -3823,6 +3862,8 @@ static int run_atv14 (const platform_t *plat)
 			mstime_disable (&hdrinfo_timer);
 			counter_last_grow_us = 0;
 			counter_stall_logged = false;
+			crosscheck_logged = false;
+			g_content_hz = 0;
 		}
 		else if (hdrinfo_armed && mstime_expired (&hdrinfo_timer))
 		{
@@ -3887,6 +3928,17 @@ static int run_atv14 (const platform_t *plat)
 			int expect_ms = cadence_expect_ms;
 			if (atv14_cadence_halved (expect_ms, &pm, &md))
 			{
+				/* Ровно эта ситуация была в журнале тестера (§87.4): подача
+				 * вдвое реже решения по счётчику. Печатаем оба числа и
+				 * заявленные поля драйвера один раз на видео — по этой
+				 * строке вопрос «контент 60 при отрисовке 30 или счётчик
+				 * считает вдвое» решается без дополнительных команд. */
+				if (!crosscheck_logged)
+				{
+					crosscheck_logged = true;
+					sources_crosscheck_log (&v0, pm, md);
+				}
+
 				/* preferred_id — id из пространства DisplayManager: как
 				 * цель транзакции 1035 он годится, только если есть в
 				 * таблице SF (иначе «лечение» билось бы о пропуск). */
@@ -4079,6 +4131,7 @@ cadence_done: ;
 						if (id >= 0)
 						{
 							want_sf_id = id;
+							g_content_hz = lhz;
 							/* Подача кадров есть — это не пауза: отсчёт
 							 * терпения к паузе начинаем заново, иначе
 							 * «терпение» сняло бы только что выбранный режим
@@ -4160,6 +4213,7 @@ cadence_done: ;
 							{
 								fast_applied = true;
 								fast_class = dclass;
+								g_content_hz = dclass;
 								want_sf_id = did;
 								cur_sf_id = did;
 								{
@@ -4396,6 +4450,7 @@ cadence_done: ;
 				continue;
 			}
 			want_sf_id = cur_sf_id;
+			g_content_hz = hz;
 			/* Дробность под измеренную частоту (вендорный путь): имя режима
 			 * одно на 24.000 и 23.976, фактическую частоту задаёт узел. */
 			{

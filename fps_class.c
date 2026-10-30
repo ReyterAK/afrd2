@@ -147,6 +147,22 @@ int fps_rate_apply_policy (int hz, int declared_hz, int policy)
 	return hz;
 }
 
+int fps_sources_ratio_pct (int a_hz, int b_hz)
+{
+	if ((a_hz <= 0) || (b_hz <= 0))
+		return 0;
+
+	int hi = (a_hz > b_hz) ? a_hz : b_hz;
+	int lo = (a_hz > b_hz) ? b_hz : a_hz;
+
+	/* 1.6 — граница между «немного разошлись» (соседний класс, другой режим)
+	 * и «ровно вдвое». Сравнение в целых: hi/lo >= 1.6 <=> hi*10 >= lo*16. */
+	if ((hi * 10) < (lo * 16))
+		return 0;
+
+	return (hi * 100 + lo / 2) / lo;
+}
+
 /* ---- Поправка частоты для конкретного плеера: см. fps_class.h ---- */
 
 static struct

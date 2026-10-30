@@ -255,6 +255,31 @@ static void t_policy(void)
 	assert(fps_rate_apply_policy(fps_rate_hz(5), 50 * 256, 0) == fps_rate_hz(5));
 }
 
+/* Сверка источников (§87.4): отношение меньше 1.6 — молчим, ровно вдвое — 200 */
+static void t_sources_ratio(void)
+{
+	int f24 = fps_rate_hz(1), f60 = fps_rate_hz(7);
+
+	assert(fps_sources_ratio_pct(f60, f60) == 0);          /* сошлись */
+	assert(fps_sources_ratio_pct(f24, f24) == 0);
+	/* 25 против 50 — тоже ровно вдвое (законная пара 2:1: 25 к/с на 50 Гц
+	 * подаются по кадру на кадр, расхождения в подаче не будет) */
+	assert(fps_sources_ratio_pct(fps_rate_hz(2), fps_rate_hz(5)) == 200);
+	assert(fps_sources_ratio_pct(0, f60) == 0);            /* нет данных */
+	assert(fps_sources_ratio_pct(f60, 0) == 0);
+
+	/* «немного разошлись»: 50 против 59.94 (1.2) — не наш случай */
+	assert(fps_sources_ratio_pct(fps_rate_hz(5), fps_rate_hz(6)) == 0);
+
+	/* ровно вдвое: счётчик 59.94 против подачи 29.97 (33 мс) — картина §87 */
+	assert(fps_sources_ratio_pct(fps_rate_hz(6), fps_rate_hz(3)) == 200);
+	assert(fps_sources_ratio_pct(fps_rate_hz(3), fps_rate_hz(6)) == 200); /* порядок не важен */
+	assert(fps_sources_ratio_pct(fps_rate_hz(4), fps_rate_hz(2)) == 0);   /* 30 против 25 — 1.2 */
+
+	/* 23.976 против 12? — такой частоты в таблице нет, но отношение считается */
+	assert(fps_sources_ratio_pct(fps_rate_hz(0), fps_rate_hz(0) / 2) == 200);
+}
+
 static void t_table(void)
 {
 	assert(strcmp(fps_rate_name(0), "23.976") == 0);
@@ -398,6 +423,7 @@ int main(void)
 	t_exact_member();
 	t_declared_exact();
 	t_policy();
+	t_sources_ratio();
 	t_live_scenario();
 	t_group();
 	t_table();
