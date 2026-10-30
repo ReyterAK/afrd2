@@ -13,6 +13,19 @@ Unreleased (work in progress) — 1.2.0
       driver reports 30 fps for real 23.976) is ignored — verified on the
       stand. The legacy path (Android 6-9) is unchanged.
 
+    * Actual display rate is verified after a mode switch: once the mode has
+      settled (2.5 s) the daemon reads sync_duration_num/den from
+      /sys/class/display/vinfo and logs "фактическая частота дисплея: 23.98 Гц
+      (vinfo 23976/1000)". The mode name is shared by 23.976 and 24.000, and the
+      vendor SystemControl even rewrites frac_rate_policy, so only the timings
+      tell what actually came out. A rate from another group than requested gets
+      a separate loud line. It does not affect decisions.
+
+    * Less log noise: "счётчик кадров стоит" at most once per 10 s (was 42 lines
+      in 8 minutes for a player that jitters the counter), "… не в
+      switch.bump.pkg" at most once per minute per package (was 15 lines in
+      5 minutes). Behaviour is unchanged, only the line frequency.
+
 1.1.0 Tue Oct 27 2026
 
     Release after the 1.0.0 publication: the main thing is that frame rate

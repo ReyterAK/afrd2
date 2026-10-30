@@ -26,6 +26,7 @@
 #include "stuck.h"
 #include "ceiling.h"
 #include "dispserve.h"
+#include "vinfo.h"
 
 #define __USE_GNU
 #include <math.h>
@@ -1414,6 +1415,60 @@ static int bump_target_mode (const platform_t *plat, int w, int h)
 	return best;
 }
 
+/* Строка «… не в switch.bump.pkg»: раньше печаталась на каждый клип и на
+ * каждый возврат переднего плана (15 строк за 5 минут, журнал §90.5).
+ * Поведение не меняется — молчит повтор об одном и том же пакете в пределах
+ * 60 с. Ограничение по времени, а не «тот же пакет подряд»: плеер и рабочий
+ * стол чередуются, и проверка «подряд» ловила бы только половину строк
+ * (замер 30.10: 5 строк на три клипа вместо 2).
+ * Возврат: true — строку печатать. */
+#define BUMP_LOG_QUIET_US	(60ULL * 1000000ULL)
+#define BUMP_LOG_SLOTS		4
+
+/* Учёт по пакетам, а не «последний пакет»: плеер и рабочий стол чередуются,
+ * и память об одном пакете давала лишнюю строку на каждую смену пары
+ * (замер 30.10: 3 строки на два клипа вместо 2). */
+static struct
+{
+	char pkg [PKG_NAME_LEN];
+	unsigned long long us;
+} g_bump_log [BUMP_LOG_SLOTS];
+
+static bool bump_log_once (const char *pkg)
+{
+	if (!pkg || !pkg [0])
+		return true;
+
+	unsigned long long now = now_us ();
+	int empty = -1, oldest = 0;
+
+	for (int i = 0; i < BUMP_LOG_SLOTS; i++)
+	{
+		if (g_bump_log [i].pkg [0] && !strcmp (pkg, g_bump_log [i].pkg))
+		{
+			if (now - g_bump_log [i].us < BUMP_LOG_QUIET_US)
+				return false;
+
+			g_bump_log [i].us = now;
+			return true;
+		}
+
+		if (!g_bump_log [i].pkg [0])
+		{
+			if (empty < 0)
+				empty = i;
+		}
+		else if (g_bump_log [i].us < g_bump_log [oldest].us)
+			oldest = i;
+	}
+
+	/* Новый пакет: свободный слот, иначе самый давний. */
+	int slot = (empty >= 0) ? empty : oldest;
+	snprintf (g_bump_log [slot].pkg, PKG_NAME_LEN, "%s", pkg);
+	g_bump_log [slot].us = now;
+	return true;
+}
+
 /* Подъём режима до максимума, поддержанного ТВ (switch.bump).
  *
  * Зачем. На Android 11+ плеер фиксирует «потолок» частоты в начале сессии
@@ -1442,7 +1497,7 @@ static int atv14_bump (const platform_t *plat, int *orig_sf_id, int *cur_sf_id,
 		else if ((g_skip_pkgs.size > 0) && strlist_contains (&g_skip_pkgs, bump_pkg))
 			trace (1, "bump: %s в switch.skip.pkg (AFR мешает) — режим не поднимаю\n",
 			       bump_pkg);
-		else
+		else if (bump_log_once (bump_pkg))
 			trace (1, "bump: %s не в switch.bump.pkg — режим не поднимаю\n",
 			       bump_pkg);
 		return -1;
@@ -2182,6 +2237,35 @@ static void vendor_frac_restore (void)
 	g_vendor_frac_logged = false;
 }
 
+/* Ожидаемая частота последнего применённого режима (24.8). */
+static int g_vinfo_expect_hz;
+
+/* Фактическая частота дисплея из vinfo — независимая проверка «ядро получило
+ * то, что просили»: 23.976 против 24.000 по имени режима не различить, а
+ * вендорный путь ещё и переписывает frac_rate_policy (журнал §72–§73).
+ * Читается не сразу после транзакции, а когда режим устоялся (2.5 с,
+ * вместе с HDR-атрибутами): узел обновляется драйвером асинхронно, и сразу
+ * после смены в нём ещё прежняя частота. */
+static void vinfo_log_actual (void)
+{
+	int vnum = 0, vden = 0;
+	int vhz = vinfo_sync_hz (VINFO_PATH, &vnum, &vden);
+
+	if (vhz <= 0)
+	{
+		trace (3, "vinfo: фактическая частота недоступна\n");
+		return;
+	}
+
+	trace (1, "фактическая частота дисплея: " HZ_FMT " Гц (vinfo %d/%d)\n",
+	       HZ_ARGS (vhz), vnum, vden);
+
+	if (g_vinfo_expect_hz && fps_group_differs (g_vinfo_expect_hz, vhz))
+		trace (0, "ядро отдало " HZ_FMT " Гц вместо " HZ_FMT " Гц — "
+		       "режим применён не так, как просили\n",
+		       HZ_ARGS (vhz), HZ_ARGS (g_vinfo_expect_hz));
+}
+
 /* Единственная точка, где id режима уходит в транзакцию 1035 (R44): id обязан
  * присутствовать в ТЕКУЩЕЙ таблице режимов, иначе SurfaceFlinger получил бы
  * чужой или уже не существующий id (сменилась нумерация, дамп не прочитался,
@@ -2192,6 +2276,11 @@ static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skip
 {
 	if (sf_id < 0)
 		return -1;
+
+	/* Ожидаемая частота — для сверки с фактической после применения: имя
+	 * режима одно на пару 23.976/24.000, поэтому только тайминги говорят,
+	 * что получилось на самом деле. */
+	int expect_hz = 0;
 
 	if (plat->sink == SINK_VENDOR_MODE)
 	{
@@ -2206,6 +2295,7 @@ static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skip
 		}
 
 		const char *name = g_modes [sf_id].name;
+		expect_hz = display_mode_hz (&g_modes [sf_id]);
 		if (sink_apply (plat->sink, g_mode_path, -1, name) != 0)
 		{
 			trace (1, "вендорный SystemControl не применил режим %s\n", name);
@@ -2222,12 +2312,18 @@ static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skip
 			return -1;
 		}
 
+		expect_hz = sfmodes_current_hz (g_sf_modes, g_sf_modes_n, sf_id);
 		if (sink_apply (plat->sink, g_mode_path, sf_id, NULL) != 0)
 		{
 			trace (1, "backdoor не применил режим id %d\n", sf_id);
 			return -2;
 		}
 	}
+
+	/* Ожидание — для сверки с фактической частотой, когда режим устоится
+	 * (см. vinfo_log_actual). Узел vinfo обновляется асинхронно: сразу после
+	 * транзакции 1035 в нём ещё прежнее значение — проверено живьём. */
+	g_vinfo_expect_hz = expect_hz;
 
 	/* Цветовое пространство по правилам cs.select — как делал legacy-путь при
 	 * каждой смене режима (modes.c: switch_mode). Правила сопоставляются с
@@ -2995,6 +3091,8 @@ static int run_atv14 (const platform_t *plat)
 	/* Сказали ли уже про «счётчик стоит» (status декодера) — один раз на
 	 * эпизод; используется только для журнала (§31.18) */
 	bool pause_logged = false;
+	/* когда в последний раз печатали «счётчик кадров стоит» (мкс) */
+	unsigned long long pause_log_us = 0;
 
 	/* Заморозка счётчика кадров (AV1 и т.п.): сколько живём без роста и
 	 * сообщили ли уже об этом (логируем один раз на видео) */
@@ -3576,9 +3674,17 @@ static int run_atv14 (const platform_t *plat)
 			/* Пауза или залипание: пишем status декодера один раз на эпизод —
 			 * это точка замера, по которой на стенде видно, различает ли
 			 * драйвер паузу и залипший канал (§31.18). Поведение не зависит. */
-			if (paused && !pause_logged)
+			/* Не чаще раза в 10 с: у плееров, которые дёргают счётчик
+			 * (рост -> замирание на 3-4 с), строка печаталась на каждую пару
+			 * (42 строки за 8 минут, журнал §91.5). Подавленный эпизод не
+			 * помечается как «уже сказано»: настоящая пауза, длящаяся дольше
+			 * окна, всё равно будет названа. */
+			if (paused && !pause_logged &&
+			    ((pause_log_us == 0) ||
+			     ((sample_t - pause_log_us) > 10ULL * 1000000ULL)))
 			{
 				pause_logged = true;
+				pause_log_us = sample_t;
 				trace (1, "счётчик кадров стоит: %s, status %u — пауза или залипший канал\n",
 				       v0.device, v0.status);
 			}
@@ -3725,6 +3831,7 @@ static int run_atv14 (const platform_t *plat)
 			hdrinfo_armed = false;
 			hdrinfo_refresh (plat->vendor_cli);
 			hdrinfo_log ("атрибуты дисплея после переключения");
+			vinfo_log_actual ();
 		}
 		else if (cadence_armed && mstime_expired (&cadence_timer))
 		{
@@ -4431,8 +4538,11 @@ cadence_done: ;
 					 * остальных зажим не подтверждён, а лишний переход
 					 * режима они видят как «щелчок» (журнал §55.9). */
 					if (!bump_pkg_allows_pkg (fgp))
-						trace (1, "передний план: %s — не в switch.bump.pkg, "
-						       "режим не поднимаю\n", fgp);
+					{
+						if (bump_log_once (fgp))
+							trace (1, "передний план: %s — не в "
+							       "switch.bump.pkg, режим не поднимаю\n", fgp);
+					}
 					else
 					{
 						trace (1, "передний план: %s — поднимаю режим заранее\n", fgp);
