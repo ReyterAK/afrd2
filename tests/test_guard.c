@@ -39,6 +39,16 @@ int main (void)
 	assert (guard_recover_hz (true, 15345) == 15345);	/* 59.94 Гц */
 	assert (guard_recover_hz (true, 6139) == 6139);		/* 23.98 Гц */
 
+	/* Кому возвращать режим при остановке (решение владельца 30.10):
+	 * ключ switch.restore.on.stop, но плеерам из switch.bump.pkg — не
+	 * возвращаем: подъём режима на старте следующего ролика сделает это сам. */
+	assert (guard_restore_allowed (true, true, false));	/* обычный плеер */
+	assert (!guard_restore_allowed (true, true, true));	/* в списке зажима */
+	assert (!guard_restore_allowed (false, false, false));	/* ключ выключен */
+	assert (!guard_restore_allowed (false, true, false));
+	/* механики зажима выключены — список не действует */
+	assert (guard_restore_allowed (true, false, true));
+
 	printf ("guard: OK\n");
 	return 0;
 }

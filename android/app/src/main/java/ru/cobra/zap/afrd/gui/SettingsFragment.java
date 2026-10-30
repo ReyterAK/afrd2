@@ -58,8 +58,9 @@ public class SettingsFragment extends PreferenceFragment
      * режим переключает фреймворк транзакцией SurfaceFlinger 1035, затемнения
      * нет, цвета/HDR ведёт вендорский стек, uevent-фильтры не нужны. Демон эти
      * ключи не читает (см. таблицу в cfgkeys.c) и сообщает о них в логе.
-     * В GUI они остаются видимыми, но выключенными — чтобы не создавать
-     * впечатление работающей настройки.
+     * В GUI они не показываются вовсе (removeInapplicable): серая строка с
+     * припиской «не действует» занимает место и читается как поломка, а
+     * проверить недействующую настройку пользователю всё равно нечем.
      * cs.select здесь нет: правила цветового пространства применяются и на
      * ATV14 (через вендорский сервис, см. afrd.c: atv14_apply_mode).
      * switch.delay.off здесь нет: ключ действует на обоих путях, но значит
@@ -102,10 +103,8 @@ public class SettingsFragment extends PreferenceFragment
         "fps_declare_fast",
         "pause_keep",
         "switch_restore_on_stop",
-        "switch_bump",
         "switch_bump_pkg",
         /* калибровка по плееру */
-        "fps_correct_enable",
         "fps_correct_list",
         "fps_correct_av1_offset",
         "fps_correct_av1_pkg",
@@ -135,25 +134,27 @@ public class SettingsFragment extends PreferenceFragment
         return false;
     }
 
-    private void markInapplicable (PreferenceGroup group)
+    /* Убрать из дерева настройки, которые на текущем пути не действуют.
+     * Раньше они оставались серыми с припиской «не действует на Android …»;
+     * на ATV14 это была четверть экрана неработающих строк (решение владельца
+     * 30.10). Группа, у которой после чистки не осталось пунктов, тоже уходит.
+     * Согласованность списков с cfgkeys.c и preferences.xml проверяет
+     * tests/test_inactive.c. */
+    private void removeInapplicable (PreferenceGroup group)
     {
-        for (int i = 0; i < group.getPreferenceCount (); i++)
+        for (int i = group.getPreferenceCount () - 1; i >= 0; i--)
         {
             Preference p = group.getPreference (i);
-            if (p instanceof PreferenceGroup)
-                markInapplicable ((PreferenceGroup)p);
-            else if (isInactive (p.getKey ()))
-                markInactive (p, R.string.not_applicable_atv14);
-            else if (isInactiveLegacy (p.getKey ()))
-                markInactive (p, R.string.not_applicable_legacy);
-        }
-    }
 
-    private void markInactive (Preference p, int msgRes)
-    {
-        p.setEnabled (false);
-        CharSequence s = p.getSummary ();
-        p.setSummary ((s == null ? "" : s + " ") + getString (msgRes));
+            if (p instanceof PreferenceGroup)
+            {
+                removeInapplicable ((PreferenceGroup)p);
+                if (((PreferenceGroup)p).getPreferenceCount () == 0)
+                    group.removePreference (p);
+            }
+            else if (isInactive (p.getKey ()) || isInactiveLegacy (p.getKey ()))
+                group.removePreference (p);
+        }
     }
 
     /* Настройки-списки приложений: ключ настройки → режим выбора. Значение
@@ -474,7 +475,7 @@ public class SettingsFragment extends PreferenceFragment
                 setupAppsPrefs ();
                 setupRatesPref ();
                 setupCsPref ();
-                markInapplicable (getPreferenceScreen ());
+                removeInapplicable (getPreferenceScreen ());
                 break;
             }
             catch (Exception ignored)

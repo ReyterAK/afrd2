@@ -25,6 +25,18 @@ guard_action_t guard_decide (bool video_active, int want_sf_id, int cur_sf_id,
 	return GUARD_SWITCH;
 }
 
+bool guard_restore_allowed (bool restore_on_stop, bool clamp_mechanics,
+                            bool pkg_in_clamp_list)
+{
+	if (!restore_on_stop)
+		return false;
+
+	if (clamp_mechanics && pkg_in_clamp_list)
+		return false;
+
+	return true;
+}
+
 void guard_note_restored (bool *held)
 {
 	*held = false;

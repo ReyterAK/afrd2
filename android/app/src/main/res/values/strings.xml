@@ -111,8 +111,6 @@
     <string name="notif_stop_afrd">Disable AFR</string>
     <string name="notif_start_afrd">Enable AFR</string>
     <string name="settings_misc">Other</string>
-    <string name="not_applicable_atv14">(has no effect on Android 11-14)</string>
-    <string name="not_applicable_legacy">(does not work on Android 6-9)</string>
     <string name="prefs_group_main">General</string>
     <string name="prefs_group_players">Players</string>
     <string name="prefs_group_mode">Mode selection</string>
@@ -123,9 +121,7 @@
     <string name="prefsum_fps_prefer_api">If the player reports the frame rate itself via the AFRd2 API
         (frame_rate_hint), prefer it over our own frame counter measurement.</string>
     <string name="prefs_switch_bump_pkg">Players to fix clamping for</string>
-    <string name="prefsum_switch_bump_pkg">Raising the mode and resetting the player ceiling apply only to the selected applications. Default: the built-in YouTube, the only player where clamping was measured; for some players the ceiling reset restarts the screen and breaks playback. Empty list — nobody.</string>
-    <string name="prefs_switch_bump">Fix frame rate clamping</string>
-    <string name="prefsum_switch_bump">Raise the display mode to the maximum supported by the TV before the first frame of the player and, if a video still started under a low rate, reset the player\'s rate ceiling (by restarting the codec process by default, or by bumping the display density if that fails; the player re-reads the mode and delivery recovers from the current position). Applies only to the players in the list below (stock YouTube by default): they remember the display rate at the start of a video and never raise it. The cost is one extra mode transition for content that is not at the maximum rate. When off, the mode is chosen by measurement only, and a video started under a low rate may stay clamped.</string>
+    <string name="prefsum_switch_bump_pkg">Raise the mode to the highest rate the TV supports before the player shows its first frame, and reset the player\'s rate ceiling if a clip still started at a low rate (by default by restarting the codec process, falling back to a density change). Applied to the selected applications only: by default the stock YouTube, the only player where the clamp was confirmed by measurements, while for some players the ceiling reset restarts the screen and breaks playback. An empty list disables both mechanics.</string>
     <string name="prefs_fps_measure_envelope">Observation before switching, ms</string>
     <string name="prefsum_fps_measure_envelope">The daemon does not switch the mode until it has
         collected this many milliseconds of observation. The rate is taken as the minimum over
@@ -179,14 +175,7 @@
     <string name="prefsum_pause_keep">On — the mode is kept on pause; off — the original mode is restored
         on pause and set again on resume.</string>
     <string name="prefs_switch_restore_on_stop">Restore mode on stop</string>
-    <string name="prefsum_switch_restore_on_stop">Restore the original HDMI mode when video ends.
-        Disabled — the video mode stays (fewer screen blinks), but apps with their own AFR can change
-        the mode again: the backdoor flag is released anyway.</string>
-    <string name="prefs_fps_correct_enable">Apply player calibration</string>
-    <string name="prefsum_fps_correct_enable">Some players feed frames to the decoder faster than
-        nominal (e.g. YouTube on a 24 fps video measures ~25.2 fps, so AFR picks 25 Hz).
-        The correction is applied to the measurement before the mode is chosen. On by default:
-        the AV1 correction below is active, the per-player list is empty.</string>
+    <string name="prefsum_switch_restore_on_stop">Restore the original HDMI mode when the video ends. Players from the "players to unclamp" list are not restored immediately: the mode is raised at the start of the next clip, and restored once the player leaves the screen, which means fewer flashes between clips. Disabled — the video mode stays until you leave the player.</string>
     <string name="prefs_fps_correct_list">Corrections (package=percent)</string>
     <string name="prefsum_fps_correct_list">Percent is how much the player over-reports the
         rate (the same correction the daemon prints as &quot;плеер &lt;пакет&gt;: поправка замера

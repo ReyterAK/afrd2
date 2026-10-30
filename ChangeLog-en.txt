@@ -1,6 +1,28 @@
 AFRd2 — a fork of AFRd (based on AFRd 0.3.2 by Andrey Zabolotnyi,
 anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
+1.2.1 Fri Oct 30 2026
+
+    * Settings: duplicate toggles removed. "Fix rate clamping" (switch.bump)
+      and "Apply player correction" (fps.correct.enable) are no longer shown:
+      both mechanisms have their own player list, and an empty list already
+      means "off". The state "list filled in, toggle off" looked like a
+      malfunction. The ini keys remain (old configs keep working), defaults
+      unchanged.
+
+    * Settings that do not apply on the current path are hidden instead of
+      greyed out: on Android 10-14 the "Switch delays" group (switch.timeout
+      moved to "Main"), mode.extra and the two blacklists; on Android 6-9 the
+      "Android 11+ fine tuning" group and fps.correct.*. Before, they were grey
+      rows with a "does not apply" note - a quarter of the screen.
+
+    * Restoring the mode when a video ends (switch.restore.on.stop): players
+      from the "players to unclamp" list are no longer restored immediately -
+      the mode is raised at the start of the next clip and restored once the
+      player leaves the screen. That is one mode switch less between clips.
+      The SurfaceFlinger backdoor flag is kept, otherwise the framework would
+      restore the mode by its own policy.
+
 1.2.0 Fri Oct 30 2026
 
     Release after 1.1.0: AFR on demand (a session triggered by a button), a real

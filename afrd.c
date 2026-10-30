@@ -3304,6 +3304,14 @@ static int run_atv14 (const platform_t *plat)
 	 * паузы. Сообщаем не чаще раза в 10 с. */
 	unsigned long long counter_restart_log_us = 0;
 
+	/* Режим оставлен намеренно (плеер из switch.bump.pkg): флаг backdoor не
+	 * снимаем, иначе SurfaceFlinger вернёт режим политикой сам, и «не
+	 * возвращать» превратилось бы в «вернуть чуть позже». Возвращаем, когда
+	 * плеер уйдёт с переднего плана, — иначе рабочий стол остался бы на
+	 * частоте видео. */
+	bool hold_keep = false;
+	unsigned long long restore_probe_us = 0;
+
 	/* Вариант 3: последний опрос переднего плана и уже увиденный пакет */
 	unsigned long long fg_probe_us = 0;
 	char fg_seen [PKG_NAME_LEN] = { 0 };
@@ -4852,6 +4860,11 @@ cadence_done: ;
 			}
 		}
 
+		/* Видео снова идёт — «оставленный» режим больше не ждёт возврата:
+		 * следующий стоп решит заново. */
+		if (video_eff)
+			hold_keep = false;
+
 		act = guard_decide (video_eff, want_sf_id, cur_sf_id, &orig_sf_id, &held);
 
 		/* Цель возврата после видео: id, который был на экране до нашего
@@ -5024,18 +5037,37 @@ cadence_done: ;
 		}
 		else if (act == GUARD_RESTORE)
 		{
-			/* Возврат по настоящему стопу (декодер исчез) отключается ключом
-			 * switch.restore.on.stop; возврат по паузе (pause.keep==0)
-			 * выполняется всегда. Флаг backdoor снимаем в любом случае.
-			 * При switch.bump=1 возврат делается всегда: цель в этом режиме —
-			 * максимальная частота, с которой следующий ролик начнётся без
-			 * низкого «потолка» (журнал §47.6). */
+			/* Возврат по настоящему стопу (декодер исчез). Ключ
+			 * switch.restore.on.stop, но плеерам из switch.bump.pkg режим не
+			 * возвращаем: его поднимет подъём на старте следующего ролика, а
+			 * лишняя смена — это мигание (решение владельца 30.10, guard.c).
+			 * Возврат по паузе (pause.keep==0) делается всегда. */
+			if (hold_keep)
+			{
+				/* Ждём, пока плеер уйдёт с переднего плана: иначе рабочий стол
+				 * остался бы на частоте видео. Опрос переднего плана — это
+				 * fork/exec (~60 мс), поэтому не чаще раза в секунду. */
+				unsigned long long now = now_us ();
+				if ((now - restore_probe_us) < 1000000ULL)
+					continue;
+
+				restore_probe_us = now;
+				char fgp [PKG_NAME_LEN] = { 0 };
+				if ((pkg_probe (plat, fgp, sizeof (fgp)) != 0) || !fgp [0] ||
+				    (g_cur_pkg [0] && (strcmp (fgp, g_cur_pkg) == 0)))
+					continue;	/* плеер ещё на экране */
+
+				trace (0, "плеер ушёл с переднего плана — возвращаю режим\n");
+				hold_keep = false;
+			}
+
 			/* Политику возвращаем ДО имени: иначе рабочий стол получил бы
 			 * 59.94 вместо 60.000 (владелец заметил это в §69). */
 			vendor_frac_restore ();
 			g_vendor_frac_wanted = -1;
 
-			if (restore_on_stop || v0.active || g_switch_bump)
+			if (guard_restore_allowed (restore_on_stop, g_switch_bump != 0,
+			                           bump_pkg_allows_pkg (g_cur_pkg)))
 			{
 				int rc = atv14_apply_mode (plat, orig_sf_id,
 				                           "возврат пропущен, флаг backdoor снят");
@@ -5053,13 +5085,18 @@ cadence_done: ;
 					guard_note_restored (&held);
 					orig_sf_id = -1;
 				}
+
+				hold_keep = false;
+				sink_release_backdoor (plat->sink);
 			}
 			else
 			{
-				guard_note_restored (&held);
-				orig_sf_id = -1;
+				/* Режим оставлен намеренно: флаг backdoor не снимаем, иначе
+				 * SurfaceFlinger вернёт режим своей политикой. orig_sf_id и
+				 * held сохраняем — вернуть придётся позже. */
+				hold_keep = true;
 			}
-			sink_release_backdoor (plat->sink);
+
 			want_sf_id = -1;
 			continue;
 		}

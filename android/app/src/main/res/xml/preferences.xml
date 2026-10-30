@@ -5,9 +5,10 @@
      лежит в первых трёх. Применимость по-прежнему помечается построчно
      (SettingsFragment.markInapplicable), поэтому внутри групп перемешаны ключи
      обоих путей — это осознанно.
-     Исключение из «группа = версия Android»: switch.timeout действует на обоих
-     путях (с разным смыслом), поэтому группа «Задержки переключения» названа
-     нейтрально, а не «(Android 6-9)». -->
+     Группы, которые на текущем пути не действуют целиком, не показываются:
+     «Задержки переключения» и три пункта старого пути — только на Android 6-9,
+     «Тонкая настройка Android 11+» и поправки по плеерам — только на 10-14
+     (SettingsFragment.removeInapplicable). -->
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
                   android:title="@string/prefs_title">
 
@@ -29,6 +30,13 @@
         <SwitchPreference android:defaultValue="1" android:key="switch_restore_on_stop"
                           android:summary="@string/prefsum_switch_restore_on_stop"
                           android:title="@string/prefs_switch_restore_on_stop"/>
+        <!-- switch.timeout действует на обоих путях (с разным смыслом), поэтому
+             живёт в «Основном», а не в группе задержек старого пути: та на
+             Android 10-14 не показывается вовсе. -->
+        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="3000" android:key="switch_timeout"
+                            android:maxLength="5" android:numeric="integer" android:selectAllOnFocus="true"
+                            android:singleLine="true" android:summary="@string/prefsum_switch_timeout"
+                            android:title="@string/prefs_switch_timeout"/>
     </PreferenceScreen>
 
     <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"
@@ -42,9 +50,6 @@
         <ru.cobra.zap.xprefs.XAppsPreference android:key="mode_min_hz_list"
                           android:summary="@string/prefsum_mode_min_hz_list"
                           android:title="@string/prefs_mode_min_hz_list"/>
-        <SwitchPreference android:defaultValue="1" android:key="fps_correct_enable"
-                          android:summary="@string/prefsum_fps_correct_enable"
-                          android:title="@string/prefs_fps_correct_enable"/>
         <ru.cobra.zap.xprefs.XAppsPreference android:key="fps_correct_list"
                           android:summary="@string/prefsum_fps_correct_list"
                           android:title="@string/prefs_fps_correct_list"/>
@@ -111,10 +116,6 @@
                             android:maxLength="5" android:numeric="integer" android:selectAllOnFocus="true"
                             android:singleLine="true" android:summary="@string/prefsum_switch_delay_retry"
                             android:title="@string/prefs_switch_delay_retry"/>
-        <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="3000" android:key="switch_timeout"
-                            android:maxLength="5" android:numeric="integer" android:selectAllOnFocus="true"
-                            android:singleLine="true" android:summary="@string/prefsum_switch_timeout"
-                            android:title="@string/prefs_switch_timeout"/>
         <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="150" android:key="switch_blackout"
                             android:maxLength="5" android:numeric="integer" android:selectAllOnFocus="true"
                             android:singleLine="true" android:summary="@string/prefsum_switch_blackout"
@@ -144,12 +145,6 @@
         <SwitchPreference android:defaultValue="0" android:key="fps_declare_fast"
                           android:summary="@string/prefsum_fps_declare_fast"
                           android:title="@string/prefs_fps_declare_fast"/>
-        <!-- Один пункт на обе механики зажима (switch.bump + switch.ceiling.reset):
-             на backdoor-пути умолчание сброса потолка следует за этим ключом
-             (см. afrd_run). -->
-        <SwitchPreference android:defaultValue="1" android:key="switch_bump"
-                          android:summary="@string/prefsum_switch_bump"
-                          android:title="@string/prefs_switch_bump"/>
         <!-- Кому применяются механики зажима (switch.bump.pkg): зажим измерен
              только у штатного YouTube, а у других плееров сброс потолка может
              перезапустить Activity (живой случай — OTT Navigator). Умолчание

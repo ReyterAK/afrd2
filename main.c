@@ -39,7 +39,7 @@
 #include "afrd.h"
 #include "burst.h"
 
-const char *g_version = "1.2.0";
+const char *g_version = "1.2.1";
 const char *g_ver_sfx = "";
 const char *g_bdate = BDATE;
 const char *g_config = "/etc/afrd.ini";
