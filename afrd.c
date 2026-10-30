@@ -3633,6 +3633,19 @@ static int run_atv14 (const platform_t *plat)
 		if (g_shutdown)
 			break;
 
+		/* Сеанс «AFR по требованию» при уже включённом AFR (enable=1): цикл
+		 * активен, пассивного выхода нет, поэтому запрос принимаем здесь.
+		 * Гейты миганий снимаем на лету — они читались до цикла. */
+		if (!burst_running (&g_burst) && burst_take_pending (&g_burst, now_us ()))
+		{
+			trace (0, "сеанс AFR: начинаю (%d мс), перепроверка замера и "
+			       "«лечение подачи» выключены\n", g_burst.ms);
+			recheck_ms = 0;
+			recheck_armed = false;
+			mstime_disable (&recheck_timer);
+			burst_notify ("started");
+		}
+
 		/* Сеанс «AFR по требованию»: конец по сроку, отмене или смене видео
 		 * (ответ прошивки, вопрос 5: «строго одно переключение»). Выходим тем
 		 * же путём, что и reconf: ниже снимается удержание, main.c перечитает
