@@ -28,7 +28,9 @@
 # попадать нельзя (живой прогон 2026-10-15 с log.enable=0 дал пять ложных FAIL).
 #
 # Использование:  ./tools/stand/acceptance_atv11.sh [устройство]
-# Переменные: PLAYER (пакет плеера), CLIPS (каталог), C23976/C25/C60/CSYNTH
+# Переменные: PLAYER (пакет плеера), PLAYER_ACT (его activity, по умолчанию
+# .PlayerActivity — так у Vimu и Just Player; у VLC это .StartActivity),
+# CLIPS (каталог), C23976/C25/C60/CSYNTH
 # (имена клипов), WAIT_MAX, LOG_WAIT. Клипы и плеер проверяются до первого
 # изменения на боксе: без них прогон заканчивается сообщением и кодом 3.
 
@@ -41,6 +43,7 @@ PKG=ru.reyter.afrd2
 # были зашиты (net.gtvbox.videoplayer и /sdcard/Download/afr45), поэтому на
 # стенде без Vimu прогон не начинался вовсе (живая находка 27.10 на `.42`).
 PLAYER=${PLAYER:-net.gtvbox.videoplayer}
+PLAYER_ACT=${PLAYER_ACT:-.PlayerActivity}
 CLIPS=${CLIPS:-/sdcard/Download/afr45}
 # Имена клипов в наборе: 23.976, 25, 60 и «синтетика 23.976».
 C23976=${C23976:-real_23976.mkv}
@@ -103,7 +106,7 @@ mime_of () {
 		*)     echo video/* ;;
 	esac
 }
-play () { sh_ "am start -a android.intent.action.VIEW -d file://$CLIPS/$1 -t $(mime_of "$1") -n $PLAYER/.PlayerActivity" >/dev/null; }
+play () { sh_ "am start -a android.intent.action.VIEW -d file://$CLIPS/$1 -t $(mime_of "$1") -n $PLAYER/$PLAYER_ACT" >/dev/null; }
 stop_player () { sh_ "am force-stop $PLAYER" >/dev/null; }
 
 restart_daemon () {

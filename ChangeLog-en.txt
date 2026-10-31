@@ -1,72 +1,12 @@
 AFRd2 — a fork of AFRd (based on AFRd 0.3.2 by Andrey Zabolotnyi,
 anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
-1.2.2 Sat Oct 31 2026
-
-    * Fixed mode restoration for players in the "fix rate clamping" list
-      (switch.bump.pkg). After the video ended the mode was held, but nothing
-      restored it when the player left the foreground: the list check was
-      applied to that path too, the hold was never released, the launcher
-      stayed at the video rate, and "player left the foreground - restoring"
-      repeated every ~1.7 s. Live run on ATV14: 24 Hz on the launcher until the
-      daemon restarted. Now the mode is restored once the player leaves the
-      foreground (also with switch.restore.on.stop=0, otherwise the mode would
-      stay until a daemon restart).
-
-    * Pause restoration (pause.mode=off or a pause longer than
-      switch.delay.off) is no longer blocked by the clamp list: a pause is not
-      the end of a video. Before, such players never got the mode back on
-      pause.
-
-1.2.1 Fri Oct 30 2026
-
-    * Settings: duplicate toggles removed. "Fix rate clamping" (switch.bump)
-      and "Apply player correction" (fps.correct.enable) are no longer shown:
-      both mechanisms have their own player list, and an empty list already
-      means "off". The state "list filled in, toggle off" looked like a
-      malfunction. The ini keys remain (old configs keep working), defaults
-      unchanged.
-
-    * Settings that do not apply on the current path are hidden instead of
-      greyed out: on Android 10-14 the "Switch delays" group (switch.timeout
-      moved to "Main"), mode.extra and the two blacklists; on Android 6-9 the
-      "Android 11+ fine tuning" group and fps.correct.*. Before, they were grey
-      rows with a "does not apply" note - a quarter of the screen.
-
-    * AV1 correction is one setting instead of two keys. The additive
-      (fps.correct.av1.offset) and relative (fps.correct.av1.pct) corrections
-      describe the same effect and were applied together: with pct=5.7 and
-      offset=0.1 a 25.000 fps clip measured 24.90, i.e. the correction worked
-      twice. Now the daemon picks the model by platform: fps.correct.av1=auto
-      applies the calibrated value (ATV14 - 0.1 frame/s), off disables it, and a
-      number sets a percentage. In the app: "AV1 counter correction" -
-      Auto / Off. The old keys are read only when the new one is absent, and
-      are mutually exclusive.
-
-    * Pause behaviour is one item "On pause" (pause.mode): keep the mode,
-      keep 20 s and then restore, or restore immediately. Before it was a toggle
-      "Keep the mode while paused" and a number "STOP delay" in different
-      categories, although it is one choice of three states. On Android 6-9 the
-      item is hidden: there switch.delay.off means something else (the delay
-      before restoring the mode after the video ends).
-
-    * The "fine tuning" group no longer shows the internal envelope constants
-      (subwindow, early decision, expansion limit) or fps.measure.retries /
-      fps.declared.crosscheck.pct: the UI keeps the two meaningful values - how
-      long to watch and how long to warm up. The other keys still work and are
-      set in the ini.
-
-    * Restoring the mode when a video ends (switch.restore.on.stop): players
-      from the "players to unclamp" list are no longer restored immediately -
-      the mode is raised at the start of the next clip and restored once the
-      player leaves the screen. That is one mode switch less between clips.
-      The SurfaceFlinger backdoor flag is kept, otherwise the framework would
-      restore the mode by its own policy.
-
-1.2.0 Fri Oct 30 2026
-
+1.2.0 Sat Oct 31 2026
     Release after 1.1.0: AFR on demand (a session triggered by a button), a real
-    "auto" fractional rate policy, and a check of the actual display rate.
+    "auto" fractional rate policy, a check of the actual display rate; settings
+    without duplicates (AV1 correction and pause behaviour are one item each,
+    items that do not apply on the current path are hidden); mode restoration on
+    stop no longer leaves the launcher at the video rate.
 
     * The "auto" fractional rate policy (mode.use.fract=0) is real now on
       Android 10-14: an integer rate is used only when the source declared an
@@ -115,6 +55,64 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       in 8 minutes for a player that jitters the counter), "… не в
       switch.bump.pkg" at most once per minute per package (was 15 lines in
       5 minutes). Behaviour is unchanged, only the line frequency.
+
+    * Settings: duplicate toggles removed. "Fix rate clamping" (switch.bump)
+      and "Apply player correction" (fps.correct.enable) are no longer shown:
+      both mechanisms have their own player list, and an empty list already
+      means "off". The state "list filled in, toggle off" looked like a
+      malfunction. The ini keys remain (old configs keep working), defaults
+      unchanged.
+
+    * Settings that do not apply on the current path are hidden instead of
+      greyed out: on Android 10-14 the "Switch delays" group (switch.timeout
+      moved to "Main"), mode.extra and the two blacklists; on Android 6-9 the
+      "Android 11+ fine tuning" group and fps.correct.*. Before, they were grey
+      rows with a "does not apply" note - a quarter of the screen.
+
+    * AV1 correction is one setting instead of two keys. The additive
+      (fps.correct.av1.offset) and relative (fps.correct.av1.pct) corrections
+      describe the same effect and were applied together: with pct=5.7 and
+      offset=0.1 a 25.000 fps clip measured 24.90, i.e. the correction worked
+      twice. Now the daemon picks the model by platform: fps.correct.av1=auto
+      applies the calibrated value (ATV14 - 0.1 frame/s), off disables it, and a
+      number sets a percentage. In the app: "AV1 counter correction" -
+      Auto / Off. The old keys are read only when the new one is absent, and
+      are mutually exclusive.
+
+    * Pause behaviour is one item "On pause" (pause.mode): keep the mode,
+      keep 20 s and then restore, or restore immediately. Before it was a toggle
+      "Keep the mode while paused" and a number "STOP delay" in different
+      categories, although it is one choice of three states. On Android 6-9 the
+      item is hidden: there switch.delay.off means something else (the delay
+      before restoring the mode after the video ends).
+
+    * The "fine tuning" group no longer shows the internal envelope constants
+      (subwindow, early decision, expansion limit) or fps.measure.retries /
+      fps.declared.crosscheck.pct: the UI keeps the two meaningful values - how
+      long to watch and how long to warm up. The other keys still work and are
+      set in the ini.
+
+    * Restoring the mode when a video ends (switch.restore.on.stop): players
+      from the "players to unclamp" list are no longer restored immediately -
+      the mode is raised at the start of the next clip and restored once the
+      player leaves the screen. That is one mode switch less between clips.
+      The SurfaceFlinger backdoor flag is kept, otherwise the framework would
+      restore the mode by its own policy.
+
+    * Fixed mode restoration for players in the "fix rate clamping" list
+      (switch.bump.pkg). After the video ended the mode was held, but nothing
+      restored it when the player left the foreground: the list check was
+      applied to that path too, the hold was never released, the launcher
+      stayed at the video rate, and "player left the foreground - restoring"
+      repeated every ~1.7 s. Live run on ATV14: 24 Hz on the launcher until the
+      daemon restarted. Now the mode is restored once the player leaves the
+      foreground (also with switch.restore.on.stop=0, otherwise the mode would
+      stay until a daemon restart).
+
+    * Pause restoration (pause.mode=off or a pause longer than
+      switch.delay.off) is no longer blocked by the clamp list: a pause is not
+      the end of a video. Before, such players never got the mode back on
+      pause.
 
 1.1.0 Tue Oct 27 2026
 
