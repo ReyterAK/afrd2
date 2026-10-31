@@ -2278,10 +2278,26 @@ static int g_content_hz;
 static int g_video_rate_floor;
 static bool g_rate_floor_logged;
 
-static void note_content_hz (int hz)
+/* Заявленная частота из frame dur (24.8): 96000/dur. 0 — неизвестна. */
+static int decl_hz_from_dur (unsigned dur)
 {
+	if (!dur)
+		return 0;
+
+	return (int) (96000.0 * 256.0 / (double) dur + 0.5);
+}
+
+static void note_content_hz (int hz, unsigned decl_dur)
+{
+	int decl_hz = decl_hz_from_dur (decl_dur);
+
 	g_content_hz = hz;
-	if (hz > g_video_rate_floor)
+
+	/* Нижняя граница «не понижать» нужна только там, где принятая частота
+	 * заметно выше заявленной — это признак полей или дублирования
+	 * (1080i50: 50 против 25). Иначе 24 и 25 (разница 4 %) слишком легко
+	 * спутать, и запрет закрепил бы ошибочные 25 Гц на 24-фпс видео. */
+	if ((decl_hz > 0) && (hz * 2 >= decl_hz * 3) && (hz > g_video_rate_floor))
 		g_video_rate_floor = hz;
 }
 
@@ -4462,7 +4478,7 @@ cadence_done: ;
 						if (id >= 0)
 						{
 							want_sf_id = id;
-							note_content_hz (lhz);
+							note_content_hz (lhz, v0.decl_dur);
 							/* Подача кадров есть — это не пауза: отсчёт
 							 * терпения к паузе начинаем заново, иначе
 							 * «терпение» сняло бы только что выбранный режим
@@ -4544,7 +4560,7 @@ cadence_done: ;
 							{
 								fast_applied = true;
 								fast_class = dclass;
-								note_content_hz (dclass);
+								note_content_hz (dclass, v0.decl_dur);
 								want_sf_id = did;
 								cur_sf_id = did;
 								{
@@ -4802,7 +4818,7 @@ cadence_done: ;
 				continue;
 			}
 			want_sf_id = cur_sf_id;
-			note_content_hz (hz);
+			note_content_hz (hz, v0.decl_dur);
 			if (burst_running (&g_burst))
 				g_burst.hz = hz;
 			/* Дробность под измеренную частоту (вендорный путь): имя режима
