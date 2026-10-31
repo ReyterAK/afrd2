@@ -2276,6 +2276,7 @@ static int g_content_hz;
  * В пределах одного видео частоту не понижаем (журнал §104). На новом видео
  * и по его концу ограничение снимается. */
 static int g_video_rate_floor;
+static int g_floor_decl_hz;
 static bool g_rate_floor_logged;
 
 /* Заявленная частота из frame dur (24.8): 96000/dur. 0 — неизвестна. */
@@ -2313,6 +2314,7 @@ static void note_content_hz (int hz, unsigned decl_dur)
 			if (diff * 100 <= mult * 4)
 			{
 				g_video_rate_floor = hz;
+				g_floor_decl_hz = decl_hz;
 				break;
 			}
 		}
@@ -4004,10 +4006,6 @@ static int run_atv14 (const platform_t *plat)
 				 * ролика (журнал §47.6). */
 				if (!own_reset)
 				{
-					/* Новое видео — своя частота: ограничение «не понижать
-					 * ниже уже принятого» относится к прошлому ролику. */
-					g_video_rate_floor = 0;
-					g_rate_floor_logged = false;
 					atv14_bump (plat, &orig_sf_id, &cur_sf_id, &want_sf_id, &held);
 					ceiling_forget ();
 				}
@@ -4227,8 +4225,6 @@ static int run_atv14 (const platform_t *plat)
 			counter_stall_logged = false;
 			crosscheck_logged = false;
 			g_content_hz = 0;
-			g_video_rate_floor = 0;
-			g_rate_floor_logged = false;
 		}
 		else if (hdrinfo_armed && mstime_expired (&hdrinfo_timer))
 		{
@@ -4736,6 +4732,23 @@ cadence_done: ;
 				 * частоту не понижаем (живой случай 31.10: 1080i50, после
 				 * 50 Гц замер дал 30 и режим ушёл в 30 — журнал §104).
 				 * Новое видео снимает ограничение (см. сброс выше). */
+				{
+					int decl_now = decl_hz_from_dur (v0.decl_dur);
+
+					/* Микроперезапуск декодера (HLS-дисконтинуитет,
+					 * пересоздание инстанса у плеера) — не смена канала:
+					 * если заявленная частота та же, ограничение держим.
+					 * Снимаем его при смене класса заявленной частоты
+					 * или когда она неизвестна. */
+					if (g_video_rate_floor &&
+					    ((decl_now == 0) ||
+					     fps_group_differs (decl_now, g_floor_decl_hz)))
+					{
+						g_video_rate_floor = 0;
+						g_rate_floor_logged = false;
+					}
+				}
+
 				if (g_video_rate_floor && (hz < g_video_rate_floor))
 				{
 					if (!g_rate_floor_logged)
