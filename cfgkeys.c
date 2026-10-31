@@ -8,6 +8,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "cfg_parse.h"
@@ -192,6 +193,95 @@ static void audit_key (const char *key, const char *value, void *uctx)
 		a->warn (msg, a->ctx);
 }
 
+/* Дубли ключей: cfg_set() при повторе перезаписывает значение, и молча
+ * действует последняя строка. Живой случай 31.10 (журнал §104): в профиле
+ * оказались и fps.declare.fast=1, и ниже =0 (дописало приложение) — быстрый
+ * режим был выключен, и после смены канала 20 с стоял прежний режим.
+ * Сообщаем только о дублях с разными значениями: одинаковые безвредны. */
+static void audit_duplicates (const char *filename,
+                              void (*warn) (const char *msg, void *ctx), void *ctx)
+{
+	enum { MAX_KEYS = 256 };
+	char *keys [MAX_KEYS];
+	char *vals [MAX_KEYS];
+	int n = 0, i;
+	char line [512];
+	FILE *f = fopen (filename, "r");
+
+	if (!f)
+		return;
+
+	while (fgets (line, sizeof (line), f))
+	{
+		char *s = line, *eq, *key, *val;
+		size_t kl, vl;
+
+		while ((*s == ' ') || (*s == '\t'))
+			s++;
+		if ((*s == '#') || (*s == '\n') || (*s == '\r') || (*s == 0))
+			continue;
+
+		eq = strchr (s, '=');
+		if (!eq)
+			continue;
+
+		key = s;
+		kl = (size_t) (eq - s);
+		val = eq + 1;
+		vl = strlen (val);
+		while (kl && ((key [kl - 1] == ' ') || (key [kl - 1] == '\t')))
+			kl--;
+		while (vl && ((val [vl - 1] == '\n') || (val [vl - 1] == '\r') ||
+		              (val [vl - 1] == ' ') || (val [vl - 1] == '\t')))
+			vl--;
+
+		for (i = 0; i < n; i++)
+			if ((strlen (keys [i]) == kl) && !strncmp (keys [i], key, kl))
+				break;
+
+		if (i < n)
+		{
+			if ((strlen (vals [i]) != vl) || strncmp (vals [i], val, vl))
+			{
+				char msg [256];
+				snprintf (msg, sizeof (msg),
+				          "дубль ключа '%.*s': '%.*s' затем '%.*s' — "
+				          "действует последнее значение",
+				          (int) kl, key, (int) strlen (vals [i]), vals [i],
+				          (int) vl, val);
+				if (warn)
+					warn (msg, ctx);
+			}
+			continue;
+		}
+
+		if (n >= MAX_KEYS)
+			break;
+
+		keys [n] = (char *) malloc (kl + 1);
+		vals [n] = (char *) malloc (vl + 1);
+		if (!keys [n] || !vals [n])
+		{
+			free (keys [n]);
+			free (vals [n]);
+			break;
+		}
+		memcpy (keys [n], key, kl);
+		keys [n][kl] = 0;
+		memcpy (vals [n], val, vl);
+		vals [n][vl] = 0;
+		n++;
+	}
+
+	fclose (f);
+
+	for (i = 0; i < n; i++)
+	{
+		free (keys [i]);
+		free (vals [i]);
+	}
+}
+
 int cfgkeys_audit (const char *filename, unsigned path,
                    void (*warn) (const char *msg, void *ctx), void *ctx)
 {
@@ -207,6 +297,8 @@ int cfgkeys_audit (const char *filename, unsigned path,
 		cfg_free (cfg);
 		return -1;
 	}
+
+	audit_duplicates (filename, warn, ctx);
 
 	struct audit_ctx a = { warn, ctx, path, 0 };
 	cfg_visit (cfg, audit_key, &a);

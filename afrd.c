@@ -2268,6 +2268,23 @@ static int g_vinfo_expect_hz;
  * сверки источников — счётчика кадров и подачи видео-слоя. */
 static int g_content_hz;
 
+/* Наибольшая частота, уже принятая для текущего видео (24.8). Замер,
+ * задушенный текущим режимом, даёт пониженную частоту: поверхность забирает
+ * столько кадров, сколько успевает, и счётчик показывает частоту экрана, а не
+ * контента. Из-за этого демон «проваливался» вниз: живой случай 31.10 на
+ * канале 1080i50 — приняли 50 Гц, через 20 с замер дал 30 и режим ушёл в 30.
+ * В пределах одного видео частоту не понижаем (журнал §104). На новом видео
+ * и по его концу ограничение снимается. */
+static int g_video_rate_floor;
+static bool g_rate_floor_logged;
+
+static void note_content_hz (int hz)
+{
+	g_content_hz = hz;
+	if (hz > g_video_rate_floor)
+		g_video_rate_floor = hz;
+}
+
 
 /* Фактическая частота дисплея из vinfo — независимая проверка «ядро получило
  * то, что просили»: 23.976 против 24.000 по имени режима не различить, а
@@ -3953,6 +3970,10 @@ static int run_atv14 (const platform_t *plat)
 				 * ролика (журнал §47.6). */
 				if (!own_reset)
 				{
+					/* Новое видео — своя частота: ограничение «не понижать
+					 * ниже уже принятого» относится к прошлому ролику. */
+					g_video_rate_floor = 0;
+					g_rate_floor_logged = false;
 					atv14_bump (plat, &orig_sf_id, &cur_sf_id, &want_sf_id, &held);
 					ceiling_forget ();
 				}
@@ -4172,6 +4193,8 @@ static int run_atv14 (const platform_t *plat)
 			counter_stall_logged = false;
 			crosscheck_logged = false;
 			g_content_hz = 0;
+			g_video_rate_floor = 0;
+			g_rate_floor_logged = false;
 		}
 		else if (hdrinfo_armed && mstime_expired (&hdrinfo_timer))
 		{
@@ -4439,7 +4462,7 @@ cadence_done: ;
 						if (id >= 0)
 						{
 							want_sf_id = id;
-							g_content_hz = lhz;
+							note_content_hz (lhz);
 							/* Подача кадров есть — это не пауза: отсчёт
 							 * терпения к паузе начинаем заново, иначе
 							 * «терпение» сняло бы только что выбранный режим
@@ -4521,7 +4544,7 @@ cadence_done: ;
 							{
 								fast_applied = true;
 								fast_class = dclass;
-								g_content_hz = dclass;
+								note_content_hz (dclass);
 								want_sf_id = did;
 								cur_sf_id = did;
 								{
@@ -4673,6 +4696,27 @@ cadence_done: ;
 				       (int)((env.s [env.n - 1].t_us - env.s [0].t_us) / 1000000),
 				       (int)(env_used_us / 1000));
 
+				/* Замер мог быть задушен текущим режимом: поверхность
+				 * забирает не больше кадров, чем даёт экран, и счётчик
+				 * показывает частоту экрана. Уже принятую для этого видео
+				 * частоту не понижаем (живой случай 31.10: 1080i50, после
+				 * 50 Гц замер дал 30 и режим ушёл в 30 — журнал §104).
+				 * Новое видео снимает ограничение (см. сброс выше). */
+				if (g_video_rate_floor && (hz < g_video_rate_floor))
+				{
+					if (!g_rate_floor_logged)
+					{
+						g_rate_floor_logged = true;
+						trace (0, "замер " HZ_FMT " Гц ниже уже принятой "
+						       "для этого видео " HZ_FMT " Гц — режим не "
+						       "понижаю\n",
+						       HZ_ARGS (hz), HZ_ARGS (g_video_rate_floor));
+					}
+					hz = g_video_rate_floor;
+				}
+				else
+					g_rate_floor_logged = false;
+
 				/* следующее измерение (перепроверка, новое видео) — заново */
 				fps_env_reset (&env);
 				env_growing = false;
@@ -4758,7 +4802,7 @@ cadence_done: ;
 				continue;
 			}
 			want_sf_id = cur_sf_id;
-			g_content_hz = hz;
+			note_content_hz (hz);
 			if (burst_running (&g_burst))
 				g_burst.hz = hz;
 			/* Дробность под измеренную частоту (вендорный путь): имя режима
