@@ -180,9 +180,9 @@ init-служба + супервизор это уже дают — надо т�
 
 | Файл | Размер | MD5 |
 |---|---|---|
-| `afrd-1.2.0-armeabi-v7a` | 100 420 Б | `4a7f5d3f37abc14370af62fcc565ac34` |
-| `afrd-1.2.0-arm64-v8a` | 144 728 Б | `11b1dde9fecc2a1a044a2a5839eeb637` |
-| `ru.reyter.afrd2-1.2.0-release.apk` | 475 963 Б | `0b573491ed3f13bd79ce2616ed960c30` |
+| `afrd-1.2.0-armeabi-v7a` | 100 484 Б | `42898e6a0b9243c130950c29f47b0b60` |
+| `afrd-1.2.0-arm64-v8a` | 144 776 Б | `07b8a0774dbd37dbee3bce0050d67bf5` |
+| `ru.reyter.afrd2-1.2.0-release.apk` | 476 051 Б | `96ca8f9d85e98ba3a66ea0472a58ee0d` |
 
 Демон в APK побайтово равен первому файлу (`res/raw/afrd_armeabi_v7a`), то есть
 проверять можно любым из них. В zip демоны лежат без бита исполнения (zip его не
