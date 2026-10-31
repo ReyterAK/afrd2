@@ -1,6 +1,23 @@
 AFRd2 — a fork of AFRd (based on AFRd 0.3.2 by Andrey Zabolotnyi,
 anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
+1.2.2 Sat Oct 31 2026
+
+    * Fixed mode restoration for players in the "fix rate clamping" list
+      (switch.bump.pkg). After the video ended the mode was held, but nothing
+      restored it when the player left the foreground: the list check was
+      applied to that path too, the hold was never released, the launcher
+      stayed at the video rate, and "player left the foreground - restoring"
+      repeated every ~1.7 s. Live run on ATV14: 24 Hz on the launcher until the
+      daemon restarted. Now the mode is restored once the player leaves the
+      foreground (also with switch.restore.on.stop=0, otherwise the mode would
+      stay until a daemon restart).
+
+    * Pause restoration (pause.mode=off or a pause longer than
+      switch.delay.off) is no longer blocked by the clamp list: a pause is not
+      the end of a video. Before, such players never got the mode back on
+      pause.
+
 1.2.1 Fri Oct 30 2026
 
     * Settings: duplicate toggles removed. "Fix rate clamping" (switch.bump)

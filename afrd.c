@@ -4118,9 +4118,13 @@ static int run_atv14 (const platform_t *plat)
 		}
 
 		/* pause.keep==0: пауза обрабатывается как стоп (guard вернёт режим);
-		 * предел паузы (PAUSE_END) — то же самое, но по таймеру */
+		 * предел паузы (PAUSE_END) — то же самое, но по таймеру.
+		 * Признак нужен возврату (guard_restore_allowed): пауза — не
+		 * остановка видео, и список зажима к ней не относится (иначе
+		 * pause.mode=off у плеера из switch.bump.pkg не возвращал режим). */
+		bool pause_restore = (!pause_keep && paused) || (pact == PAUSE_END);
 		bool video_eff = video;
-		if ((!pause_keep && paused) || (pact == PAUSE_END))
+		if (pause_restore)
 			video_eff = false;
 
 		/* Пакет в списке switch.skip.pkg: режим не переключаем и не удерживаем
@@ -5104,7 +5108,14 @@ cadence_done: ;
 			 * switch.restore.on.stop, но плеерам из switch.bump.pkg режим не
 			 * возвращаем: его поднимет подъём на старте следующего ролика, а
 			 * лишняя смена — это мигание (решение владельца 30.10, guard.c).
-			 * Возврат по паузе (pause.keep==0) делается всегда. */
+			 * Возврат по паузе (pause.keep==0) делается всегда.
+			 *
+			 * player_left — плеер уже ушёл с переднего плана: держать режим
+			 * больше не для кого, возвращаем независимо от списка. Без этого
+			 * флага удержание не снималось никогда: живой прогон 31.10
+			 * (плеер из списка, выход на рабочий стол) дал рабочий стол на
+			 * 24 Гц и строку «возвращаю режим» каждые 1.7 с. */
+			bool player_left = false;
 			if (hold_keep)
 			{
 				/* Ждём, пока плеер уйдёт с переднего плана: иначе рабочий стол
@@ -5122,6 +5133,7 @@ cadence_done: ;
 
 				trace (0, "плеер ушёл с переднего плана — возвращаю режим\n");
 				hold_keep = false;
+				player_left = true;
 			}
 
 			/* Политику возвращаем ДО имени: иначе рабочий стол получил бы
@@ -5130,7 +5142,8 @@ cadence_done: ;
 			g_vendor_frac_wanted = -1;
 
 			if (guard_restore_allowed (restore_on_stop, g_switch_bump != 0,
-			                           bump_pkg_allows_pkg (g_cur_pkg)))
+			                           bump_pkg_allows_pkg (g_cur_pkg),
+			                           player_left, pause_restore))
 			{
 				int rc = atv14_apply_mode (plat, orig_sf_id,
 				                           "возврат пропущен, флаг backdoor снят");

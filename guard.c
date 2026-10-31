@@ -26,10 +26,22 @@ guard_action_t guard_decide (bool video_active, int want_sf_id, int cur_sf_id,
 }
 
 bool guard_restore_allowed (bool restore_on_stop, bool clamp_mechanics,
-                            bool pkg_in_clamp_list)
+                            bool pkg_in_clamp_list, bool player_left_fg,
+                            bool pause_restore)
 {
+	/* Плеер ушёл с экрана: держать режим больше не для кого. Проверка стоит
+	 * до ключа: при switch.restore.on.stop=0 режим тоже возвращается здесь,
+	 * иначе он остался бы до перезапуска демона (README обещает «до выхода из
+	 * плеера»). */
+	if (player_left_fg)
+		return true;
+
 	if (!restore_on_stop)
 		return false;
+
+	/* Пауза — не остановка видео: список зажима к ней не относится. */
+	if (pause_restore)
+		return true;
 
 	if (clamp_mechanics && pkg_in_clamp_list)
 		return false;

@@ -42,12 +42,24 @@ int main (void)
 	/* Кому возвращать режим при остановке (решение владельца 30.10):
 	 * ключ switch.restore.on.stop, но плеерам из switch.bump.pkg — не
 	 * возвращаем: подъём режима на старте следующего ролика сделает это сам. */
-	assert (guard_restore_allowed (true, true, false));	/* обычный плеер */
-	assert (!guard_restore_allowed (true, true, true));	/* в списке зажима */
-	assert (!guard_restore_allowed (false, false, false));	/* ключ выключен */
-	assert (!guard_restore_allowed (false, true, false));
+	assert (guard_restore_allowed (true, true, false, false, false));	/* обычный плеер */
+	assert (!guard_restore_allowed (true, true, true, false, false));	/* в списке зажима */
+	assert (!guard_restore_allowed (false, false, false, false, false));	/* ключ выключен */
+	assert (!guard_restore_allowed (false, true, false, false, false));
 	/* механики зажима выключены — список не действует */
-	assert (guard_restore_allowed (true, false, true));
+	assert (guard_restore_allowed (true, false, true, false, false));
+
+	/* Плеер ушёл с переднего плана: держать режим больше не для кого.
+	 * Живой прогон 31.10: на 1.2.1 удержание здесь не снималось никогда —
+	 * рабочий стол оставался на частоте видео, строка «возвращаю режим»
+	 * повторялась каждые 1.7 с. */
+	assert (guard_restore_allowed (true, true, true, true, false));
+	assert (guard_restore_allowed (false, true, true, true, false));	/* ключ выключен — но ушёл */
+
+	/* Возврат по паузе (pause.mode=off / предел паузы): список зажима к нему
+	 * не относится, а ключ switch.restore.on.stop по-прежнему решает. */
+	assert (guard_restore_allowed (true, true, true, false, true));
+	assert (!guard_restore_allowed (false, true, true, false, true));
 
 	printf ("guard: OK\n");
 	return 0;
