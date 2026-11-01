@@ -442,3 +442,29 @@
 ! If no blinking matters more than the exact rate, add the player to "Players
 ! that AFR disturbs" (group "Players"): AFRd2 will not touch the mode in that
 ! player at all.
+
+? Which players does AFRd2 serve, and which manage the rate themselves?
+
+! YouTube TV has no frame rate control of its own: AFRd2 switches the rate for
+! it when the package is in "Players to fix clamping" (it is there by default).
+
+! OTT Navigator manages the rate itself (Surface.setFrameRate) on Android 10
+! and newer, so it is excluded by default through "Players where AFR
+! interferes" and AFRd2 leaves it alone. On Android 6-9 the player also has its
+! own AFR, but AFRd2 works as usual there.
+
+! If the built-in AFR in OTT Navigator is turned off, remove it from "AFR
+! interferes" and add it to "players to fix clamping": then AFRd2 switches the
+! rate (bump to the maximum, a short settle and, if needed, a revert).
+
+? Which rate should be used for 1080i50 channels - 25 or 50 Hz?
+
+! "Match content frame rate" gives 25 Hz: one frame per screen refresh, even
+! 40 ms intervals, but half of the 1080i50 fields are not shown.
+
+! Doubling (the setting off) gives 50 Hz: the fields are kept, but the player
+! feeds frames unevenly - the stand measurement: about 10 % of the intervals
+! are 40 ms versus 1 % at 25 Hz.
+
+! The choice depends on what looks better on your TV; both options are valid
+! and switch with one setting.
