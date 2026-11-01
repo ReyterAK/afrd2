@@ -8,6 +8,18 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
     items that do not apply on the current path are hidden); mode restoration on
     stop no longer leaves the launcher at the video rate.
 
+    * Clamp fixes: OTT Navigator is added to the default player list
+      (switch.bump.pkg), while the ceiling reset (switch.ceiling.reset) stays
+      limited to the stock YouTube — a separate switch.ceiling.pkg list, because
+      restarting the codec breaks OTT's playback session. On ATV11 the clamp was
+      measured for OTT (19.8-23.5 % outlier intervals without the bump versus
+      0.3-0.5 % with it). New key switch.revert: if the feed stays clamped after
+      a switch and the "there and back" treatment does not help, the mode is
+      returned to the previous one — smooth picture at the cost of dropping part
+      of the content frames (22 % -> 0 %). The feed check now counts the share of
+      outlier intervals (fps.feed.ratio.pct / fps.feed.gap.pct) instead of relying
+      on the median alone, so a ragged feed no longer reports "feed is fine".
+
     * The "auto" fractional rate policy (mode.use.fract=0) is real now on
       Android 10-14: an integer rate is used only when the source declared an
       integer one (player hint frame_rate_hint — 24.000 vs 23.976, or the

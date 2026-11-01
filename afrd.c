@@ -3493,6 +3493,9 @@ static int run_atv14 (const platform_t *plat)
 	 * видео: сбрасывается вместе с cadence_fixes. */
 	bool cadence_heal_wait = false;
 	bool cadence_heal_useless = false;
+	/* Зажим не вылечился «туда-обратно», и режим возвращён к прежнему
+	 * (switch.revert). Один раз на видео. */
+	bool cadence_reverted = false;
 	/* ожидаемый интервал подачи контента (мс) — из измеренной частоты */
 	int cadence_expect_ms = 0;
 	/* HDR/SDR-атрибуты: перечитать, когда система уже выставила свои значения
@@ -4141,6 +4144,7 @@ static int run_atv14 (const platform_t *plat)
 				cadence_fixes = 0;
 				cadence_heal_wait = false;
 				cadence_heal_useless = false;
+				cadence_reverted = false;
 				hdrinfo_armed = false;
 				mstime_disable (&hdrinfo_timer);
 				/* плеер нового видео может быть другим — поправку
@@ -4324,6 +4328,7 @@ static int run_atv14 (const platform_t *plat)
 			cadence_fixes = 0;
 			cadence_heal_wait = false;
 			cadence_heal_useless = false;
+			cadence_reverted = false;
 			hdrinfo_armed = false;
 			mstime_disable (&hdrinfo_timer);
 			counter_last_grow_us = 0;
@@ -4417,7 +4422,12 @@ static int run_atv14 (const platform_t *plat)
 				 * вернуть «обратно» — устройство оставалось в исходном 60 Гц при
 				 * удержании и поднятом флаге backdoor до нового замера (~14 с).
 				 * Живая находка 2026-10-08 (прогон матрицы, клип long_50). */
-				if ((cadence_fixes < 2) && (back >= 0) &&
+				/* Сколько раз пробовать «туда-обратно» до возврата режима:
+				 * с включённым switch.revert хватает одной попытки — каждая
+				 * стоит двух миганий экрана, а исход в этом случае уже
+				 * известен (журнал §113). */
+				int heal_tries = cfg_get_int ("switch.revert", 1) ? 1 : 2;
+				if ((cadence_fixes < heal_tries) && (back >= 0) &&
 				    (want_sf_id >= 0) && (back != want_sf_id) &&
 				    !cadence_heal_useless && !burst_running (&g_burst))
 				{
@@ -4448,13 +4458,36 @@ static int run_atv14 (const platform_t *plat)
 						cadence_heal_useless = true;
 					}
 
-					trace (0, "подача вдвое реже ожидаемого (%d мс при периоде %d мс, ожидание %d мс, выбросов %d %%) — лечение не применяю%s\n",
-					       md, pm, expect_ms, gap,
-					       cadence_heal_useless
-					       ? " (переключение уже пробовали — подача не изменилась)"
-					       : (want_sf_id < 0)
-					       ? " (цель переключения сброшена — жду нового замера)"
-					       : "");
+					/* Лечение не помогло (или неприменимо). Плеер держит
+					 * темп от старта под другим режимом и сам его не поднимет
+					 * (журнал §110–§113). Тогда возвращаем режим, под которым
+					 * плеер идёт: картинка гладкая ценой потери части кадров
+					 * контента. Один раз на видео. */
+					bool reverted = false;
+					if (cfg_get_int ("switch.revert", 1) &&
+					    !cadence_reverted && (back >= 0) &&
+					    (back != want_sf_id) && !burst_running (&g_burst) &&
+					    bump_pkg_allows_pkg (g_cur_pkg) &&
+					    (atv14_apply_mode (plat, back, "возврат: зажим не лечится") == 0))
+					{
+						cadence_reverted = true;
+						reverted = true;
+						want_sf_id = -1;
+						cur_sf_id = back;
+						measure_failed = true;	/* до конца видео не перемеряем */
+						mstime_update ();
+						trace (0, "подача не лечится (%d мс при периоде %d мс, выбросов %d %%) — вернул прежний режим " HZ_FMT " Гц: гладко, но кадры контента теряются\n",
+						       md, pm, gap, HZ_ARGS (atv14_mode_hz (plat, back)));
+					}
+
+					if (!reverted)
+						trace (0, "подача вдвое реже ожидаемого (%d мс при периоде %d мс, ожидание %d мс, выбросов %d %%) — лечение не применяю%s\n",
+						       md, pm, expect_ms, gap,
+						       cadence_heal_useless
+						       ? " (переключение уже пробовали — подача не изменилась)"
+						       : (want_sf_id < 0)
+						       ? " (цель переключения сброшена — жду нового замера)"
+						       : "");
 				}
 			}
 			else if (md > 0)
@@ -5501,7 +5534,9 @@ int afrd_run ()
 	{
 		strlist_free (&g_bump_pkgs);
 		strlist_add (&g_bump_pkgs, "com.google.android.youtube.tv");
-		trace (1, "switch.bump.pkg не задан — механики зажима только для штатного YouTube\n");
+		strlist_add (&g_bump_pkgs, "studio.scillarium.ottnavigator");
+		trace (1, "switch.bump.pkg не задан — механики зажима для штатного YouTube "
+		       "и OTT Navigator\n");
 	}
 
 	/* Подъём режима по выходу плеера на передний план: на Android 10/11 это
@@ -5867,6 +5902,16 @@ int afrd_init ()
 	 * switch.bump.pkg (прежнее поведение); задан — только он. */
 	g_ceiling_pkgs_given = strlist_load (&g_ceiling_pkgs, "switch.ceiling.pkg",
 	                                     "packages: ceiling reset");
+	if (!g_ceiling_pkgs_given)
+	{
+		/* Ключ не задан — сброс потолка только штатному YouTube. Список НЕ
+		 * следует за switch.bump.pkg: подъём режима OTT полезен (журнал §110),
+		 * а перезапуск кодека ему вредит (§81). Явно заданный список (в том
+		 * числе пустой) не трогаем. */
+		strlist_add (&g_ceiling_pkgs, "com.google.android.youtube.tv");
+		g_ceiling_pkgs_given = true;
+		trace (1, "switch.ceiling.pkg не задан — сброс потолка только для штатного YouTube\n");
+	}
 
 	trace (1, "\trefresh rate selection: use fractional %d, exact %d\n",
 		g_mode_use_fract, g_mode_prefer_exact);

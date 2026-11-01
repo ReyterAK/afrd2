@@ -121,7 +121,7 @@
     <string name="prefsum_fps_prefer_api">If the player reports the frame rate itself via the AFRd2 API
         (frame_rate_hint), prefer it over our own frame counter measurement.</string>
     <string name="prefs_switch_bump_pkg">Players to fix clamping for</string>
-    <string name="prefsum_switch_bump_pkg">Raise the mode to the highest rate the TV supports before the player shows its first frame, and reset the player\'s rate ceiling if a clip still started at a low rate (by default by restarting the codec process, falling back to a density change). Applied to the selected applications only: by default the stock YouTube, the only player where the clamp was confirmed by measurements, while for some players the ceiling reset restarts the screen and breaks playback. An empty list disables both mechanics.</string>
+    <string name="prefsum_switch_bump_pkg">Raise the mode to the highest rate the TV supports before the player shows its first frame; fall back to the previous mode if the clamp does not go away; and reset the player\'s rate ceiling if a clip still started at a low rate (by default by restarting the codec process, falling back to a density change). The ceiling reset is applied to the stock YouTube only (it restarts the playback session on OTT Navigator). Applied to the selected applications only: by default the stock YouTube and OTT Navigator, where the clamp was confirmed by measurements. An empty list disables the mechanics.</string>
     <string name="prefs_fps_measure_envelope">Observation before switching, ms</string>
     <string name="prefsum_fps_measure_envelope">The daemon does not switch the mode until it has
         collected this many milliseconds of observation. The rate is taken as the minimum over

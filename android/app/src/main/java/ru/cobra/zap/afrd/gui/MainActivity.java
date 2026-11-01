@@ -241,23 +241,26 @@ public class MainActivity extends Activity
     }
 
     /* Умолчание switch.bump.pkg: демон применяет механики зажима только
-     * перечисленным плеерам, по умолчанию — штатному YouTube (зажим измерен
-     * только у него, а у остальных сброс потолка может перезапускать Activity).
-     * Проставляем один раз, чтобы строка настроек показывала то же, что делает
-     * демон; очищенный пользователем список не возвращаем. */
+     * перечисленным плеерам. По умолчанию — штатный YouTube и OTT Navigator:
+     * у обоих зажим измерен (журнал §28.9, §47.2, §110), а сброс потолка у
+     * OTT отключён отдельным списком (switch.ceiling.pkg), поэтому перезапуск
+     * кодека его не касается. Проставляем один раз, чтобы строка настроек
+     * показывала то же, что делает демон; очищенный пользователем список не
+     * возвращаем. */
     private void bumpPkgSeed ()
     {
         if (!Control.isAtv14 ())
             return;
 
         SharedPreferences req = getSharedPreferences ("requisites", 0);
-        if (req.getBoolean ("bump_pkg_seed", false))
+        if (req.getBoolean ("bump_pkg_seed2", false))
             return;
 
         if (!mOptions.contains ("switch_bump_pkg"))
-            mOptions.edit ().putString ("switch_bump_pkg", kSkipYoutube).apply ();
+            mOptions.edit ().putString ("switch_bump_pkg",
+                                        kSkipYoutube + " " + kOttNav).apply ();
 
-        req.edit ().putBoolean ("bump_pkg_seed", true).apply ();
+        req.edit ().putBoolean ("bump_pkg_seed2", true).apply ();
     }
 
     private boolean updateConfig ()
@@ -396,6 +399,10 @@ public class MainActivity extends Activity
      * Действует на всех путях: на 10/11 зажим тоже снимается сбросом потолка
      * (замер §64.7 журнала: подача 50.02 -> 59.94 к/с за 0.26 с). */
     private static final String kSkipYoutube = "com.google.android.youtube.tv";
+    /* OTT Navigator: зажим измерен на ATV11 (журнал §110); в списке механик
+     * зажима по умолчанию, но не в switch.ceiling.pkg (перезапуск кодека ему
+     * вредит — журнал §81). */
+    private static final String kOttNav = "studio.scillarium.ottnavigator";
 
     private void atv14SkipDefault (Config conf)
     {

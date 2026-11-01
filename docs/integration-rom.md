@@ -292,6 +292,7 @@ AFRd2 — форк AFRd (Andrey Zabolotnyi) под **GPL-3**. Размещени
 | `switch.ceiling.method` | Android 10–14; `auto` — перезапуск кодека (1.1 с) с запасным путём на плотность, `codec`, `density` | — |
 | `switch.ceiling.pkg` | Android 10–14; кому применяется сброс потолка (ключ не задан — как `switch.bump.pkg`) | — |
 | `switch.bump.on.app` | Android 10–14 | — |
+| `switch.revert` | Android 10–14; возврат режима при непоправимом зажиме (по умолчанию 1) | — |
 | `fps.correct.av1.pct` | Android 10–14 | — |
 | `vendor.disp.cli` | Android 10–14 | — |
 | `vendor.disp.persist` | Android 10/11 | — |
