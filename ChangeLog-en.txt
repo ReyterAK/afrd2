@@ -130,6 +130,14 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       pause.
 
 
+    * Fixed: the measurement could pull the mode down during live video. On a
+      1080i50 channel the frame counter is throttled by the current mode and
+      inflated by the player (OTT reports frame-rate=30 to the decoder), so the
+      lower envelope drove 50 -> 30. The accepted rate is now a lower bound, but
+      only when it is a multiple of the declared one (2x/3x, 4 % tolerance):
+      50 vs 25 — yes, 25 vs 24 — no. A decoder micro-restart (OTT recreates it
+      every 20-50 s) does not reset the bound: 90 s at 50 Hz with no switches.
+
     * A short settle down from the maximum after the bump
       (switch.bump.probe.ms, 2500 ms, 0 — off): the envelope decision used to
       wait 14-31 s and the screen stayed at the maximum all that time; now the
