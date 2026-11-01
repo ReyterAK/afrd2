@@ -1,7 +1,7 @@
 AFRd2 — a fork of AFRd (based on AFRd 0.3.2 by Andrey Zabolotnyi,
 anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
-1.2.0 Sat Oct 31 2026
+1.2.0 Sun Nov 1 2026
     Release after 1.1.0: AFR on demand (a session triggered by a button), a real
     "auto" fractional rate policy, a check of the actual display rate; settings
     without duplicates (AV1 correction and pause behaviour are one item each,
@@ -12,7 +12,8 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       Android 10+ (switch.skip.pkg) — it manages the rate itself through
       Surface.setFrameRate (live check: 50 -> 24 Hz in ~8 s, feed 50.00 fps,
       0 outliers), and the daemon's bump/revert only fights it. On Android 6-9
-      OTT has no AFR of its own, so the daemon still drives the mode there.
+      AFRd2 works as usual: the player has its own AFR there, but the default
+      exclusion applies to the new path only.
       The default switch.bump.pkg is the stock YouTube; the ceiling reset
       (switch.ceiling.reset) has its own switch.ceiling.pkg list, YouTube only.
       New key switch.revert: if the feed stays clamped after a switch and the
@@ -127,6 +128,20 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       switch.delay.off) is no longer blocked by the clamp list: a pause is not
       the end of a video. Before, such players never got the mode back on
       pause.
+
+
+    * A short settle down from the maximum after the bump
+      (switch.bump.probe.ms, 2500 ms, 0 — off): the envelope decision used to
+      wait 14-31 s and the screen stayed at the maximum all that time; now the
+      mode is chosen from the video layer data after 2.5 s (and every second
+      after that). Live measurement: the maximum is held ~5.3 s instead of
+      14-31 s.
+
+    * Fixed: switch.skip.pkg did not actually block mode changes on the new
+      path since 1.0.0 — the gate was applied after the fast decision, so a
+      player listed under "AFR interferes" still got switched. Now neither the
+      measurement, nor the fast decision, nor the recheck, nor the reapply runs
+      for such a player.
 
 1.1.0 Tue Oct 27 2026
 
