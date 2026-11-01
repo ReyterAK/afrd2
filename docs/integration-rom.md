@@ -293,6 +293,7 @@ AFRd2 — форк AFRd (Andrey Zabolotnyi) под **GPL-3**. Размещени
 | `switch.ceiling.pkg` | Android 10–14; кому применяется сброс потолка (ключ не задан — как `switch.bump.pkg`) | — |
 | `switch.bump.on.app` | Android 10–14 | — |
 | `switch.revert` | Android 10–14; возврат режима при непоправимом зажиме (по умолчанию 1) | — |
+| `switch.bump.probe.ms` | Android 10–14; короткий пробник подачи после подъёма, мс (по умолчанию 2500, 0 — выключено) | — |
 | `fps.correct.av1.pct` | Android 10–14 | — |
 | `vendor.disp.cli` | Android 10–14 | — |
 | `vendor.disp.persist` | Android 10/11 | — |

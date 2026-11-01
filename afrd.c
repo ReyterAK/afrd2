@@ -3515,6 +3515,11 @@ static int run_atv14 (const platform_t *plat)
 	/* Зажим не вылечился «туда-обратно», и режим возвращён к прежнему
 	 * (switch.revert). Один раз на видео. */
 	bool cadence_reverted = false;
+	/* Короткий пробник подачи после bump: время последней попытки и признак
+	 * «решено». Пробник повторяется раз в секунду: к 2.5 с видео-слой не
+	 * всегда успевает набрать кадры (живой прогон `.50`, журнал §118). */
+	unsigned long long bump_probe_last_us = 0;
+	bool bump_probe_done = false;
 	/* ожидаемый интервал подачи контента (мс) — из измеренной частоты */
 	int cadence_expect_ms = 0;
 	/* HDR/SDR-атрибуты: перечитать, когда система уже выставила свои значения
@@ -3781,6 +3786,14 @@ static int run_atv14 (const platform_t *plat)
 		if (env_us > env_max_us)
 			env_us = env_max_us;
 	}
+
+	/* Короткий пробник подачи после подъёма (switch.bump.probe.ms): пока
+	 * максимум удерживается, замер по счётчику кадров ещё не готов (огибающая
+	 * 14-20 с), а видео-слой уже отдаёт кадры — по нему и решаем, чтобы не
+	 * держать неверную частоту. 0 — выключено. */
+	int bump_probe_ms = cfg_get_int ("switch.bump.probe.ms", 2500);
+	if (bump_probe_ms < 0)
+		bump_probe_ms = 0;
 
 	int start_deb = cfg_get_int ("trigger.start.debounce.ms", 500);
 	int stop_deb = cfg_get_int ("trigger.stop.debounce.ms", 1500);
@@ -4164,6 +4177,10 @@ static int run_atv14 (const platform_t *plat)
 				cadence_heal_wait = false;
 				cadence_heal_useless = false;
 				cadence_reverted = false;
+			bump_probe_done = false;
+			bump_probe_last_us = 0;
+				bump_probe_done = false;
+				bump_probe_last_us = 0;
 				hdrinfo_armed = false;
 				mstime_disable (&hdrinfo_timer);
 				/* плеер нового видео может быть другим — поправку
@@ -4688,6 +4705,53 @@ cadence_done: ;
 					}
 					else
 						trace (1, "подача видео-слоя частоту не дала\n");
+				}
+
+				/* Короткий спуск с максимума после bump: по данным
+				 * видео-слоя. Огибающая по счётчику кадров на некоторых
+				 * потоках созревает только через 14–20 с, а плоскость уже
+				 * показывает, сколько разных кадров в секунду приходит —
+				 * этого хватает, чтобы вернуть режим (журнал §111.4). */
+				if (!bump_probe_done && g_bump_settle_us && (bump_probe_ms > 0) &&
+				    ((now_us () - g_bump_settle_us) >=
+				     (unsigned long long) bump_probe_ms * 1000ULL) &&
+				    (want_sf_id < 0) &&
+				    ((bump_probe_last_us == 0) ||
+				     ((now_us () - bump_probe_last_us) >= 1000000ULL)))
+				{
+					bump_probe_last_us = now_us ();
+
+					/* Пробник не помог за 12 с — дальше решает огибающая. */
+					if ((now_us () - g_bump_settle_us) >
+					    12ULL * 1000000ULL)
+						bump_probe_done = true;
+
+					int lhz = bump_probe_done ? 0 : atv14_layer_fps_hz ();
+					if (lhz)
+					{
+						int w = 1920, h = 1080;
+						int cur = atv_current_target (plat, &w, &h);
+						int pid = mode_resolve (plat, lhz, w, h,
+						                        mode_min_hz_for (g_cur_pkg));
+						if (pid >= 0)
+						{
+							want_sf_id = pid;
+							note_content_hz (lhz, v0.decl_dur);
+							cadence_expect_ms = (256000 + lhz / 2) / lhz;
+							if (pid != cur)
+								trace (0, "спуск после bump: подача дала "
+								       HZ_FMT " Гц (пробник %d мс) — режим "
+								       HZ_FMT " Гц\n",
+								       HZ_ARGS (lhz), bump_probe_ms,
+								       HZ_ARGS (atv14_mode_hz (plat, pid)));
+							else
+								trace (1, "спуск после bump: подача дала "
+								       HZ_FMT " Гц — режим уже верный\n",
+								       HZ_ARGS (lhz));
+							bump_settle_done ("короткий пробник");
+							bump_probe_done = true;
+						}
+					}
 				}
 
 				/* Быстрое решение по заявленной частоте: штатный системный
@@ -5951,13 +6015,20 @@ int afrd_init ()
 	                                     "packages: ceiling reset");
 	if (!g_ceiling_pkgs_given)
 	{
+		g_ceiling_pkgs_given = true;
+
 		/* Ключ не задан — сброс потолка только штатному YouTube. Список НЕ
 		 * следует за switch.bump.pkg: подъём режима OTT полезен (журнал §110),
 		 * а перезапуск кодека ему вредит (§81). Явно заданный список (в том
-		 * числе пустой) не трогаем. */
-		strlist_add (&g_ceiling_pkgs, "com.google.android.youtube.tv");
-		g_ceiling_pkgs_given = true;
-		trace (1, "switch.ceiling.pkg не задан — сброс потолка только для штатного YouTube\n");
+		 * числе пустой) не трогаем. На старом пути сброса потолка нет вовсе —
+		 * там и умолчание не нужно (строка в журнале только путала, живая
+		 * находка `.48`). */
+		if (g_plat.kind != PLAT_LEGACY)
+		{
+			strlist_add (&g_ceiling_pkgs, "com.google.android.youtube.tv");
+			trace (1, "switch.ceiling.pkg не задан — сброс потолка только для "
+			       "штатного YouTube\n");
+		}
 	}
 
 	trace (1, "\trefresh rate selection: use fractional %d, exact %d\n",
