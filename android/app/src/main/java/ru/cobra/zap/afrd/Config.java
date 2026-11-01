@@ -142,6 +142,14 @@ public class Config
         return defval;
     }
 
+    /* Удалить ключ из конфига. Нужно для переносов умолчаний: «ключа нет» и
+     * «ключ пуст» — разные вещи (демон по-разному трактует switch.skip.pkg). */
+    public void remove (String key)
+    {
+        if (mItems.remove (key) != null)
+            mModified = true;
+    }
+
     public void put (String key, Object val)
     {
         if (!mModified && !equals (mItems.get (key), val))

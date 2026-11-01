@@ -241,12 +241,11 @@ public class MainActivity extends Activity
     }
 
     /* Умолчание switch.bump.pkg: демон применяет механики зажима только
-     * перечисленным плеерам. По умолчанию — штатный YouTube и OTT Navigator:
-     * у обоих зажим измерен (журнал §28.9, §47.2, §110), а сброс потолка у
-     * OTT отключён отдельным списком (switch.ceiling.pkg), поэтому перезапуск
-     * кодека его не касается. Проставляем один раз, чтобы строка настроек
-     * показывала то же, что делает демон; очищенный пользователем список не
-     * возвращаем. */
+     * перечисленным плеерам. По умолчанию — штатный YouTube (зажим измерен,
+     * журнал §28.9, §47.2). OTT Navigator на Android 10+ сам управляет
+     * частотой (журнал §115) и по умолчанию исключён через switch.skip.pkg.
+     * Проставляем один раз, чтобы строка настроек показывала то же, что делает
+     * демон; очищенный пользователем список не возвращаем. */
     private void bumpPkgSeed ()
     {
         if (!Control.isAtv14 ())
@@ -257,8 +256,7 @@ public class MainActivity extends Activity
             return;
 
         if (!mOptions.contains ("switch_bump_pkg"))
-            mOptions.edit ().putString ("switch_bump_pkg",
-                                        kSkipYoutube + " " + kOttNav).apply ();
+            mOptions.edit ().putString ("switch_bump_pkg", kSkipYoutube).apply ();
 
         req.edit ().putBoolean ("bump_pkg_seed2", true).apply ();
     }
@@ -301,6 +299,7 @@ public class MainActivity extends Activity
         // and save the modified file
         atv14PauseDefault (conf);
         atv14SkipDefault (conf);
+        atv14SkipEmptyReset (conf);
         return conf.condSave (mControl.mIni);
     }
 
@@ -399,10 +398,32 @@ public class MainActivity extends Activity
      * Действует на всех путях: на 10/11 зажим тоже снимается сбросом потолка
      * (замер §64.7 журнала: подача 50.02 -> 59.94 к/с за 0.26 с). */
     private static final String kSkipYoutube = "com.google.android.youtube.tv";
-    /* OTT Navigator: зажим измерен на ATV11 (журнал §110); в списке механик
-     * зажима по умолчанию, но не в switch.ceiling.pkg (перезапуск кодека ему
-     * вредит — журнал §81). */
-    private static final String kOttNav = "studio.scillarium.ottnavigator";
+
+    /* Пустой switch.skip.pkg раньше записывался в ini при первом запуске («список
+     * исключений пуст») и после того, как демон получил умолчание «на Android
+     * 10+ исключён OTT Navigator», наличие пустого ключа его отменяло. Разница
+     * важна: ключ отсутствует — умолчание демона, ключ пуст — «не исключать
+     * никого» (как и написано в конфиге). Одноразово убираем пустой ключ и из
+     * ini, и из настроек; список, заданный пользователем, не трогаем. */
+    private void atv14SkipEmptyReset (Config conf)
+    {
+        if (!Control.isAtv14 ())
+            return;
+
+        SharedPreferences req = getSharedPreferences ("requisites", 0);
+        if (req.getBoolean ("skip_empty_reset", false))
+            return;
+
+        String val = mOptions.getString ("switch_skip_pkg", null);
+        if ((val != null) && val.trim ().isEmpty ())
+            mOptions.edit ().remove ("switch_skip_pkg").apply ();
+
+        String cv = conf.getString ("switch.skip.pkg", null);
+        if ((cv != null) && cv.trim ().isEmpty ())
+            conf.remove ("switch.skip.pkg");
+
+        req.edit ().putBoolean ("skip_empty_reset", true).apply ();
+    }
 
     private void atv14SkipDefault (Config conf)
     {

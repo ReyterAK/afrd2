@@ -2646,7 +2646,13 @@ static bool atv14_cadence_halved (int expect_ms, int *period_ms, int *median_ms,
 
 	double base = ((double) expect_ms > p) ? (double) expect_ms : p;
 
-	return (md > 1.5 * base) || (gap >= (double) gap_thr);
+	/* Доля выбросов имеет смысл только когда подача не БЫСТРЕЕ ожидаемой:
+	 * на 1080i50 счётчик даёт 25 кадров, а в плоскость идёт 50 полей — медиана
+	 * 20 мс при ожидании 40 мс, и «выбросы» там не зажим, а поля (живой случай
+	 * `.42`, журнал §115). Зажим — это медиана не ниже базы. */
+	bool not_faster = ((double) md >= 0.75 * base);
+
+	return (md > 1.5 * base) || (not_faster && (gap >= (double) gap_thr));
 }
 
 /* Запасной источник частоты: средний интервал подачи видео-слоя. Он не зависит
@@ -4510,7 +4516,16 @@ static int run_atv14 (const platform_t *plat)
 				 * следующий vsync. На `.42` это 20 % интервалов по 80 мс при
 				 * медиане 40 мс (журнал §110). Раньше эта картина попадала в
 				 * «подача в порядке». */
-				if ((md * 8 > base * 9) || (gap >= gap_thr))
+				bool feed_not_faster = (md * 4 >= base * 3);
+
+				/* Подача вдвое ЧАЩЕ ожидания — это поля 1080i (счётчик даёт
+				 * 25 кадров, в плоскость идёт 50). Выбросы здесь считались бы
+				 * от завышенной базы и только путали: проценты не печатаем. */
+				if (!feed_not_faster)
+					trace (2, "подача в порядке: %d мс при периоде %d мс — "
+					       "вдвое чаще ожидания (%d мс), похоже на поля\n",
+					       md, pm, expect_ms);
+				else if ((md * 8 > base * 9) || (gap >= gap_thr))
 					trace (0, "подача неровная: %d мс при периоде %d мс, ожидание %d мс, выбросов %d %% — плеер, вероятно, выбрал темп при старте под другим режимом; помогает перезапуск ролика\n",
 					       md, pm, expect_ms, gap);
 				else
@@ -5484,8 +5499,22 @@ int afrd_run ()
 	if (!cfg_get (g_cfg, "switch.skip.pkg"))
 	{
 		strlist_free (&g_skip_pkgs);
-		trace (1, "switch.skip.pkg не задан — список пуст "
-		       "(зажим закрыт bump и сбросом потолка)\n");
+
+		if (g_plat.kind != PLAT_LEGACY)
+		{
+			/* OTT Navigator на Android 10+ управляет частотой сам
+			 * (Surface.setFrameRate; живая проверка `.42`: 50 -> 24 за ~8 с,
+			 * подача 50.00 к/с, 0 выбросов). Подъём и возврат демона в этом
+			 * случае только конфликтуют с приложением и дают лишние
+			 * переключения (журнал §115). На legacy (Android 6-9) своего AFR
+			 * у OTT нет — там демон им управляет как раньше. */
+			strlist_add (&g_skip_pkgs, "studio.scillarium.ottnavigator");
+			trace (1, "switch.skip.pkg не задан — OTT Navigator исключён "
+			       "(сам управляет частотой на Android 10+)\n");
+		}
+		else
+			trace (1, "switch.skip.pkg не задан — список пуст "
+			       "(зажим закрыт bump и сбросом потолка)\n");
 	}
 
 	/* switch.delay.off на новом пути значит другое (предел терпения к паузе,
@@ -5534,9 +5563,8 @@ int afrd_run ()
 	{
 		strlist_free (&g_bump_pkgs);
 		strlist_add (&g_bump_pkgs, "com.google.android.youtube.tv");
-		strlist_add (&g_bump_pkgs, "studio.scillarium.ottnavigator");
-		trace (1, "switch.bump.pkg не задан — механики зажима для штатного YouTube "
-		       "и OTT Navigator\n");
+		trace (1, "switch.bump.pkg не задан — механики зажима только для "
+		       "штатного YouTube\n");
 	}
 
 	/* Подъём режима по выходу плеера на передний план: на Android 10/11 это
