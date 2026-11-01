@@ -290,6 +290,7 @@ AFRd2 — форк AFRd (Andrey Zabolotnyi) под **GPL-3**. Размещени
 | `switch.bump` | Android 10–14 | — |
 | `switch.ceiling.reset` | Android 10–14; умолчание следует за `switch.bump`; срабатывает один раз на видео, только когда целевой режим выше режима старта | — |
 | `switch.ceiling.method` | Android 10–14; `auto` — перезапуск кодека (1.1 с) с запасным путём на плотность, `codec`, `density` | — |
+| `switch.ceiling.pkg` | Android 10–14; кому применяется сброс потолка (ключ не задан — как `switch.bump.pkg`) | — |
 | `switch.bump.on.app` | Android 10–14 | — |
 | `fps.correct.av1.pct` | Android 10–14 | — |
 | `vendor.disp.cli` | Android 10–14 | — |
@@ -307,6 +308,8 @@ AFRd2 — форк AFRd (Andrey Zabolotnyi) под **GPL-3**. Размещени
 | `fps.declared.crosscheck.pct` | Android 10–14 | — |
 | `fps.recheck.delay.ms` | Android 10–14 | — |
 | `fps.cadence.fix.ms` | Android 10–14 | — |
+| `fps.feed.ratio.pct` | Android 10–14; порог выброса подачи в % от базы (150) | — |
+| `fps.feed.gap.pct` | Android 10–14; доля выбросов, при которой подача считается неровной (10) | — |
 | `fps.prefer.api` | Android 10–14 | — |
 | `pause.keep` | Android 10–14 | — |
 | `pause.mode` | Android 10–14 | поведение на паузе одним ключом: `keep` (держать), `timeout` (держать до `switch.delay.off`, 0 — 20 000 мс), `off` (возвращать сразу); заменяет пару `pause.keep` + `switch.delay.off` |

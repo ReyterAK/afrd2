@@ -168,6 +168,20 @@ static strlist_t g_frhint_vdec_blacklist;
  * предыдущему каналу при первом срабатывании AFR). Поэтому механики
  * применяются только перечисленным пакетам; пустой список — никому. */
 static strlist_t g_bump_pkgs;
+
+/* Пакеты из switch.ceiling.pkg: кому применяется сброс «потолка» частоты.
+ * Отдельный список затем, что подъём режима (switch.bump.pkg) плееру может
+ * быть полезен, а перезапуск кодека — нет (журнал §110: OTT Navigator получает
+ * от подъёма 0.3–0.5 % вместо 20 %, а перезапуск кодека рвёт сессию, §81).
+ * Ключ не задан — список следует за switch.bump.pkg (прежнее поведение);
+ * задан пустым — сброс не применяется никому. */
+static strlist_t g_ceiling_pkgs;
+static bool g_ceiling_pkgs_given = false;
+
+/* Время подъёма режима (switch.bump) на текущем видео; 0 — подъёма не было.
+ * Нужно для строки журнала о том, сколько максимум держался до решения. */
+static unsigned long long g_bump_settle_us;
+
 /* Пакеты из switch.skip.pkg: на Android 10-14 демон их мерит и пишет в журнал,
  * но режим не переключает и не удерживает — плеер сам выбирает темп отрисовки
  * под текущий режим экрана, а удержанный низкий режим «зажимал» бы следующий
@@ -1363,6 +1377,45 @@ static bool bump_pkg_allows (const platform_t *plat, char *pkg_out, size_t sz)
 	return (rc == 0) && bump_pkg_allows_pkg (pkg);
 }
 
+/* true — этому пакету применяем сброс «потолка» (switch.ceiling.pkg).
+ * Ключ не задан — прежнее поведение: решает switch.bump.pkg. Задан (в том
+ * числе пустым) — решает только он; switch.skip.pkg блокирует и здесь. */
+static bool ceiling_pkg_allows_pkg (const char *pkg)
+{
+	if (!g_ceiling_pkgs_given)
+		return bump_pkg_allows_pkg (pkg);
+
+	if (g_ceiling_pkgs.size == 0)
+		return false;
+
+	if (!pkg || !pkg [0])
+		return false;
+
+	if ((g_skip_pkgs.size > 0) && strlist_contains (&g_skip_pkgs, pkg))
+		return false;
+
+	return strlist_contains (&g_ceiling_pkgs, pkg);
+}
+
+/* То же с определением пакета на переднем плане (как bump_pkg_allows). */
+static bool ceiling_pkg_allows (const platform_t *plat, char *pkg_out, size_t sz)
+{
+	if (pkg_out && sz)
+		pkg_out [0] = 0;
+
+	char pkg [PKG_NAME_LEN] = { 0 };
+	int rc = pkg_probe (plat, pkg, sizeof (pkg));
+
+	if (pkg_out && sz)
+	{
+		snprintf (pkg_out, sz, "%s", (rc == 0) ? pkg
+		          : (rc == -1) ? "(передний план не прочитан)"
+		                       : "(передний план не разобран)");
+	}
+
+	return (rc == 0) && ceiling_pkg_allows_pkg (pkg);
+}
+
 /* Сброс «потолка» частоты плеера (switch.ceiling.reset); определение ниже.
  * Нужен в atv14_bump: на вендорном пути режим меняется дольше, чем плеер
  * успевает зафиксировать частоту. */
@@ -1570,10 +1623,24 @@ static int atv14_bump (const platform_t *plat, int *orig_sf_id, int *cur_sf_id,
 	/* Возврат после видео — на максимум, а не на прежний режим: иначе
 	 * следующий ролик начнётся с низкого «потолка», и зажим вернётся. */
 	*orig_sf_id = bump;
+	g_bump_settle_us = now_us ();	/* для отчёта «сколько держался» */
 	trace (0, "bump: режим поднят до максимума (" HZ_FMT " Гц → " HZ_FMT
 	       " Гц) до первого кадра плеера\n",
 	       HZ_ARGS (atv14_mode_hz (plat, cur)), HZ_ARGS (atv14_mode_hz (plat, bump)));
 	return 0;
+}
+
+/* Подъём снят: решение о режиме для этого видео принято. Пишем, сколько
+ * максимум держался — цена решения видна по одной строке (журнал §110). */
+static void bump_settle_done (const char *why)
+{
+	if (!g_bump_settle_us)
+		return;
+
+	unsigned long long dt_ms = (now_us () - g_bump_settle_us) / 1000ULL;
+	g_bump_settle_us = 0;
+	trace (1, "bump: максимум держался %llu мс до решения о режиме (%s)\n",
+	       dt_ms, why);
 }
 
 /* Самый быстрый режим с нужной геометрией и частотой не ниже floor; -1 — нет.
@@ -2480,22 +2547,35 @@ static void layer_pick_cmd (char *dst, size_t size)
 	          "[ -z \"$L\" ] && exit 0; ", pkg);
 }
 
-/* Статистика подачи слоя: период дисплея, средний и медианный интервалы.
+/* Статистика подачи слоя: период дисплея, средний и медианный интервалы,
+ * p90 и доля выбросов.
  *
  * Среднее годится для оценки частоты контента (запасной источник), но не для
  * поиска «половинной подачи»: буфер SurfaceFlinger хранит и кадры ДО паузы, а
  * один провал в 28 с (пауза) даёт среднее 272 мс при фактических 42 мс — демон
  * зря переключал режим туда-обратно сразу после возобновления (живой прогон
- * `.50` 29.10, §89). Медиана такой выброс не замечает, поэтому решение
- * «подача вдвое реже» принимается по ней. */
+ * `.50` 29.10, §89). Медиана такой выброс не замечает.
+ *
+ * Доля выбросов нужна потому, что медиана не видит «рваную» подачу: на `.42`
+ * при 20 % интервалов по 80 мс медиана равна 40 мс, и проверка рапортовала
+ * «подача в порядке» (журнал §110). Выброс — интервал больше ratio % от базы,
+ * база — максимум из периода дисплея и ожидаемого интервала контента. */
 static bool atv14_layer_stats (double *period_ms, double *avg_ms, double *median_ms,
-                               int *count)
+                               double *p90_ms, double *gap_pct, int *count,
+                               int expect_ms, int ratio_pct)
 {
 	*period_ms = *avg_ms = 0.0;
 	if (median_ms)
 		*median_ms = 0.0;
+	if (p90_ms)
+		*p90_ms = 0.0;
+	if (gap_pct)
+		*gap_pct = 0.0;
 	if (count)
 		*count = 0;
+
+	if (ratio_pct <= 0)
+		ratio_pct = 150;
 
 	char out [4096];
 	char cmd [EXEC_CMD_MAX];
@@ -2504,22 +2584,26 @@ static bool atv14_layer_stats (double *period_ms, double *avg_ms, double *median
 	layer_pick_cmd (cmd, sizeof (cmd));
 	used = strlen (cmd);
 	snprintf (cmd + used, sizeof (cmd) - used,
-	          "dumpsys SurfaceFlinger --latency \"$L\" 2>/dev/null | awk '"
+	          "dumpsys SurfaceFlinger --latency \"$L\" 2>/dev/null | awk -v exp=%d -v rt=%d '"
 	          "NR==1 { p=$1/1e6; next } "
 	          "NF==3 && $2+0>0 && $2+0<1e17 { n++; t[n]=$2+0 } "
-	          "END { if (n<3) exit; m=0; s=0; "
-	          "for (i=2;i<=n;i++) { iv=(t[i]-t[i-1])/1e6; if (iv>0) { m++; s+=iv; q[m]=iv } } "
+	          "END { if (n<3) exit; m=0; s=0; lng=0; "
+	          "b=(exp>p)?exp:p; thr=b*rt/100; "
+	          "for (i=2;i<=n;i++) { iv=(t[i]-t[i-1])/1e6; "
+	          "if (iv>0) { m++; s+=iv; q[m]=iv; if (iv>thr) lng++ } } "
 	          "if (m>0) { for (i=2;i<=m;i++) { v=q[i]; for (j=i-1;(j>=1) && (q[j]>v);j--) q[j+1]=q[j]; "
 	          "q[j+1]=v } "
 	          "if (m %% 2) md=q[(m+1)/2]; else md=(q[m/2]+q[m/2+1])/2; "
-	          "printf \"%%.2f %%.2f %%.2f %%d\", p, s/m, md, m } }'");
+	          "k=int(m*9/10); if (k<1) k=1; p9=q[k]; "
+	          "printf \"%%.2f %%.2f %%.2f %%.2f %%d %%d\", p, s/m, md, p9, (lng*100)/m, m } }'",
+	          (int) expect_ms, (int) ratio_pct);
 
 	if (exec_capture (cmd, out, sizeof (out)) != 0)
 		return false;
 
-	double p = 0, a = 0, md = 0;
-	int n = 0;
-	if ((sscanf (out, "%lf %lf %lf %d", &p, &a, &md, &n) != 4) ||
+	double p = 0, a = 0, md = 0, p9 = 0;
+	int gap = 0, n = 0;
+	if ((sscanf (out, "%lf %lf %lf %lf %d %d", &p, &a, &md, &p9, &gap, &n) != 6) ||
 	    (a <= 0) || (md <= 0) || (p <= 0))
 		return false;
 
@@ -2527,25 +2611,42 @@ static bool atv14_layer_stats (double *period_ms, double *avg_ms, double *median
 	*avg_ms = a;
 	if (median_ms)
 		*median_ms = md;
+	if (p90_ms)
+		*p90_ms = p9;
+	if (gap_pct)
+		*gap_pct = (double) gap;
 	if (count)
 		*count = n;
 
 	return true;
 }
 
-static bool atv14_cadence_halved (int expect_ms, int *period_ms, int *median_ms)
+/* «Подача вдвое реже ожидаемого». Медиана ловит случай, когда медленнее ВСЯ
+ * подача; доля выбросов — когда она рваная (часть интервалов в норме, часть
+ * вдвое длиннее). Вторая картина глазом видна как рывки, а медианой не
+ * видна — на `.42` это давало 20 % провалов при вердикте «подача в порядке»
+ * (журнал §110). Порог доли — fps.feed.gap.pct (по умолчанию 10 %), порог
+ * выброса — fps.feed.ratio.pct (по умолчанию 150 % от базы). */
+static bool atv14_cadence_halved (int expect_ms, int *period_ms, int *median_ms,
+                                  int *gap_pct_out)
 {
-	double p = 0, a = 0, md = 0;
-	if (!atv14_layer_stats (&p, &a, &md, NULL))
+	double p = 0, a = 0, md = 0, p9 = 0, gap = 0;
+	int n = 0;
+	int ratio = cfg_get_int ("fps.feed.ratio.pct", 150);
+	int gap_thr = cfg_get_int ("fps.feed.gap.pct", 10);
+
+	if (!atv14_layer_stats (&p, &a, &md, &p9, &gap, &n, expect_ms, ratio))
 		return false;
 
 	*period_ms = (int) (p + 0.5);
 	*median_ms = (int) (md + 0.5);
+	(void) p9;			/* p90 для решения не нужен, но дёшев */
+	if (gap_pct_out)
+		*gap_pct_out = (int) gap;
 
-	/* Решение — по медиане: один провал в буфере (пауза) сдвигает среднее
-	 * в разы и давал ложное «вдвое реже» сразу после возобновления. */
 	double base = ((double) expect_ms > p) ? (double) expect_ms : p;
-	return (md > 1.5 * base);
+
+	return (md > 1.5 * base) || (gap >= (double) gap_thr);
 }
 
 /* Запасной источник частоты: средний интервал подачи видео-слоя. Он не зависит
@@ -2557,7 +2658,7 @@ static int atv14_layer_fps_hz (void)
 {
 	double p = 0, a = 0;
 	int n = 0;
-	if (!atv14_layer_stats (&p, &a, NULL, &n))
+	if (!atv14_layer_stats (&p, &a, NULL, NULL, NULL, &n, 0, 150))
 		return 0;
 
 	if ((n < 60) || (a <= 0.0))
@@ -2895,20 +2996,24 @@ static void ceiling_pending_step (const platform_t *plat, int cur_id, bool playi
 	if (!ceiling_should_reset (g_ceiling_hz, hz))
 		return;
 
-	/* Механики зажима — только плеерам из switch.bump.pkg (журнал §56.2):
-	 * сброс перезапускает кодек и рвёт сессию декодера, а плееру с собственным
-	 * AFR это даёт ошибки и замирание картинки (живой случай 2026-10-28 на
-	 * `.50`, журнал §81). Решение кэшируется на видео (см. g_ceiling_allowed). */
+	/* Механики зажима — только плеерам из своего списка: switch.ceiling.pkg,
+	 * а если ключ не задан — switch.bump.pkg (журнал §56.2, §110). Сброс
+	 * перезапускает кодек и рвёт сессию декодера, а плееру с собственным AFR
+	 * это даёт ошибки и замирание картинки (живой случай 2026-10-28 на `.50`,
+	 * журнал §81). Решение кэшируется на видео (см. g_ceiling_allowed). */
 	if (g_ceiling_allowed < 0)
 	{
 		char pkg [PKG_NAME_LEN] = { 0 };
-		g_ceiling_allowed = bump_pkg_allows (plat, pkg, sizeof (pkg)) ? 1 : 0;
+		g_ceiling_allowed = ceiling_pkg_allows (plat, pkg, sizeof (pkg)) ? 1 : 0;
 		if (!g_ceiling_allowed)
 		{
-			if (g_bump_pkgs.size == 0)
-				trace (1, "потолок: switch.bump.pkg пуст — не сбрасываю\n");
+			const char *list = g_ceiling_pkgs_given ? "switch.ceiling.pkg"
+			                                       : "switch.bump.pkg";
+			if (g_ceiling_pkgs_given ? (g_ceiling_pkgs.size == 0)
+			                         : (g_bump_pkgs.size == 0))
+				trace (1, "потолок: %s пуст — не сбрасываю\n", list);
 			else
-				trace (1, "потолок: %s не в switch.bump.pkg — не сбрасываю\n", pkg);
+				trace (1, "потолок: %s не в %s — не сбрасываю\n", pkg, list);
 		}
 	}
 	if (!g_ceiling_allowed)
@@ -4285,9 +4390,10 @@ static int run_atv14 (const platform_t *plat)
 				}
 			}
 
-			int pm = 0, md = 0;
+			int pm = 0, md = 0, gap = 0;
+			int gap_thr = cfg_get_int ("fps.feed.gap.pct", 10);
 			int expect_ms = cadence_expect_ms;
-			if (atv14_cadence_halved (expect_ms, &pm, &md))
+			if (atv14_cadence_halved (expect_ms, &pm, &md, &gap))
 			{
 				/* Ровно эта ситуация была в журнале тестера (§87.4): подача
 				 * вдвое реже решения по счётчику. Печатаем оба числа и
@@ -4317,8 +4423,8 @@ static int run_atv14 (const platform_t *plat)
 				{
 					cadence_fixes++;
 					cadence_heal_wait = true;
-					trace (0, "подача вдвое реже ожидаемого (%d мс при периоде %d мс, ожидание %d мс) — переключаю режим туда-обратно (лечение %d)\n",
-					       md, pm, expect_ms, cadence_fixes);
+					trace (0, "подача вдвое реже ожидаемого (%d мс при периоде %d мс, ожидание %d мс, выбросов %d %%) — переключаю режим туда-обратно (лечение %d)\n",
+					       md, pm, expect_ms, gap, cadence_fixes);
 					if (atv14_apply_mode (plat, back, "лечение подачи: возврат") == 0)
 					{
 						msleep (200);
@@ -4342,8 +4448,8 @@ static int run_atv14 (const platform_t *plat)
 						cadence_heal_useless = true;
 					}
 
-					trace (0, "подача вдвое реже ожидаемого (%d мс при периоде %d мс, ожидание %d мс) — лечение не применяю%s\n",
-					       md, pm, expect_ms,
+					trace (0, "подача вдвое реже ожидаемого (%d мс при периоде %d мс, ожидание %d мс, выбросов %d %%) — лечение не применяю%s\n",
+					       md, pm, expect_ms, gap,
 					       cadence_heal_useless
 					       ? " (переключение уже пробовали — подача не изменилась)"
 					       : (want_sf_id < 0)
@@ -4365,15 +4471,18 @@ static int run_atv14 (const platform_t *plat)
 				 * ролик 60 fps, стартовавший под 50 Гц, давал 50.28 к/с
 				 * (20 мс при ожидании 17, то есть 1.18×).
 				 *
-				 * Смешанная картина (часть интервалов в норме, часть
-				 * растянута) медианой не видна — она и не должна вести к
-				 * переключению: это темп плеера, а не дисплея. */
-				if (md * 8 > base * 9)
-					trace (0, "подача неровная: %d мс при периоде %d мс, ожидание %d мс — плеер, вероятно, выбрал темп при старте под другим режимом; помогает перезапуск ролика\n",
-					       md, pm, expect_ms);
+				 * Рваная подача (медиана в норме, но доля выбросов выше
+				 * fps.feed.gap.pct) — та же болезнь: плеер держит темп от
+				 * старта под другим режимом, и часть кадров приходит на
+				 * следующий vsync. На `.42` это 20 % интервалов по 80 мс при
+				 * медиане 40 мс (журнал §110). Раньше эта картина попадала в
+				 * «подача в порядке». */
+				if ((md * 8 > base * 9) || (gap >= gap_thr))
+					trace (0, "подача неровная: %d мс при периоде %d мс, ожидание %d мс, выбросов %d %% — плеер, вероятно, выбрал темп при старте под другим режимом; помогает перезапуск ролика\n",
+					       md, pm, expect_ms, gap);
 				else
-					trace (2, "подача в порядке: %d мс при периоде %d мс, ожидание %d мс\n",
-					       md, pm, expect_ms);
+					trace (2, "подача в порядке: %d мс при периоде %d мс, ожидание %d мс, выбросов %d %%\n",
+					       md, pm, expect_ms, gap);
 			}
 cadence_done: ;
 		}
@@ -4556,6 +4665,7 @@ cadence_done: ;
 							trace (1, "быстрое решение: заявлено %u fps — "
 							       "режим " HZ_FMT " Гц уже стоит, не трогаю\n",
 							       v0.decl_fps, HZ_ARGS (atv14_mode_hz (plat, did)));
+							bump_settle_done ("быстрое решение");
 						}
 						else
 						{
@@ -4584,6 +4694,7 @@ cadence_done: ;
 								}
 								trace (0, "быстрое решение по заявленной частоте: %u fps — "
 								       "режим применён сразу, замер проверит\n", v0.decl_fps);
+								bump_settle_done ("быстрое решение");
 							}
 							else
 							{
@@ -5025,6 +5136,10 @@ cadence_done: ;
 
 		act = guard_decide (video_eff, want_sf_id, cur_sf_id, &orig_sf_id, &held);
 
+		/* Решение о режиме принято, менять нечего — подъём снят. */
+		if ((act == GUARD_NONE) && (want_sf_id >= 0))
+			bump_settle_done ("цель совпала с текущим режимом");
+
 		/* Цель возврата после видео: id, который был на экране до нашего
 		 * переключения (его запомнил guard_decide в orig_sf_id), а не
 		 * preferred_id из dumpsys display. preferred_id — нумерация
@@ -5067,6 +5182,9 @@ cadence_done: ;
 				vendor_frac_check_after_apply ();
 				if (burst_running (&g_burst))
 					burst_notify ("switched");
+				/* Режим применён по решению: максимум после bump больше не
+				 * держим (журнал §110). */
+				bump_settle_done ("замер");
 			}
 			if (apply_rc != 0)
 			{
@@ -5745,6 +5863,10 @@ int afrd_init ()
 	mode_min_hz_load ("mode.min.hz.list");
 	strlist_load (&g_skip_pkgs, "switch.skip.pkg", "packages: no mode switching");
 	strlist_load (&g_bump_pkgs, "switch.bump.pkg", "packages: clamp fix");
+	/* Отдельный список для сброса потолка: ключ не задан — решает
+	 * switch.bump.pkg (прежнее поведение); задан — только он. */
+	g_ceiling_pkgs_given = strlist_load (&g_ceiling_pkgs, "switch.ceiling.pkg",
+	                                     "packages: ceiling reset");
 
 	trace (1, "\trefresh rate selection: use fractional %d, exact %d\n",
 		g_mode_use_fract, g_mode_prefer_exact);
@@ -5828,6 +5950,8 @@ void afrd_fini ()
 	strlist_free (&g_frhint_vdec_blacklist);
 	strlist_free (&g_skip_pkgs);
 	strlist_free (&g_bump_pkgs);
+	strlist_free (&g_ceiling_pkgs);
+	g_ceiling_pkgs_given = false;
 	g_mode_blacklist_rates_count = 0;
 
 	g_enable = false;
