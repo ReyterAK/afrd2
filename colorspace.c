@@ -289,6 +289,50 @@ static bool colorspace_supported (struct colorspace_t *cs)
 	return false;
 }
 
+/*
+ * Правило может задавать только формат: глубину демон берёт текущую (её
+ * выставляет система после смены режима). Если такой комбинации у ТВ нет —
+ * EDID перечисляет форматы по глубинам, например 4:2:2 только в 12 битах, —
+ * вендор молча оставит прежний формат. Подбираем глубину из заявленных для
+ * этого формата: ближайшую к текущей (если 8 и 12 бит, а сейчас 10 — 8 бит,
+ * а не 12). Диапазон правила не трогаем: он почти никогда не задан, а если
+ * задан — проверяется colorspace_supported().
+ */
+static bool colorspace_fit_depth (struct colorspace_t *cs)
+{
+	int best = -1, best_diff = 0;
+
+	if (cs->cs == COLORSPACE_RESERVED)
+		return false;
+
+	for (int i = 0; i < g_cs_supported_size; i++) {
+		struct colorspace_t *scs = &g_cs_supported [i];
+
+		if ((scs->cs != COLORSPACE_RESERVED) && (scs->cs != cs->cs))
+			continue;
+
+		if ((scs->cr != COLORRANGE_RESERVED) && (cs->cr != COLORRANGE_RESERVED) &&
+		    (scs->cr != cs->cr))
+			continue;
+
+		/* узел не ограничивает глубину — текущая подходит */
+		if (scs->cd == COLORDEPTH_RESERVED)
+			return true;
+
+		int diff = abs ((int) scs->cd - (int) cs->cd);
+		if ((best < 0) || (diff < best_diff)) {
+			best = i;
+			best_diff = diff;
+		}
+	}
+
+	if (best < 0)
+		return false;
+
+	cs->cd = g_cs_supported [best].cd;
+	return true;
+}
+
 bool colorspace_apply (const char *mode)
 {
 	if (!g_cs_list_path || !g_cs_path)
@@ -331,18 +375,38 @@ bool colorspace_apply (const char *mode)
 		if (match [0].rm_so != 0 || match [0].rm_eo != strlen (mode))
 			continue;
 
-		if (!colorspace_supported (&csf->cs)) {
-			trace (2, "Not using color space %s because not supported\n",
-				colorspace_str (&csf->cs));
-			continue;
+		/* Итоговая комбинация: правило поверх текущего значения. Проверять
+		 * только само правило нельзя — глубина в нём обычно не задана, а
+		 * формат без глубины у ТВ может отсутствовать. */
+		struct colorspace_t want = cur_cs;
+		if (csf->cs.cs != COLORSPACE_RESERVED)
+			want.cs = csf->cs.cs;
+		if (csf->cs.cd != COLORDEPTH_RESERVED)
+			want.cd = csf->cs.cd;
+		if (csf->cs.cr != COLORRANGE_RESERVED)
+			want.cr = csf->cs.cr;
+
+		if (!colorspace_supported (&want)) {
+			/* Глубину подбираем, только если правило её не задаёт: иначе
+			 * комбинацию выбрал пользователь и молча менять её нельзя. */
+			struct colorspace_t fit = want;
+			if ((csf->cs.cd != COLORDEPTH_RESERVED) ||
+			    !colorspace_fit_depth (&fit)) {
+				trace (2, "Not using color space %s because not supported\n",
+					colorspace_str (&csf->cs));
+				continue;
+			}
+
+			/* colorspace_str() возвращает общий буфер: второй вызов в том же
+			 * trace() затёр бы первый, поэтому строку копируем. */
+			char fit_str [64];
+			snprintf (fit_str, sizeof (fit_str), "%s", colorspace_str (&fit));
+			trace (2, "формат %s в текущей глубине не заявлен — беру %s\n",
+				colorspace_str (&csf->cs), fit_str);
+			want = fit;
 		}
 
-		if (csf->cs.cs != COLORSPACE_RESERVED)
-			cur_cs.cs = csf->cs.cs;
-		if (csf->cs.cd != COLORDEPTH_RESERVED)
-			cur_cs.cd = csf->cs.cd;
-		if (csf->cs.cr != COLORRANGE_RESERVED)
-			cur_cs.cr = csf->cs.cr;
+		cur_cs = want;
 		goto apply;
 	}
 

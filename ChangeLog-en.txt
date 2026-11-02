@@ -37,6 +37,23 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
     * "About": the "Testers" field is back (as in the original AFRd) —
       Acorn@4PDA, SlimHouse@4PDA.
 
+    * "HDMI format" (cs.select) supports YUV 4:2:2 and 4:2:0 again: the list
+      of items is built from what the TV reports (the dc_cap node) instead of
+      the fixed "Auto / RGB / YUV 4:4:4" set of 1.1.0. The daemon checks a
+      rule against the same node and silently skips a format missing there,
+      so an item "just in case" cannot be shown. On ATV14 and ATV9 the list
+      became "Auto / YUV 4:4:4 / YUV 4:2:2 / RGB" (ATV14 reports 4:2:2 in
+      12-bit only, ATV9 in 8-bit); picking 4:2:2 writes
+      "2160p[4-9].*=420 .*=422", the 4K bandwidth guard stays the first rule.
+      The daemon now fits the depth to the EDID: a rule names the format, and
+      when the current depth is not advertised for it (the system leaves 8-bit
+      after a mode switch), the nearest advertised one is used -- 4:2:2 becomes
+      422,12bit, not 422,8bit which the TV does not have; a depth pinned in the
+      rule itself is never overridden. An unreadable node falls back to the old
+      static set. A custom rule from
+      1.0.x (… .*=422) is still shown as "Custom rules: …" and is not
+      overwritten.
+
     * The "auto" fractional rate policy (mode.use.fract=0) is real now on
       Android 10-14: an integer rate is used only when the source declared an
       integer one (player hint frame_rate_hint — 24.000 vs 23.976, or the

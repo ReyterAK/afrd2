@@ -29,6 +29,7 @@ run test_hdrinfo hdrinfo.c exec.c tests/stub.c
 run test_ceiling ceiling.c
 run test_vinfo vinfo.c
 run test_burst burst.c
+run test_colorspace colorspace.c
 
 # Проверки по исходникам и данным, а не по коду на C: согласованность версии
 # во всех местах, где она записана, формат ЧАВО, контракт запуска Magisk-модуля,
@@ -46,6 +47,7 @@ mkdir -p out/host-tests/java
 	android/app/src/main/java/ru/cobra/zap/afrd/PkgValues.java \
 	android/app/src/main/java/ru/cobra/zap/afrd/Seed.java \
 	android/app/src/main/java/ru/cobra/zap/afrd/RateList.java \
+	android/app/src/main/java/ru/cobra/zap/afrd/CsFormats.java \
 	android/app/src/main/java/ru/cobra/zap/afrd/CsPolicy.java \
 	tests/PkgValuesTest.java tests/SeedTest.java \
 	tests/RateListTest.java tests/CsPolicyTest.java && {
