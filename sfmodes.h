@@ -81,4 +81,8 @@ int sfmodes_current_hz (const sf_mode_t *modes, int n, int id);
  * не «поправляйте» код под слово «только если» выше. */
 int sfmodes_restore_target (const sf_mode_t *modes, int n, int preferred_id, int cur_id);
 
+/* Промежуточный режим для повтора неприменённого: тот же экран, частота вдвое
+ * выше целевой (25 -> 50, 30 -> 60); -1, если такого нет. */
+int sfmodes_pick_intermediate (const sf_mode_t *modes, int n, int target_id);
+
 #endif

@@ -198,6 +198,43 @@ int sfmodes_current_hz (const sf_mode_t *modes, int n, int id)
 	return 0;
 }
 
+/* Промежуточный режим для повтора после неприменённого: тот же экран, частота
+ * вдвое выше целевой (25 -> 50, 30 -> 60). Живой случай 02.11 (бокс тестера,
+ * ATV14): переход 60 -> 25 не применялся (телевизор оставался без сигнала), а
+ * 50 -> 25 — применялся. Возврат: id промежуточного режима или -1. */
+int sfmodes_pick_intermediate (const sf_mode_t *modes, int n, int target_id)
+{
+	const sf_mode_t *tgt = NULL;
+	for (int i = 0; i < n; i++)
+		if (modes [i].id == target_id)
+		{
+			tgt = &modes [i];
+			break;
+		}
+
+	if (!tgt)
+		return -1;
+
+	int want = tgt->hz * 2;
+
+	/* сначала точное удвоение, потом с допуском: 59.94 и 60.000 — разные
+	 * режимы, и для 30 Гц промежуточным должен быть 60.000, а не 59.94 */
+	for (int i = 0; i < n; i++)
+		if ((modes [i].width == tgt->width) && (modes [i].height == tgt->height) &&
+		    (modes [i].hz == want))
+			return modes [i].id;
+
+	for (int i = 0; i < n; i++)
+	{
+		if (modes [i].width != tgt->width || modes [i].height != tgt->height)
+			continue;
+		if (abs (modes [i].hz - want) <= SF_HZ_TOL)
+			return modes [i].id;
+	}
+
+	return -1;
+}
+
 int sfmodes_restore_target (const sf_mode_t *modes, int n, int preferred_id, int cur_id)
 {
 	/* Проверить id по таблице нечем — возвращаем cur, он ближе к тому,

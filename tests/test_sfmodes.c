@@ -43,6 +43,15 @@ static void test_synthetic (void)
 	assert (sfmodes_find_hz (modes, n, 6138) == 6);
 	assert (sfmodes_find_hz (modes, n, 50 * 256) == 2);
 	assert (sfmodes_find_hz (modes, n, 100 * 256) == -1);	/* 100 Гц нет, допуск 0.125 Гц -> -1 */
+
+	/* Промежуточный режим для повтора неприменённого: удвоение цели, тот же
+	 * экран. Живой случай 02.11 (бокс тестера): 60 -> 25 не применился,
+	 * 50 -> 25 применился — поэтому повтор идёт через 50. */
+	assert (sfmodes_pick_intermediate (modes, n, 5) == 2);	/* 25 -> 50 */
+	assert (sfmodes_pick_intermediate (modes, n, 4) == 1);	/* 30 -> 60 */
+	assert (sfmodes_pick_intermediate (modes, n, 7) == -1);	/* 24: 48 Гц нет */
+	assert (sfmodes_pick_intermediate (modes, n, 8) == -1);	/* 720p: 119.88 нет */
+	assert (sfmodes_pick_intermediate (modes, n, 99) == -1);	/* такого id нет */
 }
 
 /* Живой дамп стенда ATV14 (Amlogic S905X5M, Android 14), снятый ровно той

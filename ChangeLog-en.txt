@@ -70,10 +70,11 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       SurfaceFlinger/HDMI does not take the requested mode (live case 02.11,
       tester box X5/ATV14: a 25 fps channel asked for 2160p25, the kernel stayed
       at 60 Hz and the TV showed "no signal"), the daemon confirms the mismatch
-      by re-reading vinfo after 800 ms, retries the mode once "there and back"
-      (re-issuing the same id does not rebuild the vsync path) and, if that
-      fails, restores the original mode together with the color profile and
-      stops switching until the end of the video.
+      by re-reading vinfo after 800 ms, retries the mode through the double
+      rate (25 -> 50: on the tester's box 60 -> 25 did not apply while 50 -> 25
+      did) and, if that fails, keeps the double rate (50 Hz for 25 fps is
+      smoother than 60) or restores the original mode together with the color
+      profile; no more switching until the end of the video.
 
     * The "auto" fractional rate policy (mode.use.fract=0) is real now on
       Android 10-14: an integer rate is used only when the source declared an

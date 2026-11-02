@@ -3572,6 +3572,8 @@ static int run_atv14 (const platform_t *plat)
 	/* Проверка фактической частоты: 0 — не было расхождения, 1 — ждём
 	 * подтверждения повторным чтением, 2 — режим уже повторяли */
 	int vinfo_state = 0;
+	/* Промежуточный режим, через который повторяли неприменённый (удвоение) */
+	int vinfo_mid = -1;
 	/* Текущий заход hdrinfo_timer — только повторное чтение vinfo (без
 	 * повторного разбора HDR-атрибутов) */
 	bool vinfo_confirm = false;
@@ -4234,6 +4236,7 @@ static int run_atv14 (const platform_t *plat)
 				mstime_disable (&hdrinfo_timer);
 				vinfo_state = 0;
 				vinfo_confirm = false;
+				vinfo_mid = -1;
 				/* плеер нового видео может быть другим — поправку
 				 * (fps.correct.list) берём заново */
 				pkg_probed = false;
@@ -4435,6 +4438,7 @@ static int run_atv14 (const platform_t *plat)
 			mstime_disable (&hdrinfo_timer);
 			vinfo_state = 0;
 			vinfo_confirm = false;
+			vinfo_mid = -1;
 			counter_last_grow_us = 0;
 			counter_stall_logged = false;
 			crosscheck_logged = false;
@@ -4485,12 +4489,31 @@ static int run_atv14 (const platform_t *plat)
 				{
 					vinfo_state = 2;
 
-					trace (0, "частота не применилась — повторяю режим id %d\n",
-					       cur_sf_id);
+					/* Промежуточный режим — удвоение цели (25 -> 50). Живой
+					 * случай 02.11 (бокс тестера): переход 60 -> 25 не
+					 * применялся, а 50 -> 25 — применялся. Таблица режимов
+					 * SurfaceFlinger есть только на новом пути; на вендорском
+					 * идём через исходный режим, как раньше. */
+					vinfo_mid = (plat->sink == SINK_VENDOR_MODE)
+					          ? -1
+					          : sfmodes_pick_intermediate (g_sf_modes, g_sf_modes_n,
+					                                       cur_sf_id);
+					if ((vinfo_mid < 0) || (vinfo_mid == cur_sf_id))
+						vinfo_mid = orig_sf_id;
+					if (vinfo_mid == cur_sf_id)
+						vinfo_mid = -1;
+
+					if (vinfo_mid >= 0)
+						trace (0, "частота не применилась — повторяю режим id %d через id %d\n",
+						       cur_sf_id, vinfo_mid);
+					else
+						trace (0, "частота не применилась — повторяю режим id %d\n",
+						       cur_sf_id);
+
 					colorspace_hold (true);
-					if ((orig_sf_id >= 0) && (orig_sf_id != cur_sf_id))
-						atv14_apply_mode (plat, orig_sf_id,
-						                  "повтор: возврат перед переприменением");
+					if (vinfo_mid >= 0)
+						atv14_apply_mode (plat, vinfo_mid,
+						                  "повтор: промежуточный режим");
 					int rc = atv14_apply_mode (plat, cur_sf_id,
 					                           "повтор: частота не применилась");
 					colorspace_hold (false);
@@ -4507,17 +4530,37 @@ static int run_atv14 (const platform_t *plat)
 
 				if (!retry_ok)
 				{
-					trace (0, "частота не применилась повторно — возвращаю режим\n");
-					measure_failed = true;
-					vinfo_state = 0;
+					int mid_hz = (vinfo_mid >= 0)
+					           ? sfmodes_current_hz (g_sf_modes, g_sf_modes_n, vinfo_mid)
+					           : 0;
 
-					if (held &&
-					    (atv14_restore_mode (plat, orig_sf_id,
-					                         "частота не применилась") == 0))
+					/* Если удалось остаться на удвоении (25 -> 50), оставляем
+					 * его: 50 Гц для 25-к/с контента ровнее исходных 60 с
+					 * рваной подачей, а главное — экран сохраняет сигнал.
+					 * Иначе возвращаем исходный режим и профиль. */
+					if ((plat->sink != SINK_VENDOR_MODE) && (mid_hz > 0) &&
+					    (vhz == mid_hz))
 					{
-						cur_sf_id = orig_sf_id;
-						orig_sf_id = -1;
-						held = false;
+						trace (0, "целевая частота не применилась — оставляю "
+						       HZ_FMT " Гц (удвоение)\n", HZ_ARGS (mid_hz));
+						cur_sf_id = vinfo_mid;
+						vinfo_state = 0;
+						measure_failed = true;
+					}
+					else
+					{
+						trace (0, "частота не применилась повторно — возвращаю режим\n");
+						vinfo_state = 0;
+						measure_failed = true;
+
+						if (held &&
+						    (atv14_restore_mode (plat, orig_sf_id,
+						                         "частота не применилась") == 0))
+						{
+							cur_sf_id = orig_sf_id;
+							orig_sf_id = -1;
+							held = false;
+						}
 					}
 				}
 			}
@@ -5572,6 +5615,7 @@ cadence_done: ;
 				hdrinfo_armed = true;
 				vinfo_state = 0;
 				vinfo_confirm = false;
+				vinfo_mid = -1;
 
 				/* Режим применён на живом видео. Если на момент старта
 				 * ролика режим был ниже целевого, плеер мог запомнить
