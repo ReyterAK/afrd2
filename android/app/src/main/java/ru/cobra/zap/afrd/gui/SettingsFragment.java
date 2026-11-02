@@ -36,6 +36,7 @@ import java.util.Vector;
 
 import ru.cobra.zap.afrd.Apps;
 import ru.cobra.zap.afrd.Control;
+import ru.cobra.zap.afrd.CsFormats;
 import ru.cobra.zap.afrd.CsPolicy;
 import ru.cobra.zap.afrd.PkgValues;
 import ru.cobra.zap.afrd.RateList;
@@ -404,17 +405,31 @@ public class SettingsFragment extends PreferenceFragment
         b.show ();
     }
 
-    /* Подписи пунктов «Формат HDMI» — по порядку значений CsPolicy.VALUES. */
-    private static final int [] kCsLabels =
+    /* Подпись пункта по его значению: список строится из возможностей ТВ, и
+     * позиции в нём не фиксированы. */
+    private int csLabel (String value)
     {
-        R.string.cs_policy_auto, R.string.cs_policy_rgb, R.string.cs_policy_yuv444,
-    };
+        if (value.equals (CsPolicy.BASE_4K))
+            return R.string.cs_policy_auto;
+        if (value.endsWith ("=rgb"))
+            return R.string.cs_policy_rgb;
+        if (value.endsWith ("=444"))
+            return R.string.cs_policy_yuv444;
+        if (value.endsWith ("=422"))
+            return R.string.cs_policy_yuv422;
+        if (value.endsWith ("=420"))
+            return R.string.cs_policy_yuv420;
+
+        return 0;
+    }
 
     /* Настройка «Формат HDMI»: пользователь выбирает политику, а в cs.select
-     * уходит правило (значения — CsPolicy.VALUES, те же, что в arrays.xml).
-     * Раньше это было текстовое поле с регулярными выражениями: чтобы поменять
-     * формат, надо было знать и синтаксис правил, и то, что правило защиты
-     * полосы 4K трогать нельзя. */
+     * уходит правило. Список — по узлу dc_cap: только те форматы, которые ТВ
+     * реально поддерживает (демон сверяет правило с этим же узлом и молча
+     * пропускает остальные). Узел не прочитался — прежний статический набор
+     * CsPolicy.VALUES. Раньше это было текстовое поле с регулярными
+     * выражениями: чтобы поменять формат, надо было знать и синтаксис правил,
+     * и то, что правило защиты полосы 4K трогать нельзя. */
     private void setupCsPref ()
     {
         Preference p = findPreference ("cs_select");
@@ -423,14 +438,16 @@ public class SettingsFragment extends PreferenceFragment
 
         XListPreference pref = (XListPreference) p;
         String value = pref.getValue ();
-        int idx = CsPolicy.indexOf (value);
+        List<String> valuesList = CsPolicy.valuesFor (CsFormats.parse (CsFormats.read ()));
+        int idx = CsPolicy.indexOf (value, valuesList);
 
         List<CharSequence> entries = new ArrayList<> ();
         List<CharSequence> values = new ArrayList<> ();
-        for (int i = 0; i < CsPolicy.VALUES.length; i++)
+        for (String v : valuesList)
         {
-            entries.add (getString (kCsLabels [i]));
-            values.add (CsPolicy.VALUES [i]);
+            int label = csLabel (v);
+            entries.add (label != 0 ? getString (label) : v);
+            values.add (v);
         }
 
         /* Значение не из списка (правка ini руками или текст, оставшийся от

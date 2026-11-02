@@ -212,6 +212,13 @@
 ! returns the previous behaviour. The 4K bandwidth rule (4:2:0 is kept there)
 ! is preserved in every item.
 
+! The list is built from the TV capabilities (the dc_cap node): only formats
+! declared in EDID are shown, so YUV 4:2:2 appears when the TV supports it.
+! Formats are not offered "just in case": the daemon would skip an
+! The depth is taken from dc_cap as well: if 4:2:2 is declared in 12-bit
+! only, the daemon writes 422,12bit instead of 422 on top of the current
+! 8-bit; a depth stated explicitly in a custom rule is never overridden.
+
 ! At 4k resolution and 40 Hz or above an RGB stream cannot be transmitted
 ! over an HDMI link - 4:2:0 is kept there in every item; that is a property
 ! of the link, not a setting.

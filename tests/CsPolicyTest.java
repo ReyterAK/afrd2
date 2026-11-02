@@ -55,6 +55,34 @@ public class CsPolicyTest
         eq ("null", CsPolicy.indexOf (null), -1);
         eq ("вне диапазона", CsPolicy.valueAt (99), null);
 
+        /* Список по возможностям ТВ (dc_cap): сворачиваем комбинации
+         * «формат,глубина» в форматы, сохраняя порядок узла, и строим по
+         * каждому пункт с защитой 4K. */
+        List<String> caps = CsFormats.parse ("444,12bit\n444,10bit\n"
+            + "422,12bit\nrgb,12bit\nrgb,8bit\n");
+        eq ("dc_cap: форматы", caps.toString (), "[444, 422, rgb]");
+
+        List<String> dyn = CsPolicy.valuesFor (caps);
+        eq ("динамических пунктов", dyn.size (), 4);
+        eq ("динамический 0", dyn.get (0), CsPolicy.BASE_4K);
+        eq ("динамический 444", dyn.get (1), CsPolicy.BASE_4K + " .*=444");
+        eq ("динамический 422", dyn.get (2), CsPolicy.BASE_4K + " .*=422");
+        eq ("динамический rgb", dyn.get (3), CsPolicy.BASE_4K + " .*=rgb");
+        for (String v : dyn)
+            eq ("4K-защита в [" + v + "]", v.startsWith (CsPolicy.BASE_4K), true);
+
+        /* Индекс считается по тому же списку, который показан. */
+        eq ("индекс 422", CsPolicy.indexOf (CsPolicy.BASE_4K + " .*=422", dyn), 2);
+        eq ("индекс чужого", CsPolicy.indexOf ("1080p.*=rgb", dyn), -1);
+
+        /* Без узла — прежний статический набор. */
+        eq ("пустой dc_cap", CsPolicy.valuesFor (new java.util.ArrayList<String> ()),
+            java.util.Arrays.asList (CsPolicy.VALUES));
+
+        /* Незнакомый демону формат не показываем и не путаем с известным. */
+        eq ("незнакомый формат", CsFormats.parse ("yuv420,8bit\n444,8bit").toString (),
+            "[444]");
+
         /* Подписи и значения пунктов списка живут в arrays.xml, а логика — здесь:
          * разойдись они, строка настроек показывала бы один формат, а в конфиг
          * уходил другой. Списки сверяются как множества. */
