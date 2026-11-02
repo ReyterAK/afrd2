@@ -50,6 +50,8 @@
         info (such as 1080p25hz etc)
     </string>
     <string name="prefs_cs_select">HDMI format (color space)</string>
+    <string name="prefs_cs_restore">Restore the color profile</string>
+    <string name="prefsum_cs_restore">When the mode is returned, write back the format that was in effect before the switch; otherwise the selected format stays in place after the video ends.</string>
     <string name="prefsum_cs_select">Which format to send to the TV. RGB helps with green-ish image
         and black screens, but does not fit the HDMI bandwidth at 4K 50/60Hz — there 4:2:0 is kept
     </string>

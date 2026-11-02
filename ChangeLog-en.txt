@@ -54,6 +54,18 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       1.0.x (… .*=422) is still shown as "Custom rules: …" and is not
       overwritten.
 
+    * "Restore the color profile" (cs.restore, default 1): when the daemon
+      returns the mode (video ended, player left the foreground) it writes back
+      the format that was in effect before the switch. Otherwise a broad rule
+      (.*=422) stays on the desktop too and interface text is smeared over
+      chroma. The value before the first change is remembered (not the one
+      present at daemon start: a previous session could have left its format).
+      On ATV14 the current value is read by the vendor client
+      (-g "HDMI Color ATTR"), because the attr node does not reflect what the
+      client set; on the legacy path it comes from cs.path. The restore uses
+      the same event as the mode return, and cs.select rules are not applied
+      on that switch, so the format is not written twice.
+
     * The "auto" fractional rate policy (mode.use.fract=0) is real now on
       Android 10-14: an integer rate is used only when the source declared an
       integer one (player hint frame_rate_hint — 24.000 vs 23.976, or the

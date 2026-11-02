@@ -105,6 +105,24 @@ void colorspace_set_apply_cmd (const char *cmd_prefix)
 {
 	g_cs_apply_cmd = (cmd_prefix && cmd_prefix [0]) ? cmd_prefix : NULL;
 }
+
+/* Чем читать текущее значение. На ATV14 узел attr не отражает то, что
+ * выставил вендорский клиент (проверено 02.11 на .50: запись 422,12bit, а в
+ * узле остаётся 444,12bit), поэтому там читаем клиентом (-g). NULL — sysfs. */
+static const char *g_cs_get_cmd;
+
+void colorspace_set_get_cmd (const char *cmd)
+{
+	g_cs_get_cmd = (cmd && cmd [0]) ? cmd : NULL;
+}
+
+/* Профиль, который был до первого изменения в текущем сеансе AFR: его
+ * возвращаем, когда режим возвращается (cs.restore). */
+static char *g_cs_before;
+/* cs.restore: 1 — возвращать профиль на выходе */
+static int g_cs_restore = 1;
+/* не применять правила: идёт возврат режима, за ним последует восстановление */
+static bool g_cs_hold;
 static bool g_override_cs_enabled = false;
 
 static bool parse_str (const char *str, int *val, struct parse_list *list)
@@ -174,6 +192,63 @@ static const char *colorspace_str (struct colorspace_t *cs)
 
 	tmp [len] = 0;
 	return tmp;
+}
+
+/* Разбор строки без её изменения: colorspace_parse() режет строку на токены
+ * (strtok_r), а значение из конфига/узла может понадобиться ещё раз. */
+static void colorspace_parse_copy (const char *str, struct colorspace_t *cs)
+{
+	char buf [64];
+
+	if (!str)
+		return;
+
+	snprintf (buf, sizeof (buf), "%s", str);
+	colorspace_parse (buf, cs, false);
+}
+
+/* Текущее значение цветового пространства: вендорским клиентом, если он есть,
+ * иначе из узла cs.path. Возвращает malloc-строку или NULL. */
+static char *colorspace_read_current (void)
+{
+	if (g_cs_get_cmd)
+	{
+		char out [128];
+		if (exec_capture (g_cs_get_cmd, out, sizeof (out)) == 0)
+		{
+			char *eol = strpbrk (out, "\r\n");
+			if (eol)
+				*eol = 0;
+			if (out [0])
+				return strdup (out);
+		}
+	}
+
+	return sysfs_read (g_cs_path);
+}
+
+/* Записать значение: sysfs-узел (legacy) или вендорский клиент (Android 10+). */
+static bool colorspace_write (const char *attr)
+{
+	if (!g_cs_apply_cmd)
+		return sysfs_write (g_cs_path, attr) == 0;
+
+	char cmd [256], out [512];
+	if (snprintf (cmd, sizeof (cmd), "%s '%s'", g_cs_apply_cmd, attr) >= (int) sizeof (cmd))
+		return false;
+
+	if (exec_capture (cmd, out, sizeof (out)) != 0)
+		return false;
+
+	/* Вендорский клиент печатает "set <attr> to <value>, current value:<value>"
+	 * при успехе; на ошибке этого текста нет. */
+	if (!strstr (out, "current value:"))
+	{
+		trace (1, "цветовое пространство не применилось: %s\n", out);
+		return false;
+	}
+
+	return true;
 }
 
 static bool colorspace_parse_filter (const char *csel)
@@ -338,20 +413,32 @@ bool colorspace_apply (const char *mode)
 	if (!g_cs_list_path || !g_cs_path)
 		return false;
 
+	/* Идёт возврат режима: правила на этом переключении не применяем, иначе
+	 * широкое правило (`.*=422`) снова поставило бы свой формат, а сразу за
+	 * возвратом мы восстановим профиль, который был до AFR. */
+	if (g_cs_hold)
+	{
+		trace (2, "цветовое пространство: идёт возврат режима — правило не применяю\n");
+		return false;
+	}
+
 	const char *cs_attr;
 
 	/* default colorspace parameters */
 	struct colorspace_t def_cs = {COLORSPACE_YUV444, COLORDEPTH_24B, COLORRANGE_FUL};
-	colorspace_parse (g_cs_default, &def_cs, false);
+	colorspace_parse_copy (g_cs_default, &def_cs);
 
 	/* current colorspace setting */
 	struct colorspace_t cur_cs = def_cs;
-	char *cur_cs_str = sysfs_read (g_cs_path);
-	colorspace_parse (cur_cs_str, &cur_cs, false);
+	char *cur_cs_str = colorspace_read_current ();
 
-	/* копия текущего значения — пригодится для сравнения перед записью */
+	/* копия текущего значения — colorspace_parse() режет строку на токены
+	 * (strtok_r заменяет запятые на NUL), поэтому копируем ДО разбора: иначе
+	 * «444,12bit» превратится в «444» и запомненный профиль потеряет глубину. */
 	char cur_raw [64];
 	snprintf (cur_raw, sizeof (cur_raw), "%s", cur_cs_str ? cur_cs_str : "");
+
+	colorspace_parse (cur_cs_str, &cur_cs, false);
 	free (cur_cs_str);
 
 	/* colorspace override */
@@ -423,7 +510,7 @@ apply:
 	if (cur_raw [0])
 	{
 		struct colorspace_t now = def_cs;
-		colorspace_parse (cur_raw, &now, false);
+		colorspace_parse_copy (cur_raw, &now);
 
 		if ((now.cs == cur_cs.cs) && (now.cd == cur_cs.cd) && (now.cr == cur_cs.cr))
 		{
@@ -432,27 +519,83 @@ apply:
 		}
 	}
 
-	trace (1, "Setting color space to %s\n", cs_attr);
-
-	if (!g_cs_apply_cmd)
-		return sysfs_write (g_cs_path, cs_attr) == 0;
-
-	char cmd [256], out [512];
-	if (snprintf (cmd, sizeof (cmd), "%s '%s'", g_cs_apply_cmd, cs_attr) >= (int) sizeof (cmd))
-		return false;
-
-	if (exec_capture (cmd, out, sizeof (out)) != 0)
-		return false;
-
-	/* Вендорский клиент печатает "set <attr> to <value>, current value:<value>"
-	 * при успехе; на ошибке этого текста нет. */
-	if (!strstr (out, "current value:"))
+	/* Запоминаем профиль до первого изменения: на выходе вернём его
+	 * (cs.restore). Читаем до записи и только один раз за сеанс — иначе «до»
+	 * станет нашим же «после». */
+	if (g_cs_restore && !g_cs_before && cur_raw [0])
 	{
-		trace (1, "цветовое пространство не применилось: %s\n", out);
-		return false;
+		g_cs_before = strdup (cur_raw);
+		trace (2, "запоминаю цветовой профиль %s — верну на выходе\n", g_cs_before);
 	}
 
+	trace (1, "Setting color space to %s\n", cs_attr);
+
+	return colorspace_write (cs_attr);
+}
+
+/* Совпадают ли значения семантически: RESERVED — «любое», поэтому сравнение
+ * не должно считать «444,12bit» и «444,12bit,full» разными (у вендорского
+ * клиента диапазон может отбрасываться). */
+static bool colorspace_same (struct colorspace_t *a, struct colorspace_t *b)
+{
+	if ((a->cs != COLORSPACE_RESERVED) && (b->cs != COLORSPACE_RESERVED) &&
+	    (a->cs != b->cs))
+		return false;
+
+	if ((a->cd != COLORDEPTH_RESERVED) && (b->cd != COLORDEPTH_RESERVED) &&
+	    (a->cd != b->cd))
+		return false;
+
+	if ((a->cr != COLORRANGE_RESERVED) && (b->cr != COLORRANGE_RESERVED) &&
+	    (a->cr != b->cr))
+		return false;
+
 	return true;
+}
+
+/* Вернуть профиль, который был до первого изменения (cs.restore). Вызывается
+ * там же, где возвращается режим; повторный вызов без сохранённого значения —
+ * no-op. */
+bool colorspace_restore (void)
+{
+	char *value = g_cs_before;
+	g_cs_before = NULL;
+
+	if (!value)
+		return false;
+
+	/* Если текущее значение уже совпадает — не пишем: каждая запись
+	 * перенастраивает HDMI-линк. */
+	bool same = false;
+	char *now = colorspace_read_current ();
+	if (now)
+	{
+		struct colorspace_t a = {COLORSPACE_RESERVED, COLORDEPTH_RESERVED, COLORRANGE_RESERVED};
+		struct colorspace_t b = {COLORSPACE_RESERVED, COLORDEPTH_RESERVED, COLORRANGE_RESERVED};
+
+		colorspace_parse_copy (now, &a);
+		colorspace_parse_copy (value, &b);
+		same = colorspace_same (&a, &b);
+
+		free (now);
+	}
+
+	bool ok = true;
+	if (same)
+		trace (2, "цветовой профиль уже %s — не меняю\n", value);
+	else
+	{
+		trace (1, "возвращаю цветовой профиль %s\n", value);
+		ok = colorspace_write (value);
+	}
+
+	free (value);
+	return ok;
+}
+
+void colorspace_hold (bool on)
+{
+	g_cs_hold = on;
 }
 
 void afrd_override_colorspace (char **cs)
@@ -471,6 +614,9 @@ void afrd_override_colorspace (char **cs)
 void colorspace_init ()
 {
 	g_override_cs_enabled = false;
+	g_cs_hold = false;
+
+	g_cs_restore = cfg_get_int ("cs.restore", 1);
 
 	g_cs_list_path = cfg_get_str ("cs.list.path", NULL);
 	if (!g_cs_list_path)
@@ -508,6 +654,11 @@ void colorspace_fini ()
 	if (g_cs_default) {
 		free (g_cs_default);
 		g_cs_default = NULL;
+	}
+
+	if (g_cs_before) {
+		free (g_cs_before);
+		g_cs_before = NULL;
 	}
 
 	g_cs_list_path = g_cs_path = NULL;

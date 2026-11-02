@@ -48,6 +48,7 @@ public class Config
         itemType.put ("mode.min.hz.list", TYPE_STR);
         itemType.put ("mode.extra", TYPE_STR);
         itemType.put ("cs.select", TYPE_STR);
+        itemType.put ("cs.restore", TYPE_BOOL);
         itemType.put ("switch.delay.on", TYPE_INT);
         itemType.put ("switch.delay.off", TYPE_INT);
         itemType.put ("switch.delay.retry", TYPE_INT);

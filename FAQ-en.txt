@@ -212,6 +212,12 @@
 ! returns the previous behaviour. The 4K bandwidth rule (4:2:0 is kept there)
 ! is preserved in every item.
 
+! Next to it, in "Misc", there is the "Restore the color profile" switch: when
+! the video ends, the daemon returns the mode and, together with it, the
+! format that was in effect before the switch. With it off, the selected
+! format (say, YUV 4:2:2) stays on the desktop too and the interface text
+! looks softer, because colour is smeared over chroma.
+
 ! The list is built from the TV capabilities (the dc_cap node): only formats
 ! declared in EDID are shown, so YUV 4:2:2 appears when the TV supports it.
 ! Formats are not offered "just in case": the daemon would skip an

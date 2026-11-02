@@ -107,6 +107,9 @@
                             android:entryValues="@array/cs_policy_value" android:key="cs_select"
                             android:summary="@string/prefsum_cs_select"
                             android:title="@string/prefs_cs_select"/>
+        <SwitchPreference android:defaultValue="true" android:key="cs_restore"
+                          android:summary="@string/prefsum_cs_restore"
+                          android:title="@string/prefs_cs_restore"/>
         <ru.cobra.zap.xprefs.XEditTextPreference android:defaultValue="/data/local/afrd.log" android:key="log_file"
                             android:selectAllOnFocus="false" android:singleLine="true"
                             android:summary="@string/prefsum_log_file"

@@ -161,6 +161,8 @@ static const struct
 	{ "switch.ignore",		CFGKEY_LEGACY, NULL },
 	{ "switch.hdmi",		CFGKEY_LEGACY, NULL },
 	{ "cs.select",			CFGKEY_BOTH, NULL },
+	/* возврат профиля, который был до первого изменения (см. cs.restore) */
+	{ "cs.restore",			CFGKEY_BOTH, NULL },
 	{ "cs.list.path",			CFGKEY_BOTH, NULL },
 	{ "cs.path",			CFGKEY_BOTH, NULL },
 	{ "uevent.filter.frhint",	CFGKEY_LEGACY, NULL },

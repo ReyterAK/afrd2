@@ -18,6 +18,10 @@ extern void colorspace_fini ();
 extern bool colorspace_refresh ();
 /// select and apply color space dependent on video mode
 extern bool colorspace_apply (const char *mode);
+/// вернуть профиль, который был до первого изменения (cs.restore); false — нечего возвращать
+extern bool colorspace_restore (void);
+/// не применять правила (идёт возврат режима, за ним — восстановление профиля)
+extern void colorspace_hold (bool on);
 /*
  * Чем применять цветовое пространство. По умолчанию — запись в sysfs-узел
  * (legacy). На Android 10+ этот узел доступен только на чтение, зато есть
@@ -26,5 +30,10 @@ extern bool colorspace_apply (const char *mode);
  * NULL или "" — вернуться к sysfs.
  */
 extern void colorspace_set_apply_cmd (const char *cmd_prefix);
+/*
+ * Чем читать текущее значение (например, "/vendor/bin/meson_display_client
+ * -g \"HDMI Color ATTR\""). NULL или "" — sysfs-узел cs.path.
+ */
+extern void colorspace_set_get_cmd (const char *cmd);
 
 #endif /* __COLORSPACE_H__ */

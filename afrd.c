@@ -759,10 +759,18 @@ static void framerate_restore (bool only_if_black)
 		return;
 
 	mstime_arm (&g_ost_hdcp, DEFAULT_SWITCH_HDCP);
+
+	/* Цветовой профиль возвращается тем же событием, что и режим: правила
+	 * cs.select на этом переключении не применяем (широкое правило `.*=422`
+	 * иначе снова поставило бы свой формат), а после возврата режима пишем
+	 * профиль, который был до AFR (cs.restore). */
+	colorspace_hold (true);
 	if (g_state.orig_mode.name [0])
 		display_mode_switch (&g_state.orig_mode, false);
 	else
 		display_mode_switch (&g_current_mode, false);
+	colorspace_hold (false);
+	colorspace_restore ();
 
 	memset (&g_state, 0, sizeof (g_state));
 	update_stats ();
@@ -2511,6 +2519,25 @@ static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skip
 	return 0;
 }
 
+/* Возврат исходного режима вместе с цветовым профилем (cs.restore): на этом
+ * переключении правила cs.select не применяем — широкое правило (`.*=422`)
+ * снова поставило бы свой формат, — а после возврата пишем профиль, который
+ * был до первого изменения. Успешный возврат режима и возврат профиля идут
+ * одним событием: без режима держать чужой формат на рабочем столе незачем. */
+static int atv14_restore_mode (const platform_t *plat, int sf_id, const char *skipped)
+{
+	int rc;
+
+	colorspace_hold (true);
+	rc = atv14_apply_mode (plat, sf_id, skipped);
+	colorspace_hold (false);
+
+	if (rc == 0)
+		colorspace_restore ();
+
+	return rc;
+}
+
 /* Проверка подачи видео после смены режима (журнал §21.9).
  *
  * Если режим переключить при живом видео, в ~40 % случаев подача слоя
@@ -2737,8 +2764,8 @@ static void atv14_give_up (const platform_t *plat,
 
 	/* устаревший id в 1035 не уходит: atv14_apply_mode проверит его по
 	 * текущей таблице, а удержание снимется в любом случае */
-	if (atv14_apply_mode (plat, *orig_sf_id,
-	                      "возврат пропущен, флаг backdoor снят") == 0)
+	if (atv14_restore_mode (plat, *orig_sf_id,
+	                        "возврат пропущен, флаг backdoor снят") == 0)
 		*cur_sf_id = *orig_sf_id;
 
 	sink_release_backdoor (plat->sink);
@@ -3421,8 +3448,8 @@ static void burst_session_end (const platform_t *plat, int *orig_sf_id,
 
 	if (*held)
 	{
-		int rc = atv14_apply_mode (plat, *orig_sf_id,
-		                           "сеанс AFR: возврат исходного режима");
+		int rc = atv14_restore_mode (plat, *orig_sf_id,
+		                             "сеанс AFR: возврат исходного режима");
 		if (rc == 0)
 			*cur_sf_id = *orig_sf_id;
 		guard_note_restored (held);
@@ -5272,8 +5299,8 @@ cadence_done: ;
 
 			if (held)
 			{
-				int rc = atv14_apply_mode (plat, orig_sf_id,
-				                           "switch.skip.pkg: возврат, флаг backdoor снят");
+				int rc = atv14_restore_mode (plat, orig_sf_id,
+				                             "switch.skip.pkg: возврат, флаг backdoor снят");
 				if (rc == 0)
 				{
 					cur_sf_id = orig_sf_id;
@@ -5573,8 +5600,8 @@ cadence_done: ;
 			                           bump_pkg_allows_pkg (g_cur_pkg),
 			                           player_left, pause_restore))
 			{
-				int rc = atv14_apply_mode (plat, orig_sf_id,
-				                           "возврат пропущен, флаг backdoor снят");
+				int rc = atv14_restore_mode (plat, orig_sf_id,
+				                             "возврат пропущен, флаг backdoor снят");
 				if (rc == 0)
 				{
 					guard_note_restored (&held);
@@ -5616,7 +5643,7 @@ cadence_done: ;
 	 * нет (или таблица неизвестна), в 1035 он не уходит — снимаем только флаг. */
 	if (held)
 	{
-		atv14_apply_mode (plat, orig_sf_id, "возврат пропущен, флаг backdoor снят");
+		atv14_restore_mode (plat, orig_sf_id, "возврат пропущен, флаг backdoor снят");
 		sink_release_backdoor (plat->sink);
 		guard_note_restored (&held);
 	}

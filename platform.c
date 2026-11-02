@@ -139,7 +139,12 @@ platform_t platform_detect (void)
 	if (p.kind == PLAT_ATV14)
 	{
 		if (p.vendor_cli)
+		{
 			colorspace_set_apply_cmd (CS_CLI " -s \"HDMI Color ATTR\"");
+			/* Читать текущее значение тоже клиентом: узел attr на ATV14 не
+			 * отражает то, что выставил клиент (нужно для cs.restore). */
+			colorspace_set_get_cmd (CS_CLI " -g \"HDMI Color ATTR\"");
+		}
 		else
 			trace (1, "нет %s — цветовое пространство не применяю\n", CS_CLI);
 	}
