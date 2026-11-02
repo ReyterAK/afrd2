@@ -307,6 +307,38 @@ static void t_early_disagree (void)
 	assert (fps_env_decide_early (&env, 12000000ULL, ENV_SKIP, ENV_SUB, 1.0, 0.0, &hz) == 0);
 }
 
+/* Грубая частота по крайним выборкам: проверка заявленной частоты в первые
+ * секунды (fps.declare.fast). Живой случай 02.11 (ATV11): на 50-герцовом канале
+ * плеер заявил 24 fps, счётчик шёл ~50 — демон не должен переключаться по
+ * заявке. */
+static void t_span_hz (void)
+{
+	fps_env_t env;
+
+	/* одна выборка — данных нет */
+	fps_env_reset (&env);
+	fps_env_push (&env, 0, 100, 2000);
+	assert (fps_env_span_hz (&env, 700000) == 0);
+
+	/* окно короче need_us — данных нет */
+	fps_env_push (&env, 500000, 112, 2000);
+	assert (fps_env_span_hz (&env, 700000) == 0);
+
+	/* 1 с, 50 кадров -> 50 Гц (50 * 256) */
+	fps_env_push (&env, 1000000, 150, 2000);
+	assert (fps_env_span_hz (&env, 700000) == 50 * 256);
+
+	/* пауза: счётчик не растёт — кольцо сброшено, частоты нет */
+	fps_env_push (&env, 1500000, 150, 2000);
+	assert (fps_env_span_hz (&env, 700000) == 0);
+
+	/* 25 кадров за 1 с -> 25 Гц */
+	fps_env_reset (&env);
+	fps_env_push (&env, 0, 1000, 2000);
+	fps_env_push (&env, 1000000, 1025, 2000);
+	assert (fps_env_span_hz (&env, 700000) == 25 * 256);
+}
+
 int main (void)
 {
 	t_fixtures ();
@@ -320,6 +352,7 @@ int main (void)
 	t_ready_full_ring ();
 	t_ring_overflow ();
 	t_horizon_min ();
+	t_span_hz ();
 	printf ("fps_env: OK\n");
 	return 0;
 }

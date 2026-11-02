@@ -54,6 +54,14 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       1.0.x (… .*=422) is still shown as "Custom rules: …" and is not
       overwritten.
 
+    * No more "double jump" on a wrong player declaration: on ATV11 two
+      different players declared 24 fps for a 50 Hz channel, the daemon switched
+      to 24 Hz at once and the measurement 14 s later said 50, so the mode
+      changed twice. The declared rate is now cross-checked against the frame
+      counter (~0.7 s window): if the counter is already clearly higher
+      (1.5x or more), the fast decision is not applied and the mode changes
+      once, by measurement.
+
     * "Restore the color profile" (cs.restore, default 1): when the daemon
       returns the mode (video ended, player left the foreground) it writes back
       the format that was in effect before the switch. Otherwise a broad rule

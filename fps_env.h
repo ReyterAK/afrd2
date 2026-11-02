@@ -52,6 +52,14 @@ void fps_env_reset (fps_env_t *e);
 bool fps_env_push (fps_env_t *e, unsigned long long t_us,
                    unsigned long long frames, unsigned long long unc_us);
 
+/*
+ * Грубая частота по крайним выборкам кольца (24.8): разница счётчика к разнице
+ * времени. 0 — выборок мало (короче need_us) или счётчик не рос. Нужна для
+ * проверки заявленной частоты в первые секунды (fps.declare.fast): если
+ * счётчик уже заметно выше заявленного, быстрое решение не применяется.
+ */
+int fps_env_span_hz (const fps_env_t *e, unsigned long long need_us);
+
 /* Прошёл ли горизонт наблюдения с первой выборки. */
 bool fps_env_ready (const fps_env_t *e, unsigned long long horizon_us);
 

@@ -36,6 +36,23 @@ bool fps_env_push (fps_env_t *e, unsigned long long t_us,
 	return (e->n > 1) && (frames > e->s [e->n - 2].frames);
 }
 
+int fps_env_span_hz (const fps_env_t *e, unsigned long long need_us)
+{
+	if ((e->n < 2) || (e->s [e->n - 1].t_us <= e->s [0].t_us))
+		return 0;
+
+	unsigned long long span = e->s [e->n - 1].t_us - e->s [0].t_us;
+	if (span < need_us)
+		return 0;
+	if (e->s [e->n - 1].frames <= e->s [0].frames)
+		return 0;
+
+	double fps = (double) (e->s [e->n - 1].frames - e->s [0].frames) * 1e6
+	           / (double) span;
+
+	return (int) (fps * 256.0 + 0.5);
+}
+
 bool fps_env_ready (const fps_env_t *e, unsigned long long horizon_us)
 {
 	if (e->n < 2)

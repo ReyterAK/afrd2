@@ -3602,6 +3602,9 @@ static int run_atv14 (const platform_t *plat)
 	 * и в следующих окнах: журнал тестера 1.1.0 (ATV11, 27.10) — 48 таких
 	 * строк на один ролик при 10 фактических переключениях. */
 	bool fast_mismatch_logged = false;
+	/* «Заявленная частота расходится со счётчиком — быстрое решение отложено»
+	 * печатается один раз на видео (иначе строка на каждой итерации). */
+	bool fast_veto_logged = false;
 
 	/* Поведенческие ключи профиля (R28). */
 	int prefer_api = cfg_get_int ("fps.prefer.api", 1);
@@ -4206,6 +4209,7 @@ static int run_atv14 (const platform_t *plat)
 				retries = 0;
 				fast_applied = false;	/* новое видео — быстрое решение заново */
 				fast_mismatch_logged = false;
+				fast_veto_logged = false;
 				g_dec_last_hz = -1;
 				g_dec_last_id = -1;
 				counter_restart_log_us = 0;
@@ -4417,6 +4421,7 @@ static int run_atv14 (const platform_t *plat)
 			retries = 0;
 			fast_applied = false;	/* видео кончилось — решение не переносим */
 			fast_mismatch_logged = false;
+			fast_veto_logged = false;
 			fast_class = 0;
 			/* R56: перепроверка — тоже на текущее видео */
 			recheck_armed = false;
@@ -4987,7 +4992,37 @@ cadence_done: ;
 				    (v0.decl_fps > 0))
 				{
 					int dclass = fps_declared_class ((int)v0.decl_fps);
-					if (dclass)
+					/* Проверка заявленной частоты по счётчику: живой случай
+					 * 02.11 (ATV11, два плеера) — на 50-герцовом канале
+					 * заявлено 24 fps, демон ушёл на 24 Гц, а замер через
+					 * 14 с дал 50. Пользователь видел «двойной перескок».
+					 * Если счётчик уже заметно выше заявленного, быстрое
+					 * решение не применяем — решит замер. Пока выборок
+					 * меньше ~0.7 с, ждём следующей итерации (переключение
+					 * сдвигается на ~1 с, зато без лишней смены). */
+					int span_hz = (dclass > 0)
+					            ? fps_env_span_hz (&env, 700000ULL) : 0;
+					/* Счётчик уже читается, но окно ещё короче 0.7 с —
+					 * ждём следующей итерации, иначе решение принимается по
+					 * одной выборке и проверка не работает. */
+					bool counter_pending = (v0.frames > 0) && (env.n >= 1) &&
+					                       (span_hz <= 0);
+
+					if ((dclass > 0) && (span_hz > 0) &&
+					    (span_hz > dclass * 3 / 2))
+					{
+						fast_applied = true;
+						fast_class = 0;
+						if (!fast_veto_logged)
+						{
+							fast_veto_logged = true;
+							trace (0, "заявлено " HZ_FMT " Гц, счётчик даёт "
+							       HZ_FMT " Гц — быстрое решение откладываю, "
+							       "решит замер\n",
+							       HZ_ARGS (dclass), HZ_ARGS (span_hz));
+						}
+					}
+					else if ((dclass > 0) && !counter_pending)
 					{
 						int w = 1920, h = 1080;
 						int cur = atv_current_target (plat, &w, &h);
