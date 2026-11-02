@@ -3512,6 +3512,12 @@ static int run_atv14 (const platform_t *plat)
 	 * видео: сбрасывается вместе с cadence_fixes. */
 	bool cadence_heal_wait = false;
 	bool cadence_heal_useless = false;
+	/* Вердикт «подача вдвое реже» подтверждён вторым окном. Первый вердикт
+	 * после смены режима может стоять на хвосте прошлого режима в буфере
+	 * `--latency` (128 кадров): живой случай 02.11 на `.50` — 1080i50 после
+	 * 60 -> 50 дал 10-15 % выбросов при медиане 20 мс, через 10 с там же
+	 * 0-1 %. Действуем (лечение/возврат) только по второму подряд. */
+	bool cadence_confirm = false;
 	/* Зажим не вылечился «туда-обратно», и режим возвращён к прежнему
 	 * (switch.revert). Один раз на видео. */
 	bool cadence_reverted = false;
@@ -3520,6 +3526,8 @@ static int run_atv14 (const platform_t *plat)
 	 * всегда успевает набрать кадры (живой прогон `.50`, журнал §118). */
 	unsigned long long bump_probe_last_us = 0;
 	bool bump_probe_done = false;
+	/* «Слой ещё показывает прежний канал» — сообщить один раз на видео */
+	bool bump_probe_veto_logged = false;
 	/* ожидаемый интервал подачи контента (мс) — из измеренной частоты */
 	int cadence_expect_ms = 0;
 	/* HDR/SDR-атрибуты: перечитать, когда система уже выставила свои значения
@@ -4177,10 +4185,10 @@ static int run_atv14 (const platform_t *plat)
 				cadence_heal_wait = false;
 				cadence_heal_useless = false;
 				cadence_reverted = false;
-			bump_probe_done = false;
-			bump_probe_last_us = 0;
+				cadence_confirm = false;
 				bump_probe_done = false;
 				bump_probe_last_us = 0;
+				bump_probe_veto_logged = false;
 				hdrinfo_armed = false;
 				mstime_disable (&hdrinfo_timer);
 				/* плеер нового видео может быть другим — поправку
@@ -4190,6 +4198,15 @@ static int run_atv14 (const platform_t *plat)
 				/* кадры двух видео не должны попасть в одну огибающую */
 				fps_env_reset (&env);
 				env_growing = false;
+				/* «Счётчик не растёт» — тоже новое наблюдение: иначе
+				 * таймер от прошлого видео срабатывал на первом же опросе
+				 * нового и уводил замер на подачу слоя ещё до первого
+				 * кадра (живой случай `.50`, 02.11: при смене канала 1 ->
+				 * 210 строка «счётчик кадров декодера не растёт 109 с»
+				 * появилась через 0.4 с, слой дал 29.97, режим остался
+				 * 60 Гц вместо 24). */
+				counter_last_grow_us = 0;
+				counter_stall_logged = false;
 				/* режим, удержанный на паузе прежнего видео, к новому
 				 * не относится (и отсчёт терпения начинается заново) */
 				pause_forget (&pause_mem);
@@ -4442,6 +4459,22 @@ static int run_atv14 (const platform_t *plat)
 			int expect_ms = cadence_expect_ms;
 			if (atv14_cadence_halved (expect_ms, &pm, &md, &gap))
 			{
+				/* Действуем только по подтверждённому вердикту: одиночный
+				 * «вдвое реже» сразу после смены режима — это ещё хвост
+				 * прошлого режима в буфере слоя (живой случай 02.11).
+				 * Второе окно через 2 с отсекает переходный процесс;
+				 * настоящее «вдвое реже» никуда не денется. */
+				if (!cadence_confirm)
+				{
+					cadence_confirm = true;
+					mstime_update ();
+					mstime_arm (&cadence_timer, 2000);
+					cadence_armed = true;
+					trace (1, "подача вдвое реже ожидаемого (%d мс при периоде %d мс, "
+					       "выбросов %d %%) — подтверждаю повторной проверкой\n",
+					       md, pm, gap);
+					goto cadence_done;
+				}
 				/* Ровно эта ситуация была в журнале тестера (§87.4): подача
 				 * вдвое реже решения по счётчику. Печатаем оба числа и
 				 * заявленные поля драйвера один раз на видео — по этой
@@ -4494,6 +4527,7 @@ static int run_atv14 (const platform_t *plat)
 					 * пара переключений только мигает экраном. Живой журнал
 					 * тестера 29.10 (§87): 34 мс при периоде 17 мс до и после
 					 * лечения, две смены режима каждые 30 с. */
+					bool heal_was_tried = cadence_heal_wait;
 					if (cadence_heal_wait)
 					{
 						cadence_heal_wait = false;
@@ -4508,6 +4542,7 @@ static int run_atv14 (const platform_t *plat)
 					bool reverted = false;
 					if (cfg_get_int ("switch.revert", 1) &&
 					    !cadence_reverted && (back >= 0) &&
+					    heal_was_tried &&
 					    (back != want_sf_id) && !burst_running (&g_burst) &&
 					    bump_pkg_allows_pkg (g_cur_pkg) &&
 					    (atv14_apply_mode (plat, back, "возврат: зажим не лечится") == 0))
@@ -4536,7 +4571,9 @@ static int run_atv14 (const platform_t *plat)
 			{
 				/* Подача пришла в норму — если перед этим лечили, лечение
 				 * помогло; состояние «бесполезно» относится к видео и
-				 * сбрасывается на новом. */
+				 * сбрасывается на новом. Неподтверждённый вердикт тоже
+				 * снимаем: следующий «вдвое реже» снова проверяется. */
+				cadence_confirm = false;
 				cadence_heal_wait = false;
 				int base = (expect_ms > pm) ? expect_ms : pm;
 				/* Медиана — типичный интервал подачи. Если он сам выше
@@ -4727,6 +4764,49 @@ cadence_done: ;
 						bump_probe_done = true;
 
 					int lhz = bump_probe_done ? 0 : atv14_layer_fps_hz ();
+
+					/* Слой в переходе ещё может показывать прежний канал:
+					 * живой случай 02.11 на `.50` (канал 1 -> 210) — через
+					 * 3 с после подъёма пробник дал 25 Гц и увёл режим на 50,
+					 * хотя новый поток 23.976 (и через 20 с всё равно стал
+					 * 24 Гц). Заявленная длительность кадра относится к
+					 * активному декодеру, поэтому несовпадение с ним — повод
+					 * не решать по слою, а дождаться огибающей: она считает
+					 * кадры этого же декодера.
+					 *
+					 * Согласие — точное или кратное (x2/x3): у 1080i50
+					 * декодер заявляет 25 кадров, а слой идёт 50 полями,
+					 * и это не расхождение. Допуск кратности 4 %, как у
+					 * g_video_rate_floor. */
+					if (lhz)
+					{
+						int decl_hz = decl_hz_from_dur (v0.decl_dur);
+						bool consistent = (decl_hz <= 0);
+
+						for (int k = 1; (k <= 3) && !consistent; k++)
+						{
+							long want = (long) decl_hz * k;
+							long diff = (long) lhz - want;
+							if (diff < 0)
+								diff = -diff;
+							if (diff * 100 <= want * 4)
+								consistent = true;
+						}
+
+						if (!consistent)
+						{
+							if (!bump_probe_veto_logged)
+							{
+								bump_probe_veto_logged = true;
+								trace (1, "спуск после bump: подача дала " HZ_FMT
+								       " Гц, но декодер заявляет " HZ_FMT
+								       " Гц — решаю по огибающей\n",
+								       HZ_ARGS (lhz), HZ_ARGS (decl_hz));
+							}
+							lhz = 0;
+						}
+					}
+
 					if (lhz)
 					{
 						int w = 1920, h = 1080;
@@ -5440,6 +5520,14 @@ cadence_done: ;
 				cadence_armed = true;
 			}
 
+			/* Решение выполнено: режим уже нужный. Снимаем «ждущую» цель,
+			 * иначе замер останавливался до конца видео — условие замера
+			 * `want_sf_id < 0`, а перепроверка взводится только у настоящего
+			 * переключения (см. GUARD_SWITCH выше). Живой случай `.50`,
+			 * 02.11: 1080i50 после подъёма дал 29.97 -> цель 59.94 совпала
+			 * с текущим режимом, замер встал, 60 Гц продержались 109 с —
+			 * до смены канала, хотя счётчик давно шёл 25 к/с (цель 50 Гц). */
+			want_sf_id = -1;
 
 		}
 		else if (act == GUARD_RESTORE)

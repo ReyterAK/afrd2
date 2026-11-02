@@ -23,6 +23,17 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       (fps.feed.ratio.pct / fps.feed.gap.pct) instead of relying on the median
       alone, so a ragged feed no longer reports "feed is fine".
 
+    * Fixed (live check on ATV14, 02.11): a decision that matches the mode
+      already on screen no longer stops measuring until the end of the video
+      (a 1080i50 channel could stay at 60 Hz); "frame counter is not growing"
+      no longer fires on a new channel from the previous video's timer; the
+      short descent after bump does not trust the layer feed when it disagrees
+      with the decoder's declared rate. Switching from channel 1 (1080i50,
+      50 Hz) to 210 (23.976): 60 -> 24 Hz in ~5 s, no intermediate 50/60.
+      The feed verdict acts only on a confirmed second window, and the mode
+      revert only after a real treatment attempt: a false "feed does not heal"
+      on 1080i50 no longer flickers the mode.
+
     * The "auto" fractional rate policy (mode.use.fract=0) is real now on
       Android 10-14: an integer rate is used only when the source declared an
       integer one (player hint frame_rate_hint — 24.000 vs 23.976, or the
