@@ -2403,7 +2403,7 @@ static void note_content_hz (int hz, unsigned decl_dur)
  * Читается не сразу после транзакции, а когда режим устоялся (2.5 с,
  * вместе с HDR-атрибутами): узел обновляется драйвером асинхронно, и сразу
  * после смены в нём ещё прежняя частота. */
-static void vinfo_log_actual (void)
+static int vinfo_log_actual (void)
 {
 	int vnum = 0, vden = 0;
 	int vhz = vinfo_sync_hz (VINFO_PATH, &vnum, &vden);
@@ -2411,7 +2411,7 @@ static void vinfo_log_actual (void)
 	if (vhz <= 0)
 	{
 		trace (3, "vinfo: фактическая частота недоступна\n");
-		return;
+		return 0;
 	}
 
 	trace (1, "фактическая частота дисплея: " HZ_FMT " Гц (vinfo %d/%d)\n",
@@ -2421,6 +2421,31 @@ static void vinfo_log_actual (void)
 		trace (0, "ядро отдало " HZ_FMT " Гц вместо " HZ_FMT " Гц — "
 		       "режим применён не так, как просили\n",
 		       HZ_ARGS (vhz), HZ_ARGS (g_vinfo_expect_hz));
+
+	return vhz;
+}
+
+/* Применить правила cs.select к режиму, который сейчас в узле: на новом пути
+ * цветовое пространство ставится после смены режима (фреймворк переустанавливает
+ * своё значение асинхронно, поэтому читаем имя из узла). */
+static void colorspace_apply_current_mode (void)
+{
+	char *cm = sysfs_read (g_mode_path);
+	if (!cm)
+		return;
+
+	char nm [64];
+	size_t i = 0;
+	while (((i + 1) < sizeof (nm)) && cm [i] && cm [i] != '\n' && cm [i] != '\r')
+	{
+		nm [i] = cm [i];
+		i++;
+	}
+	nm [i] = 0;
+	free (cm);
+
+	if (nm [0])
+		colorspace_apply (nm);
 }
 
 /* Единственная точка, где id режима уходит в транзакцию 1035 (R44): id обязан
@@ -2496,25 +2521,8 @@ static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skip
 	g_vinfo_expect_hz = expect_hz;
 
 	/* Цветовое пространство по правилам cs.select — как делал legacy-путь при
-	 * каждой смене режима (modes.c: switch_mode). Правила сопоставляются с
-	 * именем режима, поэтому читаем его из узла (на ATV14 это отражение
-	 * состояния, которое выставил фреймворк). */
-	char *cm = sysfs_read (g_mode_path);
-	if (cm)
-	{
-		char nm [64];
-		size_t i = 0;
-		while (((i + 1) < sizeof (nm)) && cm [i] && cm [i] != '\n' && cm [i] != '\r')
-		{
-			nm [i] = cm [i];
-			i++;
-		}
-		nm [i] = 0;
-		free (cm);
-
-		if (nm [0])
-			colorspace_apply (nm);
-	}
+	 * каждой смене режима (modes.c: switch_mode). */
+	colorspace_apply_current_mode ();
 
 	return 0;
 }
@@ -3561,6 +3569,12 @@ static int run_atv14 (const platform_t *plat)
 	 * после смены режима (не зависит от fps.cadence.fix.ms) */
 	mstime_t hdrinfo_timer = 0;
 	bool hdrinfo_armed = false;
+	/* Проверка фактической частоты: 0 — не было расхождения, 1 — ждём
+	 * подтверждения повторным чтением, 2 — режим уже повторяли */
+	int vinfo_state = 0;
+	/* Текущий заход hdrinfo_timer — только повторное чтение vinfo (без
+	 * повторного разбора HDR-атрибутов) */
+	bool vinfo_confirm = false;
 	int preferred_id;
 	/* поправка частоты для плеера текущего видео (fps.correct.list):
 	 * пакет определяется один раз на видео, при первом замере */
@@ -4218,6 +4232,8 @@ static int run_atv14 (const platform_t *plat)
 				bump_probe_veto_logged = false;
 				hdrinfo_armed = false;
 				mstime_disable (&hdrinfo_timer);
+				vinfo_state = 0;
+				vinfo_confirm = false;
 				/* плеер нового видео может быть другим — поправку
 				 * (fps.correct.list) берём заново */
 				pkg_probed = false;
@@ -4417,6 +4433,8 @@ static int run_atv14 (const platform_t *plat)
 			cadence_reverted = false;
 			hdrinfo_armed = false;
 			mstime_disable (&hdrinfo_timer);
+			vinfo_state = 0;
+			vinfo_confirm = false;
 			counter_last_grow_us = 0;
 			counter_stall_logged = false;
 			crosscheck_logged = false;
@@ -4427,9 +4445,82 @@ static int run_atv14 (const platform_t *plat)
 			/* Режим уже устоялся — система выставила свои HDR/SDR-значения.
 			 * Проверка не зависит от fps.cadence.fix.ms. */
 			hdrinfo_armed = false;
-			hdrinfo_refresh (plat->vendor_cli);
-			hdrinfo_log ("атрибуты дисплея после переключения");
-			vinfo_log_actual ();
+
+			if (!vinfo_confirm)
+			{
+				hdrinfo_refresh (plat->vendor_cli);
+				hdrinfo_log ("атрибуты дисплея после переключения");
+			}
+			vinfo_confirm = false;
+
+			int vhz = vinfo_log_actual ();
+			bool bad = (g_vinfo_expect_hz > 0) && (vhz > 0) &&
+			           fps_group_differs (g_vinfo_expect_hz, vhz);
+
+			if (!bad)
+				vinfo_state = 0;
+
+			/* Частота не та, что просили (живой случай 02.11, бокс тестера
+			 * X5/ATV14: на 25-фпс канале просили 2160p25, ядро оставило
+			 * 60 Гц, телевизор показал «нет сигнала»). Сначала перечитываем
+			 * vinfo через 800 мс — узел обновляется асинхронно, — затем один
+			 * раз повторяем режим «туда и обратно»: повторная выдача того же
+			 * id не пересобирает vsync-путь (§21.9), а смена режима — да.
+			 * Не помогло — возвращаем исходный режим, чтобы не оставить
+			 * экран без сигнала, и до конца видео больше не переключаем. */
+			else if (vinfo_state == 0)
+			{
+				vinfo_state = 1;
+				vinfo_confirm = true;
+				mstime_update ();
+				mstime_arm (&hdrinfo_timer, 800);
+				hdrinfo_armed = true;
+				trace (2, "частота не применилась — перепроверяю через 800 мс\n");
+			}
+			else
+			{
+				bool retry_ok = false;
+
+				if (vinfo_state == 1)
+				{
+					vinfo_state = 2;
+
+					trace (0, "частота не применилась — повторяю режим id %d\n",
+					       cur_sf_id);
+					colorspace_hold (true);
+					if ((orig_sf_id >= 0) && (orig_sf_id != cur_sf_id))
+						atv14_apply_mode (plat, orig_sf_id,
+						                  "повтор: возврат перед переприменением");
+					int rc = atv14_apply_mode (plat, cur_sf_id,
+					                           "повтор: частота не применилась");
+					colorspace_hold (false);
+
+					if (rc == 0)
+					{
+						colorspace_apply_current_mode ();
+						mstime_update ();
+						mstime_arm (&hdrinfo_timer, HDRINFO_SETTLE_MS);
+						hdrinfo_armed = true;
+						retry_ok = true;
+					}
+				}
+
+				if (!retry_ok)
+				{
+					trace (0, "частота не применилась повторно — возвращаю режим\n");
+					measure_failed = true;
+					vinfo_state = 0;
+
+					if (held &&
+					    (atv14_restore_mode (plat, orig_sf_id,
+					                         "частота не применилась") == 0))
+					{
+						cur_sf_id = orig_sf_id;
+						orig_sf_id = -1;
+						held = false;
+					}
+				}
+			}
 		}
 		else if (cadence_armed && mstime_expired (&cadence_timer))
 		{
@@ -4461,25 +4552,7 @@ static int run_atv14 (const platform_t *plat)
 			 * пространство сам — асинхронно после смены режима, и применение
 			 * «в момент» переключения им же и перебивалось (проверено
 			 * живьём: через пару секунд значение возвращалось к исходному). */
-			{
-				char *cm2 = sysfs_read (g_mode_path);
-				if (cm2)
-				{
-					char nm2 [64];
-					size_t i2 = 0;
-					while (((i2 + 1) < sizeof (nm2)) && cm2 [i2] &&
-					       cm2 [i2] != '\n' && cm2 [i2] != '\r')
-					{
-						nm2 [i2] = cm2 [i2];
-						i2++;
-					}
-					nm2 [i2] = 0;
-					free (cm2);
-
-					if (nm2 [0])
-						colorspace_apply (nm2);
-				}
-			}
+			colorspace_apply_current_mode ();
 
 			int pm = 0, md = 0, gap = 0;
 			int gap_thr = cfg_get_int ("fps.feed.gap.pct", 10);
@@ -5497,6 +5570,8 @@ cadence_done: ;
 				mstime_update ();
 				mstime_arm (&hdrinfo_timer, HDRINFO_SETTLE_MS);
 				hdrinfo_armed = true;
+				vinfo_state = 0;
+				vinfo_confirm = false;
 
 				/* Режим применён на живом видео. Если на момент старта
 				 * ролика режим был ниже целевого, плеер мог запомнить

@@ -66,6 +66,15 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       the same event as the mode return, and cs.select rules are not applied
       on that switch, so the format is not written twice.
 
+    * An unapplied mode no longer leaves the TV without a signal: when
+      SurfaceFlinger/HDMI does not take the requested mode (live case 02.11,
+      tester box X5/ATV14: a 25 fps channel asked for 2160p25, the kernel stayed
+      at 60 Hz and the TV showed "no signal"), the daemon confirms the mismatch
+      by re-reading vinfo after 800 ms, retries the mode once "there and back"
+      (re-issuing the same id does not rebuild the vsync path) and, if that
+      fails, restores the original mode together with the color profile and
+      stops switching until the end of the video.
+
     * The "auto" fractional rate policy (mode.use.fract=0) is real now on
       Android 10-14: an integer rate is used only when the source declared an
       integer one (player hint frame_rate_hint — 24.000 vs 23.976, or the
