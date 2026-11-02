@@ -34,6 +34,9 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       revert only after a real treatment attempt: a false "feed does not heal"
       on 1080i50 no longer flickers the mode.
 
+    * "About": the "Testers" field is back (as in the original AFRd) —
+      Acorn@4PDA, SlimHouse@4PDA.
+
     * The "auto" fractional rate policy (mode.use.fract=0) is real now on
       Android 10-14: an integer rate is used only when the source declared an
       integer one (player hint frame_rate_hint — 24.000 vs 23.976, or the

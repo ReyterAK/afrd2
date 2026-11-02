@@ -61,6 +61,18 @@
                       android:orientation="horizontal">
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                       android:layout_gravity="start|center_vertical" android:paddingStart="16dp"
+                      android:paddingEnd="16dp" android:text="@string/about_testers"
+                      android:textAlignment="textStart" android:textSize="18sp"/>
+        </LinearLayout>
+        <TextView android:id="@+id/testers" android:layout_width="match_parent"
+                  android:layout_height="wrap_content" android:paddingStart="16sp"
+                  android:paddingEnd="16sp" android:text="@string/about_testers_names"
+                  android:textSize="24sp"/>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="40sp"
+                      android:background="@color/colorMenuBackground"
+                      android:orientation="horizontal">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                      android:layout_gravity="start|center_vertical" android:paddingStart="16dp"
                       android:paddingEnd="16dp" android:text="@string/about_history"
                       android:textAlignment="textStart" android:textSize="18sp"/>
         </LinearLayout>
