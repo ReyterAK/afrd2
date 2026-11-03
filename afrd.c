@@ -2710,13 +2710,17 @@ static bool atv14_layer_stats (double *period_ms, double *avg_ms, double *median
 	return true;
 }
 
-/* «Подача вдвое реже ожидаемого». Медиана ловит случай, когда медленнее ВСЯ
- * подача; доля выбросов — когда она рваная (часть интервалов в норме, часть
- * вдвое длиннее). Вторая картина глазом видна как рывки, а медианой не
- * видна — на `.42` это давало 20 % провалов при вердикте «подача в порядке»
- * (журнал §110). Порог доли — fps.feed.gap.pct (по умолчанию 10 %), порог
- * выброса — fps.feed.ratio.pct (по умолчанию 150 % от базы). */
-static bool atv14_cadence_halved (int expect_ms, int *period_ms, int *median_ms,
+/* Вердикт подачи видео-слоя: OK / неровная / вдвое реже. Разбор в
+ * fps_class.h; порог доли — fps.feed.gap.pct (по умолчанию 10 %), порог
+ * выброса — fps.feed.ratio.pct (по умолчанию 150 % от базы).
+ *
+ * Неровная подача (медиана в норме, часть интервалов длиннее) раньше шла тем
+ * же путём, что и «вдвое реже», и лечилась переключением режима туда-обратно.
+ * Живой прогон `.42` 03.11: 4K DV через Vimu дал 19 % интервалов по 84 мс при
+ * медиане 41.7 мс; после «лечения» — 17 %, то есть не изменилось (журнал §150).
+ * Причина — потери кадров у плеера, а не vsync-путь, поэтому теперь только
+ * сообщаем и режим не трогаем. */
+static int atv14_cadence_verdict (int expect_ms, int *period_ms, int *median_ms,
                                   int *gap_pct_out)
 {
 	double p = 0, a = 0, md = 0, p9 = 0, gap = 0;
@@ -2725,7 +2729,7 @@ static bool atv14_cadence_halved (int expect_ms, int *period_ms, int *median_ms,
 	int gap_thr = cfg_get_int ("fps.feed.gap.pct", 10);
 
 	if (!atv14_layer_stats (&p, &a, &md, &p9, &gap, &n, expect_ms, ratio))
-		return false;
+		return FPS_CADENCE_OK;
 
 	*period_ms = (int) (p + 0.5);
 	*median_ms = (int) (md + 0.5);
@@ -2733,15 +2737,8 @@ static bool atv14_cadence_halved (int expect_ms, int *period_ms, int *median_ms,
 	if (gap_pct_out)
 		*gap_pct_out = (int) gap;
 
-	double base = ((double) expect_ms > p) ? (double) expect_ms : p;
-
-	/* Доля выбросов имеет смысл только когда подача не БЫСТРЕЕ ожидаемой:
-	 * на 1080i50 счётчик даёт 25 кадров, а в плоскость идёт 50 полей — медиана
-	 * 20 мс при ожидании 40 мс, и «выбросы» там не зажим, а поля (живой случай
-	 * `.42`, журнал §115). Зажим — это медиана не ниже базы. */
-	bool not_faster = ((double) md >= 0.75 * base);
-
-	return (md > 1.5 * base) || (not_faster && (gap >= (double) gap_thr));
+	return fps_cadence_verdict (*median_ms, *period_ms, expect_ms,
+	                            (int) gap, gap_thr);
 }
 
 /* Запасной источник частоты: средний интервал подачи видео-слоя. Он не зависит
@@ -3627,6 +3624,9 @@ static int run_atv14 (const platform_t *plat)
 	 * 60 -> 50 дал 10-15 % выбросов при медиане 20 мс, через 10 с там же
 	 * 0-1 %. Действуем (лечение/возврат) только по второму подряд. */
 	bool cadence_confirm = false;
+	/* «Подача неровная» сообщена один раз на видео: строка о потерях кадров
+	 * у плеера, режим при этом не трогаем (fps_cadence_verdict). */
+	bool cadence_uneven_logged = false;
 	/* Зажим не вылечился «туда-обратно», и режим возвращён к прежнему
 	 * (switch.revert). Один раз на видео. */
 	bool cadence_reverted = false;
@@ -4330,6 +4330,7 @@ static int run_atv14 (const platform_t *plat)
 				cadence_heal_useless = false;
 				cadence_reverted = false;
 				cadence_confirm = false;
+				cadence_uneven_logged = false;
 				bump_probe_done = false;
 				bump_probe_last_us = 0;
 				bump_probe_veto_logged = false;
@@ -4564,6 +4565,7 @@ static int run_atv14 (const platform_t *plat)
 			cadence_heal_wait = false;
 			cadence_heal_useless = false;
 			cadence_reverted = false;
+			cadence_uneven_logged = false;
 			/* Сверку частоты и сдачу не снимаем на коротком провале декодера:
 			 * проверять «приняло ли ядро режим» всё равно нужно, а сдача не
 			 * должна сниматься до настоящего нового видео (P1-9). */
@@ -4795,7 +4797,21 @@ static int run_atv14 (const platform_t *plat)
 			int pm = 0, md = 0, gap = 0;
 			int gap_thr = cfg_get_int ("fps.feed.gap.pct", 10);
 			int expect_ms = cadence_expect_ms;
-			if (atv14_cadence_halved (expect_ms, &pm, &md, &gap))
+			int verdict = atv14_cadence_verdict (expect_ms, &pm, &md, &gap);
+
+			/* Неровная подача — медиана в норме, часть интервалов длиннее:
+			 * плеер теряет кадры, смена режима это не исправляет. Сообщаем
+			 * один раз на видео и ничего не переключаем. */
+			if ((verdict == FPS_CADENCE_UNEVEN) && !cadence_uneven_logged)
+			{
+				cadence_uneven_logged = true;
+				trace (1, "подача неровная: %d %% интервалов длиннее 1.5 периода "
+				       "(медиана %d мс при периоде %d мс, ожидание %d мс) — "
+				       "режим не трогаю, это потери кадров у плеера\n",
+				       gap, md, pm, expect_ms);
+			}
+
+			if (verdict == FPS_CADENCE_HALVED)
 			{
 				/* Действуем только по подтверждённому вердикту: одиночный
 				 * «вдвое реже» сразу после смены режима — это ещё хвост
@@ -4905,7 +4921,7 @@ static int run_atv14 (const platform_t *plat)
 						       : "");
 				}
 			}
-			else if (md > 0)
+			else if ((verdict == FPS_CADENCE_OK) && (md > 0))
 			{
 				/* Подача пришла в норму — если перед этим лечили, лечение
 				 * помогло; состояние «бесполезно» относится к видео и

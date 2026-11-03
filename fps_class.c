@@ -514,3 +514,34 @@ bool fps_group_differs (int a_hz, int b_hz)
 
 	return ga != gb;
 }
+
+/* Вердикт подачи видео-слоя (см. fps_class.h). */
+int fps_cadence_verdict (int median_ms, int period_ms, int expect_ms,
+                         int gap_pct, int gap_thr)
+{
+	double base = (expect_ms > period_ms) ? (double) expect_ms : (double) period_ms;
+
+	if (base <= 0.0)
+		return FPS_CADENCE_OK;
+
+	/* Медиана вдвое больше базы — медленнее ВСЯ подача: это дефект
+	 * vsync-пути HWC/SF после смены режима, лечится сменой режима
+	 * «туда-обратно» (журнал §21.9). */
+	if ((double) median_ms > 1.5 * base)
+		return FPS_CADENCE_HALVED;
+
+	/* Медиана заметно НИЖЕ базы — подача быстрее ожидаемой: на 1080i50
+	 * счётчик даёт 25 кадров, а в плоскость идёт 50 полей (§115). Доля
+	 * «выбросов» здесь считается от завышенной базы и ничего не значит. */
+	if ((double) median_ms < 0.75 * base)
+		return FPS_CADENCE_OK;
+
+	/* Медиана в норме, но часть интервалов длиннее порога: плеер теряет
+	 * кадры. Сменой режима это не лечится — живой прогон `.42` 03.11:
+	 * 19 % интервалов по 84 мс при медиане 41.7 мс, после «лечения»
+	 * 17 %, то есть без изменений. Диагноз ставим, режим не трогаем. */
+	if (gap_pct >= gap_thr)
+		return FPS_CADENCE_UNEVEN;
+
+	return FPS_CADENCE_OK;
+}

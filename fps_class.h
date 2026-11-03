@@ -153,6 +153,31 @@ double fps_correct_factor (const char *package);
  * заявленной частоты), 0 — заявленная частота не годится. */
 int fps_refine_declared (int measured_hz, double declared_fps, double max_pct, int *hz_out);
 
+/* Вердикт по окну подачи видео-слоя (dumpsys SurfaceFlinger --latency).
+ *
+ * median_ms  — медиана интервалов между фактическими метками кадров;
+ * period_ms  — период обновления дисплея из того же дампа;
+ * expect_ms  — ожидаемый интервал контента (1000/ожидаемая частота);
+ * gap_pct    — доля интервалов длиннее 1.5 базы (порог выброса);
+ * gap_thr    — fps.feed.gap.pct, %.
+ *
+ * База — максимум из expect_ms и period_ms. Возврат:
+ *   FPS_CADENCE_OK     — подача в норме (или быстрее базы — поля);
+ *   FPS_CADENCE_UNEVEN — медиана в норме, но доля выбросов выше порога:
+ *                        плеер теряет кадры, смена режима не помогает;
+ *   FPS_CADENCE_HALVED — медиана вдвое больше базы: дефект vsync-пути,
+ *                        лечится сменой режима «туда-обратно».
+ *
+ * UNEVEN и HALVED различаются порогом 1.5×: раньше оба случая давали
+ * «вдвое реже» и оба лечились переключением, из-за чего подача с потерями
+ * кадров получала лишние мигания 24 -> 60 -> 24 (журнал §150). */
+#define FPS_CADENCE_OK		0
+#define FPS_CADENCE_UNEVEN	1
+#define FPS_CADENCE_HALVED	2
+
+int fps_cadence_verdict (int median_ms, int period_ms, int expect_ms,
+                         int gap_pct, int gap_thr);
+
 /* Точный (целочисленный) представитель группы — для `mode.use.fract=2`:
  * 23.976 -> 24.000, 29.97 -> 30.000, 59.94 -> 60.000 (25 и 50 без изменений).
  * Нужен, когда ТВ/прошивка предпочитает точные режимы; если такого режима в

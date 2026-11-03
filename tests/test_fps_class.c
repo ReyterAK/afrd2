@@ -471,6 +471,35 @@ static void t_correct_av1_pct(void)
 	assert(fps_correct_av1_factor("amvdec_av1_v4l", NULL) == 1.0);
 }
 
+
+/* Вердикт подачи: «неровная» (медиана в норме) больше не лечится сменой
+ * режима, лечится только «вдвое реже» (медиана 2x базы). */
+static void t_cadence_verdict(void)
+{
+	/* Живой случай `.42` 03.11: 4K DV, Vimu, 19 % интервалов по 84 мс при
+	 * медиане 41.7 мс — потери кадров у плеера, не vsync-путь. */
+	assert(fps_cadence_verdict(42, 42, 42, 19, 10) == FPS_CADENCE_UNEVEN);
+	assert(fps_cadence_verdict(42, 42, 42, 10, 10) == FPS_CADENCE_UNEVEN);
+	assert(fps_cadence_verdict(42, 42, 42, 9, 10) == FPS_CADENCE_OK);
+
+	/* Вся подача вдвое реже базы — дефект vsync-пути, лечение уместно. */
+	assert(fps_cadence_verdict(84, 42, 42, 0, 10) == FPS_CADENCE_HALVED);
+	assert(fps_cadence_verdict(83, 42, 42, 50, 10) == FPS_CADENCE_HALVED);
+
+	/* Подача быстрее базы — поля 1080i (счётчик 25, в плоскость 50):
+	 * «выбросы» считаются от завышенной базы и ничего не значат. */
+	assert(fps_cadence_verdict(20, 42, 40, 50, 10) == FPS_CADENCE_OK);
+
+	/* Ожидание контента больше периода дисплея — база берётся по максимуму.
+	 * 24 к/с на 60 Гц: период дисплея 16.7, ожидание 41.7, медиана 41.7. */
+	assert(fps_cadence_verdict(42, 17, 42, 0, 10) == FPS_CADENCE_OK);
+	assert(fps_cadence_verdict(42, 17, 42, 19, 10) == FPS_CADENCE_UNEVEN);
+	assert(fps_cadence_verdict(84, 17, 42, 0, 10) == FPS_CADENCE_HALVED);
+
+	/* Нет данных — OK, лечить нечего. */
+	assert(fps_cadence_verdict(0, 0, 0, 99, 10) == FPS_CADENCE_OK);
+}
+
 int main(void)
 {
 	t_classify();
@@ -489,6 +518,7 @@ int main(void)
 	t_corrected();
 	t_correct_av1();
 	t_correct_av1_pct();
+	t_cadence_verdict();
 	printf("fps_class: OK\n");
 	return 0;
 }
