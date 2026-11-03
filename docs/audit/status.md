@@ -36,8 +36,10 @@ Host-тесты: `sh tests/run_tests.sh` — 21 C-набор + 7 Java.
 | Срез | P1 | закрыто | P2 | закрыто | P3 |
 |---|---|---|---|---|---|
 | legacy | 1 | 1 (живьём не проверен: `.48` не получает uevent) | 9 | 1 (`hdcp.c`) | 7 |
-| API/службы | 1 | 1 (проверено на `.50`) | 7 | 2 (`frame_rate_hint`, `burst` на legacy) | 10 |
+| API/службы | 1 | 1 (проверено на `.50`) | 7 | 3 (`frame_rate_hint`, `burst` на legacy, `daemon_pid`) | 10 |
 | GUI | 5 | 5 (FGS — код; живой прогон с отозванным root на боксе) | 8 | 6 (`fd`, `shmem`, `RootShell`, `Burst`, `ini` атомарно, таймеры) | 8 |
+
+Плюс закрыты: `hdcp.c` NULL, `dispserve` (счётчики), `Control` (вывод `su`).
 
 ## Где смотреть дальше
 
