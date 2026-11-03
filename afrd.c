@@ -3719,6 +3719,10 @@ static int run_atv14 (const platform_t *plat)
 	/* «Заявленная частота расходится со счётчиком — быстрое решение отложено»
 	 * печатается один раз на видео (иначе строка на каждой итерации). */
 	bool fast_veto_logged = false;
+	/* AV1: заявленная частота в vdec_status негодна — §108.7 (30 при 60 к/с),
+	 * живой случай 03.11 (30 при 24 к/с, TizenTube). Быстрый путь по ней не
+	 * применяем: решает замер. Строка — один раз на видео. */
+	bool av1_fast_skip_logged = false;
 
 	/* Поведенческие ключи профиля (R28). */
 	int prefer_api = cfg_get_int ("fps.prefer.api", 1);
@@ -3990,14 +3994,16 @@ static int run_atv14 (const platform_t *plat)
 				av1_legacy_pct = atof (v);
 		}
 
-		/* Значения платформы для «auto». ATV14 (S905X5M, 5.15): завышение
-		 * аддитивное, калибровано A/B по 13 роликам (§90): 0.1 кадра/с.
-		 * Вендорный путь (Android 10/11, X4 5.4): завышение пропорциональное
-		 * (§49.18: +5.9 % на 24, +5.6 % на 60), но значение там не проверялось
-		 * контрольным A/B — поэтому «auto» его не включает: молчаливая
-		 * правка замера на непроверенном боксе хуже, чем её отсутствие. */
-		double auto_add = (plat->kind == PLAT_ATV14) ? 0.1 : 0.0;
-		double auto_pct = 0.0;
+		/* Значения платформы для «auto». Живые замеры 03.11: на `.50` (ATV14)
+		 * счётчик AV1 при дисплее 60 Гц даёт 63.1, у тестера TizenTube при
+		 * 24 к/с — 25.0, то есть завышение пропорциональное ~5 %, а не
+		 * аддитивное. Прежняя аддитивная 0.1 кадра/с на 24 к/с не покрывала
+		 * завышение и уводила 24 в класс 25 (журнал §100, §165).
+		 * Вендорный путь (Android 10/11) по-прежнему без «auto»: там модель
+		 * та же (§49.18: +5.9 % на 24, +5.6 % на 60), но контрольного A/B на
+		 * стенде не было. */
+		double auto_add = 0.0;
+		double auto_pct = (plat->kind == PLAT_ATV14) ? 5.0 : 0.0;
 
 		fps_av1_t av1;
 		fps_av1_resolve (cfg_get_str ("fps.correct.av1", NULL),
@@ -4014,8 +4020,13 @@ static int run_atv14 (const platform_t *plat)
 
 		case FPS_AV1_AUTO:
 			trace (1, "поправка AV1: авто для платформы — %s%s\n",
-			       (av1.offset > 0.0) ? "аддитивная" : "относительная",
+			       (av1.offset > 0.0)
+			       ? "аддитивная"
+			       : (av1.factor > 1.0) ? "относительная" : "выключена",
 			       (av1_pkg && *av1_pkg) ? ", только для одного плеера" : "");
+			if ((av1.offset <= 0.0) && (av1.factor > 1.0))
+				trace (1, "поправка AV1: минус %.2f %%\n",
+				       (av1.factor - 1.0) * 100.0);
 			break;
 
 		case FPS_AV1_PCT:
@@ -4340,6 +4351,7 @@ static int run_atv14 (const platform_t *plat)
 				fast_applied = false;	/* новое видео — быстрое решение заново */
 				fast_mismatch_logged = false;
 				fast_veto_logged = false;
+				av1_fast_skip_logged = false;
 				g_dec_last_hz = -1;
 				g_dec_last_id = -1;
 				counter_restart_log_us = 0;
@@ -4581,6 +4593,7 @@ static int run_atv14 (const platform_t *plat)
 			fast_applied = false;	/* видео кончилось — решение не переносим */
 			fast_mismatch_logged = false;
 			fast_veto_logged = false;
+			av1_fast_skip_logged = false;
 			fast_class = 0;
 			/* R56: перепроверка — тоже на текущее видео */
 			recheck_armed = false;
@@ -5236,8 +5249,21 @@ cadence_done: ;
 				 * замер продолжает работать и ниже поправит режим, если
 				 * заявленная частота расходится с фактической (наш синтетический
 				 * клип: драйвер рапортует 30 fps при реальных 23.976). */
+				/* AV1: заявленная частота негодна (30 и при 60, и при 24
+				 * к/с — §108.7 и живой лог 03.11), поэтому быстрый путь на
+				 * этом тракте не применяем: первый переход на 30 Гц уходил
+				 * именно отсюда. */
+				if (g_fps_declare_fast && (v0.decl_fps > 0) &&
+				    strstr (v0.device, "av1") && !av1_fast_skip_logged)
+				{
+					av1_fast_skip_logged = true;
+					trace (1, "AV1: заявленная частота негодна (%u fps при "
+					       "frame dur %u) — быстрое решение не применяю, "
+					       "решает замер\n", v0.decl_fps, v0.decl_dur);
+				}
+
 				if (g_fps_declare_fast && !g_ceiling_no_fast && !fast_applied && !held &&
-				    (v0.decl_fps > 0))
+				    (v0.decl_fps > 0) && !strstr (v0.device, "av1"))
 				{
 					int dclass = fps_declared_class ((int)v0.decl_fps);
 					/* Проверка заявленной частоты по счётчику: живой случай
