@@ -3736,6 +3736,9 @@ static int run_atv14 (const platform_t *plat)
 	bool av1_lock_logged = false;
 	/* «Счётчик fb-декодера удвоен» — раз на видео (иначе строка каждые 14 с). */
 	bool fb_double_logged = false;
+	/* «mode.use.fract: целый режим вместо дробного» — раз на видео: строка
+	 * печаталась на каждой перепроверке (живой лог тестера: 107 раз, §175). */
+	bool fract_logged = false;
 
 	/* Поведенческие ключи профиля (R28). */
 	int prefer_api = cfg_get_int ("fps.prefer.api", 1);
@@ -4386,6 +4389,7 @@ static int run_atv14 (const platform_t *plat)
 				g_dec_last_id = -1;
 				g_dec_logged_hz = -1;
 				fb_double_logged = false;
+				fract_logged = false;
 				counter_restart_log_us = 0;
 				/* Политика прошлого видео к новому не относится: пока замер
 				 * молчит, дробность не трогаем (желание выставит решение).
@@ -4628,6 +4632,7 @@ static int run_atv14 (const platform_t *plat)
 			av1_fast_skip_logged = false;
 			av1_lock_logged = false;
 			fb_double_logged = false;
+			fract_logged = false;
 			fast_class = 0;
 			/* R56: перепроверка — тоже на текущее видео */
 			recheck_armed = false;
@@ -5676,14 +5681,18 @@ cadence_done: ;
 				int new_hz = fps_rate_apply_policy (hz, decl_hz, use_fract);
 				if (new_hz != hz)
 				{
-					if (use_fract == 2)
-						trace (1, "mode.use.fract=2: режим " HZ_FMT " Гц вместо "
-						       HZ_FMT " Гц\n", HZ_ARGS (new_hz), HZ_ARGS (hz));
-					else
-						trace (1, "mode.use.fract=0 (Авто): заявлено " HZ_FMT
-						       " Гц — беру целый режим " HZ_FMT " Гц вместо "
-						       HZ_FMT " Гц\n",
-						       HZ_ARGS (decl_hz), HZ_ARGS (new_hz), HZ_ARGS (hz));
+					if (!fract_logged)
+					{
+						fract_logged = true;
+						if (use_fract == 2)
+							trace (1, "mode.use.fract=2: режим " HZ_FMT " Гц вместо "
+							       HZ_FMT " Гц\n", HZ_ARGS (new_hz), HZ_ARGS (hz));
+						else
+							trace (1, "mode.use.fract=0 (Авто): заявлено " HZ_FMT
+							       " Гц — беру целый режим " HZ_FMT " Гц вместо "
+							       HZ_FMT " Гц\n",
+							       HZ_ARGS (decl_hz), HZ_ARGS (new_hz), HZ_ARGS (hz));
+					}
 					hz = new_hz;
 				}
 			}
