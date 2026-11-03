@@ -15,15 +15,17 @@ P3 — закрыто 8 пунктов из 10, остальное с обосн
 
 Host-тесты: `sh tests/run_tests.sh` — 21 C-набор + 7 Java.
 
-## Проход 2 (весь проект) — в работе
+## Проход 2 (весь проект) — завершён (срез 6/7/8)
 
 План: три среза, запущены 15:18 параллельно.
 
-| Срез | Область | Состояние |
+| Срез | Область | Итог |
 |---|---|---|
-| 6 | legacy-путь: `modes.c`, цикл `afrd_run` (PLAT_LEGACY), `hdcp.c`, `stuck.c`, `uevent_filter.c` | агент запущен |
-| 7 | API и службы: `apisock.c`, `shmem.c`, `dispserve.c`, `reconf.c`, `main.c`, `burst.c` | агент запущен |
-| 8 | GUI-каркас: `MainActivity`, `Control`, `AFRService`, `ActionActivity`, `BootCompleteReceiver`, `xprefs`, манифест | агент запущен |
+| 6 | legacy-путь: `modes.c`, цикл `afrd_run` (PLAT_LEGACY), `hdcp.c`, `stuck.c`, `uevent_filter.c` | 1 P1, 9 P2, 7 P3 |
+| 7 | API и службы: `apisock.c`, `shmem.c`, `dispserve.c`, `reconf.c`, `main.c`, `burst.c` | 1 P1, 7 P2, 10 P3 |
+| 8 | GUI-каркас: `MainActivity`, `Control`, `AFRService`, `ActionActivity`, `BootCompleteReceiver`, `xprefs`, манифест | 5 P1 (4 закрыто), 8 P2 (2 закрыто), 8 P3 |
+
+Раздел «Проход 2» в отчёте — с `file:line` по каждому пункту.
 
 После срезов: свести расхождения в отчёт (раздел «Проход 2»), добавить инварианты,
 чинить только безопасные P1 (с тестом или шагом проверки), остальное — в таблицу «отложено».
