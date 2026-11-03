@@ -3723,6 +3723,8 @@ static int run_atv14 (const platform_t *plat)
 	 * живой случай 03.11 (30 при 24 к/с, TizenTube). Быстрый путь по ней не
 	 * применяем: решает замер. Строка — один раз на видео. */
 	bool av1_fast_skip_logged = false;
+	/* «Замер совпал с дисплеем — поправку AV1 не применяю» — тоже раз на видео. */
+	bool av1_lock_logged = false;
 
 	/* Поведенческие ключи профиля (R28). */
 	int prefer_api = cfg_get_int ("fps.prefer.api", 1);
@@ -4352,6 +4354,7 @@ static int run_atv14 (const platform_t *plat)
 				fast_mismatch_logged = false;
 				fast_veto_logged = false;
 				av1_fast_skip_logged = false;
+				av1_lock_logged = false;
 				g_dec_last_hz = -1;
 				g_dec_last_id = -1;
 				counter_restart_log_us = 0;
@@ -4594,6 +4597,7 @@ static int run_atv14 (const platform_t *plat)
 			fast_mismatch_logged = false;
 			fast_veto_logged = false;
 			av1_fast_skip_logged = false;
+			av1_lock_logged = false;
 			fast_class = 0;
 			/* R56: перепроверка — тоже на текущее видео */
 			recheck_armed = false;
@@ -5434,6 +5438,37 @@ cadence_done: ;
 					env_decided = fps_env_decide (&env, env_max_us, env_skip_us, env_sub_us,
 					                              video_corr, av1_off, &env_hz);
 					env_used_us = env_max_us;
+				}
+
+				/* Защита от ложной поправки: если неисправленный замер
+				 * совпадает с частотой дисплея, кадры идут с его частотой
+				 * (плеер дублирует), и поправка AV1 только сдвинет класс —
+				 * на дисплее 25 Гц точный счётчик уехал бы в 24. */
+				if (env_decided && ((av1_fac != 1.0) || (av1_off > 0.0)) &&
+				    (cur_sf_id >= 0))
+				{
+					int raw_hz = 0;
+					bool raw_ok = env_early
+						? fps_env_decide_early (&env, env_span_us, env_skip_us,
+						                        env_sub_us, 1.0, 0.0, &raw_hz)
+						: fps_env_decide (&env, env_used_us, env_skip_us,
+						                  env_sub_us, 1.0, 0.0, &raw_hz);
+					int disp_hz = sfmodes_current_hz (g_sf_modes, g_sf_modes_n,
+					                                  cur_sf_id);
+
+					if (raw_ok && (raw_hz > 0) && (disp_hz > 0) &&
+					    (abs (raw_hz - disp_hz) * 100 <= disp_hz))
+					{
+						if (!av1_lock_logged)
+						{
+							av1_lock_logged = true;
+							trace (1, "AV1: замер " HZ_FMT " Гц совпал с дисплеем "
+							       HZ_FMT " Гц — поправку не применяю (кадры идут "
+							       "с частотой экрана)\n",
+							       HZ_ARGS (raw_hz), HZ_ARGS (disp_hz));
+						}
+						env_hz = raw_hz;
+					}
 				}
 
 				if (!env_decided)
