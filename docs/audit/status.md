@@ -57,7 +57,9 @@ Host-тесты: `sh tests/run_tests.sh` — 21 C-набор + 7 Java.
    начать с этого, иначе legacy-путь там не проверить.
 6. Сделано: `hdcp.c` (NULL), FGS-таймаут, `frame_rate_hint`, `burst` на legacy, атомарная
    запись ini, таймеры фрагментов, `RootShell` (таймауты), `Burst` (сокет).
-   Следующие по порядку: `Control` (код возврата/stderr `su`), `BurstActivity/BurstReceiver`
-   (разбор `result:too-soon`), `LogFragment` (чтение `/data/local` как uid приложения — либо
-   через root, либо менять путь журнала), `daemon_pid` без сверки `/proc` на старте,
-   затем остальные P2/P3 из таблиц отчёта.
+   Сделано также: `Control` (вывод/код su в logcat), `Burst` (разбор `too-soon`), `daemon_pid`
+   (сверка `/proc`).
+   Следующие по порядку: `LogFragment` (чтение `/data/local` как uid приложения — либо через
+   root, либо менять путь журнала), `dispserve` (нет `kill(-pid)`, `g_starts` не сбрасывается на
+   reload), `apisock` (`SO_REUSEADDR` и второй демон, частота `help`), `uevent_filter`
+   (повтор имени атрибута), затем остальные P2/P3 из таблиц отчёта.
