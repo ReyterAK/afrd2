@@ -84,6 +84,10 @@ static bool g_ceiling_pending = false;
  * решение, коррекция замера), отсчёт начинается заново — иначе сброс
  * пристрелян по старому режиму и может выстрелить в переход (P2-8). */
 static int g_ceiling_pending_id = -1;
+/* Время взвода отсчёта: печатается в строке сброса, чтобы было видно, сколько
+ * реально ждали (сброс проверяется только в ветках применения, поэтому
+ * «4 секунды» на практике больше). */
+static unsigned long long g_ceiling_arm_us;
 /* Режим, при котором началось текущее видео: потолок плеера не может быть
  * выше него (плеер читает частоту в начале сессии). Цель не выше этого
  * режима — сбрасывать потолок незачем (журнал §61). -1 — неизвестен. */
@@ -3108,6 +3112,9 @@ static void ceiling_pending_step (const platform_t *plat, int cur_id, bool playi
 		g_ceiling_pending = true;
 		g_ceiling_pending_id = cur_id;
 		g_ceiling_us = now_us ();	/* отсчёт задержки — от решения */
+		g_ceiling_arm_us = g_ceiling_us;
+		trace (2, "потолок: отсчёт %d мс взведён (режим %d)\n",
+		       CEILING_DEFER_MS, cur_id);
 	}
 
 	if (g_ceiling_us && ((now_us () - g_ceiling_us) < (unsigned long long) CEILING_DEFER_MS * 1000))
@@ -3123,7 +3130,8 @@ static void ceiling_pending_step (const platform_t *plat, int cur_id, bool playi
 		g_ceiling_mode_id = cur_id;
 		g_ceiling_no_fast = true;
 		g_ceiling_restart_expected = true;
-		trace (0, "потолок сброшен через %d мс после решения о режиме\n",
+		trace (0, "потолок сброшен через %llu мс после взвода (ждали %d мс)\n",
+		       (unsigned long long) ((now_us () - g_ceiling_arm_us) / 1000),
 		       CEILING_DEFER_MS);
 	}
 }
@@ -4463,6 +4471,8 @@ static int run_atv14 (const platform_t *plat)
 			/* Отложенный сброс потолка после паузы взводим заново: иначе его
 			 * отсчёт шёл во время паузы и сброс приходился сразу на
 			 * возобновление — то есть на инициализацию декодера (P2-8). */
+			if (g_ceiling_pending)
+				trace (2, "потолок: отсчёт сброшен возобновлением — взведу заново\n");
 			g_ceiling_pending = false;
 			g_ceiling_pending_id = -1;
 			trace (1, "счётчик кадров снова растёт — возвращаю удержанный режим (%d) "
