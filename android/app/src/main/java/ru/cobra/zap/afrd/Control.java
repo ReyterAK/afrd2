@@ -105,7 +105,16 @@ public class Control
         mAfrd.setExecutable (true);
         String[] cmd = new String[] { mAfrd.getPath () + " -k -D " + mIni.getPath () };
         Log.d ("afrd", "Run: " + Arrays.toString (cmd));
-        RootShell.run (cmd, null);
+        /* Вывод и код возврата — в logcat: сообщения демона «daemon is already
+         * running with PID» и «PID file exists, but daemon is dead» раньше
+         * терялись, и сторож молча рестартовал (нашло ревью GUI). */
+        java.util.List<String> out = new java.util.ArrayList<> ();
+        int rc = RootShell.run (cmd, out);
+        for (String line : out)
+            Log.i ("afrd", "restart: " + line);
+        if (rc != 0)
+            Log.w ("afrd", "restart: su exit code " + rc);
+
         // give status another chance
         Status.mFail.success ();
     }

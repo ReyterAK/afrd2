@@ -60,6 +60,11 @@ public class BurstActivity extends Activity
             {
                 if (reply == null)
                     Toast.makeText (app, R.string.burst_no_daemon, Toast.LENGTH_LONG).show ();
+                else if (reply.contains ("too-soon"))
+                    /* Демон отвечает result:too-soon, если сеанс просили чаще
+                     * раза в секунду: раньше показывали «сеанс запущен»
+                     * (нашло ревью GUI). */
+                    Toast.makeText (app, R.string.burst_too_soon, Toast.LENGTH_SHORT).show ();
                 else if (wasCancel)
                     Toast.makeText (app, R.string.burst_cancelled, Toast.LENGTH_SHORT).show ();
                 else

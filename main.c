@@ -189,6 +189,8 @@ int load_config (const char *config)
 	return 0;
 }
 
+static bool pid_is_afrd (pid_t pid);
+
 // returns either the PID of running daemon, or
 // -1 if PID file does not exist, or -2 if it
 // exists but the contents are wrong.
@@ -207,8 +209,9 @@ static pid_t daemon_pid ()
 		if (n > 0) {
 			tmp [n] = 0;
 			pid = strtoul (tmp, NULL, 0);
-			// check if PID is valid
-			if ((pid < 1) || kill (pid, 0))
+			// check if PID is valid and belongs to our daemon: после kill -9
+			// pid мог достаться чужому процессу
+			if ((pid < 1) || kill (pid, 0) || !pid_is_afrd (pid))
 				pid = -2;
 		}
 

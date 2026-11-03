@@ -47,6 +47,8 @@ public class BurstReceiver extends BroadcastReceiver
                  * BURST_STATE. */
                 if (reply == null)
                     Toast.makeText (ctx, R.string.burst_no_daemon, Toast.LENGTH_LONG).show ();
+                else if (reply.contains ("too-soon"))
+                    Toast.makeText (ctx, R.string.burst_too_soon, Toast.LENGTH_SHORT).show ();
                 else if (reqMs == 0)
                     Toast.makeText (ctx, R.string.burst_cancelled, Toast.LENGTH_SHORT).show ();
                 else
