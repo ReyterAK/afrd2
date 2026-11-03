@@ -500,6 +500,23 @@ static void t_cadence_verdict(void)
 	assert(fps_cadence_verdict(0, 0, 0, 99, 10) == FPS_CADENCE_OK);
 }
 
+static void t_fb_declared(void)
+{
+	/* fb-декодер Amlogic: узел заявляет 24 (frame dur 4000), огибающая
+	 * видит ~48 — берём заявленную (живой бокс X96 X10 Pro, §90). */
+	assert(fps_fb_declared_hz(48 * 256, 24 * 256) == 24 * 256);
+	assert(fps_fb_declared_hz(50 * 256, 24 * 256) == 24 * 256);
+	assert(fps_fb_declared_hz(60 * 256, 30 * 256) == 30 * 256);
+
+	/* обычное расхождение не трогаем */
+	assert(fps_fb_declared_hz(25 * 256, 24 * 256) == 25 * 256);
+	assert(fps_fb_declared_hz(84 * 256, 24 * 256) == 84 * 256);
+
+	/* нет данных — возвращаем измеренное */
+	assert(fps_fb_declared_hz(25 * 256, 0) == 25 * 256);
+	assert(fps_fb_declared_hz(0, 24 * 256) == 0);
+}
+
 int main(void)
 {
 	t_classify();
@@ -519,6 +536,7 @@ int main(void)
 	t_correct_av1();
 	t_correct_av1_pct();
 	t_cadence_verdict();
+	t_fb_declared();
 	printf("fps_class: OK\n");
 	return 0;
 }

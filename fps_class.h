@@ -231,4 +231,10 @@ int fps_rate_hz (int index);
 const char *fps_rate_name (int index);
 int fps_rate_index_for_hz (int hz);
 
+/* fb-декодер Amlogic (amvdec_*_fb_) считает кадры вдвое (журнал §90): живой
+ * бокс X96 X10 Pro, `amvdec_h265_fb_`, узел заявляет 24 к/с, а огибающая
+ * видит ~48 и уводит режим в 50. Если измеренная частота попала в окно
+ * 1.5..2.5 заявленной, возвращается заявленная; вне окна — измеренная. */
+int fps_fb_declared_hz (int measured_hz, int declared_hz);
+
 #endif

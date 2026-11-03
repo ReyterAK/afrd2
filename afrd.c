@@ -5438,6 +5438,26 @@ cadence_done: ;
 				if (av1_off > 0.0)
 					trace (1, "решение уточнено поправкой AV1: минус %.2f кадра/с\n", av1_off);
 
+				/* fb-декодер Amlogic (amvdec_*_fb_) считает кадры вдвое
+				 * (журнал §90). Живой бокс X96 X10 Pro, ролик 24 к/с:
+				 * `amvdec_h265_fb_`, узел заявляет 24 / frame dur 4000,
+				 * а огибающая видит ~48 и уводит режим в 50. Верим
+				 * заявленной частоте, но только в окне 1.5..2.5 — вне
+				 * него обычное расхождение правит fps_refine_declared. */
+				if (strstr (v0.device, "_fb_"))
+				{
+					int decl_hz = decl_hz_from_dur (v0.decl_dur);
+					int fixed = fps_fb_declared_hz (hz, decl_hz);
+
+					if ((decl_hz > 0) && (fixed != hz))
+					{
+						trace (0, "счётчик %s даёт " HZ_FMT " Гц при заявленных "
+						       HZ_FMT " Гц — это удвоение fb-декодера, беру заявленную\n",
+						       v0.device, HZ_ARGS (hz), HZ_ARGS (decl_hz));
+						hz = fixed;
+					}
+				}
+
 				/* заявленная длительность кадра (frame dur) уточняет решение —
 				 * как и раньше, но теперь уточняется решение огибающей */
 				if (v0.decl_dur)

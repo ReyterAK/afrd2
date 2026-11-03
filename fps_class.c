@@ -545,3 +545,21 @@ int fps_cadence_verdict (int median_ms, int period_ms, int expect_ms,
 
 	return FPS_CADENCE_OK;
 }
+
+int fps_fb_declared_hz (int measured_hz, int declared_hz)
+{
+	/* Окно 1.5..2.5 заявленной частоты: счётчик fb-декодера Amlogic считает
+	 * вдвое (§90: 59.94 при 30), а замер огибающей на таком тракте даёт
+	 * удвоенную частоту. Вне окна ничего не меняем: обычное расхождение
+	 * замера и заявки правит fps_refine_declared, а не это правило. */
+	if ((measured_hz <= 0) || (declared_hz <= 0))
+		return measured_hz;
+
+	long long lo = (long long) declared_hz * 3 / 2;
+	long long hi = (long long) declared_hz * 5 / 2;
+
+	if ((measured_hz < lo) || (measured_hz > hi))
+		return measured_hz;
+
+	return declared_hz;
+}

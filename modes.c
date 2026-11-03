@@ -234,10 +234,35 @@ void display_mode_switch (display_mode_t *mode, bool force)
 
 	/* Результат записи виден в журнале: раньше он игнорировался, и после
 	 * неудачной записи демон считал режим применённым, а экран оставался
-	 * «null» до конца видео (нашло ревью legacy). */
-	if (sysfs_write (g_mode_path, mode->name) != 0)
+	 * «null» до конца видео (нашло ревью legacy).
+	 *
+	 * Теперь отказ разбирается: сначала возвращаем прежний режим (экран
+	 * перестаёт быть чёрным), затем одна повторная попытка целевого. Если и
+	 * она мимо — состояние не трогаем: режим не применён (P2 прохода 2). */
+	bool applied = (sysfs_write (g_mode_path, mode->name) == 0);
+	if (!applied)
+	{
 		trace (1, "не удалось записать режим %s (узел %s)\n",
 		       mode->name, g_mode_path);
+
+		if (g_blackened && g_current_mode.name [0] &&
+		    sysfs_write (g_mode_path, g_current_mode.name) == 0)
+		{
+			g_blackened = false;
+			trace (1, "экран возвращён в прежний режим %s\n",
+			       g_current_mode.name);
+		}
+
+		applied = (sysfs_write (g_mode_path, mode->name) == 0);
+		if (applied)
+			trace (1, "режим %s применён со второй попытки\n", mode->name);
+	}
+
+	if (!applied)
+	{
+		hdcp_restore (false);
+		return;
+	}
 
 	g_current_mode = *mode;
 	g_blackened = false;
