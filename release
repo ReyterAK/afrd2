@@ -11,10 +11,8 @@ set -e
 ./mka clean
 ./mka
 
-pushd android &>/dev/null
-./gradlew clean
-./gradlew assembleRelease
-popd &>/dev/null
+# POSIX sh: pushd/popd есть только в bash, скрипт запускают как ./release
+( cd android && ./gradlew clean && ./gradlew assembleRelease )
 
 OUT=android/app/build/outputs/apk/release
 APK=$(find $OUT -name '*.apk')
@@ -26,8 +24,8 @@ fi
 VERSION=`sed main.c -ne '/const char \*g_version/{' -e 's/^.*= *"//' -e 's/".*$//' -e p -e '}'`
 SUFFIX=`sed main.c -ne '/const char \*g_ver_sfx/{' -e 's/^.*= *"//' -e 's/".*$//' -e p -e '}'`
 
-mkdir -p release
-RELEASE=releases/ru.cobra.zap.afrd-${VERSION}${SUFFIX}.apk
-mv $APK $RELEASE
+mkdir -p releases
+RELEASE=releases/$(basename "$APK")
+mv "$APK" "$RELEASE"
 
 echo "Finished $RELEASE"
