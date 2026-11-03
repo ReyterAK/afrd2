@@ -12,6 +12,7 @@
 
 #include <strings.h>
 #include <errno.h>
+#include <time.h>
 #include <unistd.h>
 #include <libgen.h>
 #include <sys/stat.h>
@@ -114,6 +115,11 @@ static bool apisock_is_cmd (char **cmd, const char *kw)
 
 static void apisock_cmd (char *cmd, int fd, struct sockaddr *src_addr, socklen_t addrlen)
 {
+	/* Не чаще раза в секунду: help — самая длинная строка ответа, а порт
+	 * слушает localhost без ограничения темпа (P3 прохода 2). */
+	static time_t last_help;
+	time_t now_s = time (NULL);
+
 	while (*cmd) {
 		cmd += strspn (cmd, spaces);
 		char *eol = strchr (cmd, '\n');
@@ -127,15 +133,20 @@ static void apisock_cmd (char *cmd, int fd, struct sockaddr *src_addr, socklen_t
 		trace (2, "API command: [%s]\n", cmd);
 
 		if (apisock_is_cmd (&cmd, "help")) {
-			static const char *help =
-				"help\n\tdisplay this help text\n"
-				"frame_rate_hint <fr>\n\ttell afrd the video starting in <1.0 seconds will use <fr>/1000 frames per second (e.g. 23976 = 23.976 fps)\n"
-				"refresh_rate <rr>\n\ttell afrd to set display refresh rate as close to <rr>/1000 Hz as possible, no arg to restore original rate\n"
-				"color_space <cs>\n\toverride colorspace, empty arg to restore default behavior\n"
-				"status\n\tget current afrd status\n"
-				"burst <ms>\n\trun one AFR session for <ms> milliseconds (15000..120000, default 40000); 0 cancels; repeats extend the session\n"
-				"reconf\n\ttell afrd to reload configuration file as soon as possible\n";
-			sendto (fd, help, strlen (help), 0, src_addr, addrlen);
+			if (now_s == last_help) {
+				trace (2, "API: help повторён чаще раза в секунду — пропускаю\n");
+			} else {
+				last_help = now_s;
+				static const char *help =
+					"help\n\tdisplay this help text\n"
+					"frame_rate_hint <fr>\n\ttell afrd the video starting in <1.0 seconds will use <fr>/1000 frames per second (e.g. 23976 = 23.976 fps)\n"
+					"refresh_rate <rr>\n\ttell afrd to set display refresh rate as close to <rr>/1000 Hz as possible, no arg to restore original rate\n"
+					"color_space <cs>\n\toverride colorspace, empty arg to restore default behavior\n"
+					"status\n\tget current afrd status\n"
+					"burst <ms>\n\trun one AFR session for <ms> milliseconds (15000..120000, default 40000); 0 cancels; repeats extend the session\n"
+					"reconf\n\ttell afrd to reload configuration file as soon as possible\n";
+				sendto (fd, help, strlen (help), 0, src_addr, addrlen);
+			}
 		} else if (apisock_is_cmd (&cmd, "frame_rate_hint")) {
 			int fr = parse_int (&cmd);
 			cmd += strspn (cmd, spaces);

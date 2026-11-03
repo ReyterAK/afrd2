@@ -525,13 +525,29 @@ int main (int argc, char *const *argv)
 		{
 			if (!strcmp (argv [i], "--burst"))
 			{
-				burst_sec = (i + 1 < argc) ? atoi (argv [i + 1]) : 0;
+				/* Без значения опция раньше молча означала «отмена» (0):
+				 * опечатка выключала сеанс вместо запуска (P3 прохода 2). */
+				const char *v = (i + 1 < argc) ? argv [i + 1] : NULL;
+				if (!v || !*v || (strspn (v, "0123456789") != strlen (v)))
+				{
+					fprintf (stderr, "%s: --burst needs a number of seconds\n",
+					         g_program);
+					return EXIT_FAILURE;
+				}
+				burst_sec = atoi (v);
 				i++;			/* пропускаем и значение */
 				continue;
 			}
 			if (!strncmp (argv [i], "--burst=", 8))
 			{
-				burst_sec = atoi (argv [i] + 8);
+				const char *v = argv [i] + 8;
+				if (!*v || (strspn (v, "0123456789") != strlen (v)))
+				{
+					fprintf (stderr, "%s: --burst needs a number of seconds\n",
+					         g_program);
+					return EXIT_FAILURE;
+				}
+				burst_sec = atoi (v);
 				continue;
 			}
 			if (w < (int) ARRAY_SIZE (argv_own) - 1)

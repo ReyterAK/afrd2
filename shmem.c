@@ -16,7 +16,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
-static int g_shmem_h;
+static int g_shmem_h = -1;
 static char *g_shmem_path;
 // pointer to shared memory
 static afrd_shmem_t *g_shmem;
@@ -143,7 +143,12 @@ void shmem_fini ()
 		g_shmem = NULL;
 	}
 
-	close (g_shmem_h);
+	/* Дескриптор и обнуляем: без этого повторный shmem_fini (путь отказа
+	 * mmap и выход) закрывал бы уже чужой fd с тем же номером (P3 прохода 2). */
+	if (g_shmem_h >= 0) {
+		close (g_shmem_h);
+		g_shmem_h = -1;
+	}
 	/* Файл НЕ удаляем: читателям уже сказано «переоткрой» (size=0, crc32++),
 	 * а unlink при перезапуске удалял shmem уже нового демона — GUI видел
 	 * «демон не запущен» и сторож поднимал второй (нашло ревью API). Новый

@@ -102,7 +102,9 @@ public class Burst
         try
         {
             sock = new DatagramSocket ();
-            sock.setSoTimeout (700);
+            /* Демону во время смены режима нужно до 4 с (DISPSERVE_REPLY_MS);
+             * 700 мс давали ложное «daemon did not answer» при живой команде. */
+            sock.setSoTimeout (4500);
 
             byte[] cmd = ("burst " + ms + "\n").getBytes ("UTF-8");
             InetAddress loopback = InetAddress.getByName ("127.0.0.1");
