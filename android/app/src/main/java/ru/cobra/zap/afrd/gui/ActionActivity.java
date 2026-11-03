@@ -48,6 +48,13 @@ public class ActionActivity extends Activity
 
         config.put ("enable", state);
         config.save (control.mIni);
+
+        /* Тумблер «Включить» живёт в ini_options, и каждое открытие
+         * MainActivity кладёт prefs поверх ini. Без этой записи STOP из
+         * уведомления откатывался на 1 при следующем запуске приложения
+         * (нашло ревью GUI). */
+        getSharedPreferences ("ini_options", MODE_PRIVATE).edit ()
+                .putBoolean ("enable", state).apply ();
         /* см. MainActivity.applyPrefs: без этого демон не узнаёт о смене
          * «включить/выключить» до перезапуска */
         control.reload ();

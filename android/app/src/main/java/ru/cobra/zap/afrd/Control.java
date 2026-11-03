@@ -145,6 +145,14 @@ public class Control
 
     public String extractConfig (Context ctx)
     {
+        return extractConfig (ctx, false);
+    }
+
+    /** reset=true — «Сброс настроек»: для ключей, которыми управляет приложение
+     * (Config.itemType), побеждает профиль; ручные правки остальных ключей
+     * сохраняются (P2-12 остаётся в силе). */
+    public String extractConfig (Context ctx, boolean reset)
+    {
         String kver = System.getProperty ("os.version", "");
         String hardware = jfun.getProperty ("ro.hardware");
         String model = jfun.getProperty ("ro.product.model");
@@ -176,6 +184,12 @@ public class Control
             return ctx.getString (R.string.failed_detect_ostype, kver, hardware, model);
 
         String before = readText (mIni);
+
+        /* При сбросе выкидываем из «старого» текста ключи, которыми управляет
+         * приложение: иначе merge сохранит их значения, и «Сброс» ничего не
+         * сбросит (нашло ревью GUI). */
+        if (reset && (before != null))
+            before = IniMerge.dropKeys (before, Config.itemType.keySet ());
 
         if (!jfun.extractFile (ctx, res_id, mIni))
             return ctx.getString (R.string.failed_copy_raw, mIni.getPath ());

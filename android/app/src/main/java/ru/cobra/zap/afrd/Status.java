@@ -169,6 +169,12 @@ public class Status
         ByteBuffer buff = ByteBuffer.wrap (data);
         buff.order (ByteOrder.LITTLE_ENDIAN);
 
+        /* Усечённый/пустой файл (демон не успел записать) не должен ронять
+         * главный поток сервиса: читаем поля только когда размер полный
+         * (нашло ревью GUI). */
+        if (size < 44)
+            return false;
+
         // now check if buffer is consistent
         stamp = buff.getInt (0);
         int stamp2 = buff.getInt (size - 4);

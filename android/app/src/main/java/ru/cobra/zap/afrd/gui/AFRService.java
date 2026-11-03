@@ -277,8 +277,11 @@ public class AFRService extends Service
                 Log.i ("afrd", "(re-)Starting afrd because failed to get daemon status");
         }
 
-        mFirstRun = false;
-        mStatus.close ();
-        mControl.restart ();
+        /* Через restartDaemon: у него есть пауза между попытками. Прямой
+         * mControl.restart() здесь давал цикл «убить/поднять» каждые 3 с, если
+         * в shmem остался демон другой версии (нашло ревью GUI). */
+        restartDaemon (String.format (Locale.getDefault (),
+            "Restarting daemon (%s, expected %s)",
+            mStatus.ok () ? mStatus.mVersion : "no status", BuildConfig.VERSION_NAME));
     }
 }

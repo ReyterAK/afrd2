@@ -117,7 +117,18 @@ public class Config
             Object ret = mItems.get (key);
             if (ret instanceof Integer)
                 return (Integer) ret;
-            return Integer.parseInt (ret.toString ());
+
+            /* Нечисловое значение (правка ini руками, пустая строка) не должно
+             * ронять приложение: IniValue.parse сохраняет его строкой, а здесь
+             * берём умолчание. */
+            try
+            {
+                return Integer.parseInt (ret.toString ().trim ());
+            }
+            catch (NumberFormatException e)
+            {
+                return defval;
+            }
         }
 
         return defval;
@@ -199,6 +210,11 @@ public class Config
 
                 mItems.put (key, oval);
             }
+
+            /* Закрываем файл: без этого каждый applyPrefs (правка любой
+             * настройки) терял fd — за длинную сессию EMFILE и «ничего не
+             * сохраняется» (нашло ревью GUI). */
+            bufr.close ();
         }
         catch (IOException e)
         {
@@ -334,7 +350,10 @@ public class Config
                 switch (it & TYPE_MASK)
                 {
                     case TYPE_BOOL: edit.putBoolean (key, getBoolean (ini_key, false)); break;
-                    case TYPE_INT: edit.putString (key, ((Integer) getInt (ini_key, 0)).toString ()); break;
+                    /* Значение пишем как есть: оно может быть нечисловым
+                     * (пришло из ini руками), и Integer.parseInt тут падал —
+                     * путь «Сброс настроек → onCreate» (нашло ревью GUI). */
+                    case TYPE_INT: edit.putString (key, String.valueOf (mItems.get (ini_key))); break;
                     case TYPE_STR: edit.putString (key, getString (ini_key, "")); break;
                 }
         }

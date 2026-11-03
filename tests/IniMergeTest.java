@@ -63,6 +63,16 @@ public class IniMergeTest
         eq ("только активные пары",
             IniMerge.appendMissing (old, "a=1\n"), "a=1\nkey=value\n");
 
+        /* dropKeys: «Сброс настроек» убирает ключи, которыми управляет
+         * приложение (и активные, и закомментированные), остальные строки
+         * файла остаются — ручные правки не теряются. */
+        String withHint = "#switch.revert=1\nenable=1\n#fps.declare.fast=0\nswitch.revert=0\n";
+        java.util.Set<String> drop = new java.util.HashSet<> (
+            java.util.Arrays.asList ("switch.revert", "fps.declare.fast"));
+        eq ("dropKeys", IniMerge.dropKeys (withHint, drop), "enable=1\n");
+        eq ("dropKeys пустой набор", IniMerge.dropKeys (withHint, new java.util.HashSet<String> ()), withHint);
+        eq ("dropKeys null", IniMerge.dropKeys (withHint, null), withHint);
+
         if (fails != 0)
         {
             System.err.println ("IniMerge: " + fails + " проверок не прошло");

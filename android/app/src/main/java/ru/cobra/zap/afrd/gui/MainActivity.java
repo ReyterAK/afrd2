@@ -53,6 +53,9 @@ public class MainActivity extends Activity
     PackageInfo mPackageInfo;
     Control mControl;
     SharedPreferences mOptions;
+    /* Текущий prepareConfig вызван «Сбросом настроек»: профиль должен победить
+     * для ключей, которыми управляет приложение. */
+    private boolean mResetRequested;
     // used for the "press Back again to quit" thing
     long mBackTime = 0;
     // We don't use fragment stack; instead, we always have just one active fragment
@@ -201,7 +204,8 @@ public class MainActivity extends Activity
 
         if (rewrite)
         {
-            String res = mControl.extractConfig (this);
+            String res = mControl.extractConfig (this, mResetRequested);
+            mResetRequested = false;
             if (!res.isEmpty ())
             {
                 showMessage (getString (R.string.msg_title_critical_error), res, null);
@@ -746,6 +750,13 @@ public class MainActivity extends Activity
     {
         // reset application preferences
         mOptions.edit ().clear ().apply ();
+
+        /* afrd_ini_ver лежит в «requisites» и переживает сброс prefs — без его
+         * снятия prepareConfig считает профиль актуальным и ничего не делает,
+         * а «Сброс» показывает успех (нашло ревью GUI). */
+        getSharedPreferences ("requisites", 0).edit ()
+                .remove ("afrd_ini_ver").apply ();
+        mResetRequested = true;
 
         /* ini не удаляем: профиль переизвлечётся (afrd_ini_ver сброшен) и
          * сольётся с текущим файлом — ключи, включённые руками, останутся

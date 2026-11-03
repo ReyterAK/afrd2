@@ -93,6 +93,57 @@ public class IniMerge
         return res + tail;
     }
 
+    /** Убрать из текста строки (активные и закомментированные) указанных
+     * ключей. Нужно «Сбросу настроек»: для ключей, которыми управляет
+     * приложение, должен победить профиль, а ручные правки остальных ключей
+     * сохраняются (их в наборе нет). */
+    public static String dropKeys (String text, java.util.Set<String> keys)
+    {
+        if ((text == null) || (keys == null) || keys.isEmpty ())
+            return text;
+
+        StringBuilder out = new StringBuilder ();
+        boolean trailing = text.endsWith ("\n");
+        String [] lines = text.isEmpty () ? new String [0] : text.split ("\n", -1);
+        int n = lines.length;
+        if (trailing && (n > 0))
+            n--;
+
+        boolean first = true;
+        for (int i = 0; i < n; i++)
+        {
+            String raw = lines [i];
+            String line = raw.trim ();
+            String key = null;
+
+            if (line.startsWith ("#"))
+            {
+                int eq = line.indexOf ('=', 1);
+                if (eq > 1)
+                    key = line.substring (1, eq).trim ();
+            }
+            else if (!line.isEmpty ())
+            {
+                int eq = line.indexOf ('=');
+                if (eq > 0)
+                    key = line.substring (0, eq).trim ();
+            }
+
+            if ((key != null) && keys.contains (key))
+                continue;
+
+            if (!first)
+                out.append ('\n');
+            out.append (raw);
+            first = false;
+        }
+
+        if (trailing && (out.length () > 0))
+            out.append ('\n');
+
+        return out.toString ();
+    }
+
     /** Активные пары key=value файла: последнее вхождение ключа выигрывает
      * (так же читает демон, cfg_parse.c). */
     private static java.util.LinkedHashMap<String, String> active (String text)
