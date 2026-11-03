@@ -2,6 +2,7 @@ package ru.cobra.zap.afrd;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -38,6 +39,10 @@ public class RootShell
     /** Найденный рабочий su (null — ещё не найден). */
     private static String sSu = null;
 
+    /** Срок проверки одного кандидата su и общий срок команды. */
+    private static final long PROBE_TIMEOUT_MS = 3000;
+    private static final long COMMAND_TIMEOUT_MS = 15000;
+
     /**
      * Путь к рабочему su или null.
      *
@@ -57,13 +62,21 @@ public class RootShell
             {
                 Process p = new ProcessBuilder (cand, "-c", "id")
                         .redirectErrorStream (true).start ();
+                /* Диалог Magisk может ждать пользователя сколько угодно:
+                 * без срока проверка залипает навсегда, а из службы это
+                 * главный поток (нашло ревью GUI). */
+                if (!waitFor (p, PROBE_TIMEOUT_MS))
+                {
+                    p.destroy ();
+                    continue;
+                }
+
                 BufferedReader r = new BufferedReader (new InputStreamReader (p.getInputStream ()));
                 boolean root = false;
                 String line;
                 while ((line = r.readLine ()) != null)
                     if (line.contains ("uid=0"))
                         root = true;
-                p.waitFor ();
                 if (root)
                 {
                     sSu = cand;
@@ -76,6 +89,45 @@ public class RootShell
         }
 
         return null;
+    }
+
+    /** Дождаться завершения процесса не дольше ms (waitFor(long) есть только
+     * с API 26, а minSdk 23). */
+    private static boolean waitFor (Process p, long ms)
+    {
+        final Process proc = p;
+        final boolean [] done = { false };
+        Thread t = new Thread (new Runnable ()
+        {
+            @Override
+            public void run ()
+            {
+                try
+                {
+                    proc.waitFor ();
+                }
+                catch (InterruptedException ignored)
+                {
+                }
+                synchronized (done)
+                {
+                    done [0] = true;
+                }
+            }
+        });
+        t.setDaemon (true);
+        t.start ();
+        try
+        {
+            t.join (ms);
+        }
+        catch (InterruptedException ignored)
+        {
+        }
+        synchronized (done)
+        {
+            return done [0];
+        }
     }
 
     /** Сбросить запомненный путь (например, после выдачи root пользователем). */
@@ -121,13 +173,54 @@ public class RootShell
             os.flush ();
             os.close ();
 
-            BufferedReader r = new BufferedReader (new InputStreamReader (p.getInputStream ()));
-            String line;
-            while ((line = r.readLine ()) != null)
-                if (output != null)
-                    output.add (line);
+            /* Чтение — в отдельном потоке со сроком: если su повис (диалог
+             * Magisk, зависший демон), UI/служба не залипают навсегда. */
+            final Process proc = p;
+            final List<String> sink = new ArrayList<> ();
+            Thread reader = new Thread (new Runnable ()
+            {
+                @Override
+                public void run ()
+                {
+                    try
+                    {
+                        BufferedReader r = new BufferedReader (new InputStreamReader (proc.getInputStream ()));
+                        String line;
+                        while ((line = r.readLine ()) != null)
+                            sink.add (line);
+                    }
+                    catch (Exception ignored)
+                    {
+                    }
+                }
+            });
+            reader.setDaemon (true);
+            reader.start ();
+            try
+            {
+                reader.join (COMMAND_TIMEOUT_MS);
+            }
+            catch (InterruptedException ignored)
+            {
+            }
 
-            return p.waitFor ();
+            if (reader.isAlive ())
+            {
+                p.destroy ();
+                return -1;
+            }
+
+            if (output != null)
+                output.addAll (sink);
+
+            try
+            {
+                return p.exitValue ();
+            }
+            catch (IllegalThreadStateException e)
+            {
+                return -1;
+            }
         }
         catch (Exception e)
         {

@@ -98,9 +98,10 @@ public class Burst
      */
     public static String send (int ms)
     {
+        DatagramSocket sock = null;
         try
         {
-            DatagramSocket sock = new DatagramSocket ();
+            sock = new DatagramSocket ();
             sock.setSoTimeout (700);
 
             byte[] cmd = ("burst " + ms + "\n").getBytes ("UTF-8");
@@ -110,7 +111,6 @@ public class Burst
             byte[] buf = new byte[256];
             DatagramPacket reply = new DatagramPacket (buf, buf.length);
             sock.receive (reply);
-            sock.close ();
 
             return new String (buf, 0, reply.getLength (), "UTF-8").trim ();
         }
@@ -121,6 +121,13 @@ public class Burst
         catch (IOException exc)
         {
             jfun.logExc ("Burst.send", exc);
+        }
+        finally
+        {
+            /* Сокет закрываем всегда: раньше на таймауте он оставался до GC
+             * (нашло ревью GUI). */
+            if (sock != null)
+                sock.close ();
         }
 
         return null;
