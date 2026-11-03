@@ -3295,6 +3295,19 @@ static bool atv14_reconf_pending (mstime_t *config_timer)
 	if (g_reconf_requested)
 	{
 		g_reconf_requested = false;
+
+		/* Пропавший или нечитаемый файл — не повод завершать демон: на
+		 * legacy-пути mtime=0 просто не считается изменением, и демон живёт
+		 * с прежним конфигом (`config_mtime_changed`). Здесь тот же исход,
+		 * но с явной строкой: иначе API reconf молча убивал бы демон
+		 * (P2 прохода 2). */
+		if (access (g_config, R_OK) != 0)
+		{
+			trace (0, "конфиг %s не читается — перезагрузку пропускаю, "
+			          "работаю с прежним\n", g_config);
+			return false;
+		}
+
 		trace (1, "запрошена перезагрузка конфига (reconf)\n");
 		return true;
 	}
