@@ -23,6 +23,7 @@
 #include "hdrinfo.h"
 #include "pkgdet.h"
 #include "pause.h"
+#include "seq.h"
 #include "stuck.h"
 #include "ceiling.h"
 #include "dispserve.h"
@@ -2339,6 +2340,14 @@ static void vendor_frac_restore (void)
 /* Ожидаемая частота последнего применённого режима (24.8). */
 static int g_vinfo_expect_hz;
 
+/* Последнее наше применение режима: время и id. Нужно, чтобы отличить
+ * перезапуск декодера, вызванный нашим же переключением, от нового ролика:
+ * плеер пересоздаёт декодер через 2–9 с, счётчик сбрасывается, и раньше это
+ * считалось «новым видео» — сдача по неприменённому режиму снималась через 6 с
+ * и цикл повторялся (лог тестера 03.11: 18 переключений за 6.5 мин). */
+static unsigned long long g_last_apply_us;
+static int g_last_apply_id = -1;
+
 /* Решение по контенту для последнего применённого режима (24.8): нужен для
  * сверки источников — счётчика кадров и подачи видео-слоя. */
 static int g_content_hz;
@@ -2529,6 +2538,11 @@ static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skip
 	 * формата не применились; единственная попытка без записи — применилась).
 	 * Формат ставит точка «режим устоялся» после сверки фактической частоты,
 	 * см. hdrinfo_timer в run_atv14. */
+
+	/* Запись «наше применение»: по ней отличаем перезапуск декодера после
+	 * собственной смены режима от нового ролика (см. own_switch_recent). */
+	g_last_apply_us = now_us ();
+	g_last_apply_id = sf_id;
 
 	return 0;
 }
@@ -3153,6 +3167,18 @@ static bool ceiling_take_restart (int cur_id)
 	return own;
 }
 
+/* Перезапуск декодера, вызванный нашим же применением режима: счётчик
+ * сбрасывается через 2–9 с после переключения (плеер пересоздаёт декодер).
+ * Признак не зависит от списков зажима: у плеера без «потолка» сброс раньше
+ * считался новым видео, снимал сдачу и запускал новый круг переключений
+ * (лог тестера 03.11, §128–§129). */
+static bool own_switch_recent (int cur_id)
+{
+	return g_last_apply_us &&
+	       ((now_us () - g_last_apply_us) < CEILING_RESTART_WINDOW_US) &&
+	       (cur_id >= 0) && (cur_id == g_last_apply_id);
+}
+
 /* Статистика для GUI/API (afrd -s, status): legacy-структуры в ATV14 не
  * ведутся, поэтому отдаём id текущего режима и id режима возврата. */
 static void atv14_stats_sync (const platform_t *plat, int cur_id, int orig_id, bool held)
@@ -3210,6 +3236,11 @@ static void atv14_invalidate (const platform_t *plat, int *want_sf_id,
 	*want_sf_id = -1;
 	*measure_failed = false;
 	*retries = 0;
+
+	/* Нумерация режимов сменилась — запись «наше применение» больше не
+	 * годится: id из старой таблицы может совпасть с чужим. */
+	g_last_apply_us = 0;
+	g_last_apply_id = -1;
 
 	if (*held)
 	{
@@ -3575,19 +3606,15 @@ static int run_atv14 (const platform_t *plat)
 	 * после смены режима (не зависит от fps.cadence.fix.ms) */
 	mstime_t hdrinfo_timer = 0;
 	bool hdrinfo_armed = false;
-	/* Проверка фактической частоты: 0 — не было расхождения, 1 — ждём
-	 * подтверждения повторным чтением, 2 — режим уже повторяли */
-	int vinfo_state = 0;
+	/* Проверка фактической частоты и повтор — в чистой функции seq.h:
+	 * состояние живёт здесь, правила (один повтор, сдача до конца видео,
+	 * формат только после совпадения) — там. */
+	seq_t seq = {SEQ_IDLE, false};
 	/* Промежуточный режим, через который повторяли неприменённый (удвоение) */
 	int vinfo_mid = -1;
 	/* Текущий заход hdrinfo_timer — только повторное чтение vinfo (без
 	 * повторного разбора HDR-атрибутов) */
 	bool vinfo_confirm = false;
-	/* Сдали неприменённый режим (остались на удвоении или вернули исходный):
-	 * до конца видео больше не переключаем. Перепроверка замера (R56) иначе
-	 * снимала measure_failed через ~0.6 с и запускала новый круг: лог тестера
-	 * 03.11 — 18 переключений за 6.5 мин, четыре полных цикла на одном канале. */
-	bool retry_gave_up = false;
 	int preferred_id;
 	/* поправка частоты для плеера текущего видео (fps.correct.list):
 	 * пакет определяется один раз на видео, при первом замере */
@@ -4193,7 +4220,8 @@ static int run_atv14 (const platform_t *plat)
 				 * это за новый ролик и поднимал режим — режим мигал 50 -> 60
 				 * сразу после переключения (живая находка 18.10 на .50). */
 				bool own_reset = ceiling_take_restart (cur_sf_id) ||
-				                 ceiling_recent_within (8000000ULL);
+				                 ceiling_recent_within (8000000ULL) ||
+				                 own_switch_recent (cur_sf_id);
 
 				/* Сеанс «по кнопке» на смене потока заканчивается: новое
 				 * видео — это новый замер, то есть второе переключение,
@@ -4218,7 +4246,12 @@ static int run_atv14 (const platform_t *plat)
 				want_sf_id = -1;
 				measure_failed = false;
 				retries = 0;
-				retry_gave_up = false;	/* новое видео — можно пробовать снова */
+				/* Сдачу снимает только настоящее новое видео: перезапуск
+				 * декодера после нашего же переключения — не новое видео
+				 * (иначе цикл «сдали → через 6 с снова пробуем», лог
+				 * тестера 03.11: 18 переключений за 6.5 мин). */
+				if (!own_reset)
+					seq_new_video (&seq);
 				fast_applied = false;	/* новое видео — быстрое решение заново */
 				fast_mismatch_logged = false;
 				fast_veto_logged = false;
@@ -4250,7 +4283,7 @@ static int run_atv14 (const platform_t *plat)
 				bump_probe_veto_logged = false;
 				hdrinfo_armed = false;
 				mstime_disable (&hdrinfo_timer);
-				vinfo_state = 0;
+				seq_note_applied (&seq);
 				vinfo_confirm = false;
 				vinfo_mid = -1;
 				/* плеер нового видео может быть другим — поправку
@@ -4453,10 +4486,9 @@ static int run_atv14 (const platform_t *plat)
 			cadence_reverted = false;
 			hdrinfo_armed = false;
 			mstime_disable (&hdrinfo_timer);
-			vinfo_state = 0;
 			vinfo_confirm = false;
 			vinfo_mid = -1;
-			retry_gave_up = false;
+			seq_new_video (&seq);
 			counter_last_grow_us = 0;
 			counter_stall_logged = false;
 			crosscheck_logged = false;
@@ -4476,45 +4508,37 @@ static int run_atv14 (const platform_t *plat)
 			vinfo_confirm = false;
 
 			int vhz = vinfo_log_actual ();
-			bool bad = (g_vinfo_expect_hz > 0) && (vhz > 0) &&
-			           fps_group_differs (g_vinfo_expect_hz, vhz);
+			int mid_hz = (vinfo_mid >= 0)
+			           ? sfmodes_current_hz (g_sf_modes, g_sf_modes_n, vinfo_mid)
+			           : 0;
+			/* Промежуточный режим — только если это правда удвоение, а не
+			 * подставленный исходный: иначе «оставляю удвоение» соврёт, а
+			 * профиль останется чужим. */
+			bool mid_is_double = (vinfo_mid >= 0) && (vinfo_mid != orig_sf_id);
+			seq_step_t step = seq_settled (&seq, vhz, g_vinfo_expect_hz,
+			                               mid_hz, mid_is_double);
 
-			/* Формат ставим, только когда режим устоялся и частота та, что
-			 * просили (или сверять нечего). Пока переход в полёте, правило
-			 * применять нельзя — см. комментарий в atv14_apply_mode. */
-			bool cs_ready = !bad;
-
-			if (!bad)
-				vinfo_state = 0;
-
-			/* Частота не та, что просили (живой случай 02.11, бокс тестера
-			 * X5/ATV14: на 25-фпс канале просили 2160p25, ядро оставило
-			 * 60 Гц, телевизор показал «нет сигнала»). Сначала перечитываем
-			 * vinfo через 800 мс — узел обновляется асинхронно, — затем один
-			 * раз повторяем режим «туда и обратно»: повторная выдача того же
-			 * id не пересобирает vsync-путь (§21.9), а смена режима — да.
-			 * Не помогло — возвращаем исходный режим, чтобы не оставить
-			 * экран без сигнала, и до конца видео больше не переключаем. */
-			else if (vinfo_state == 0)
+			switch (step.action)
 			{
-				vinfo_state = 1;
-				vinfo_confirm = true;
-				mstime_update ();
-				mstime_arm (&hdrinfo_timer, 800);
-				hdrinfo_armed = true;
-				trace (2, "частота не применилась — перепроверяю через 800 мс\n");
-			}
-			else
-			{
-				bool retry_ok = false;
+				case SEQ_RECHECK:
+					/* Частота не та, что просили (живой случай 02.11, бокс
+					 * тестера X5/ATV14: на 25-фпс канале просили 2160p25,
+					 * ядро оставило 60 Гц, телевизор показал «нет сигнала»).
+					 * Узел vinfo обновляется асинхронно — подтверждаем
+					 * повторным чтением через 800 мс. */
+					vinfo_confirm = true;
+					mstime_update ();
+					mstime_arm (&hdrinfo_timer, 800);
+					hdrinfo_armed = true;
+					trace (2, "частота не применилась — перепроверяю через 800 мс\n");
+					break;
 
-				if (vinfo_state == 1)
+				case SEQ_RETRY:
 				{
-					vinfo_state = 2;
-
-					/* Промежуточный режим — удвоение цели (25 -> 50). Живой
-					 * случай 02.11 (бокс тестера): переход 60 -> 25 не
-					 * применялся, а 50 -> 25 — применялся. Таблица режимов
+					/* Один повтор «через удвоение цели» (25 -> 50): у тестера
+					 * 60 -> 25 не применялся, а 50 -> 25 — применялся.
+					 * Повторная выдача того же id не пересобирает vsync-путь
+					 * (§21.9), а смена режима — да. Таблица режимов
 					 * SurfaceFlinger есть только на новом пути; на вендорском
 					 * идём через исходный режим, как раньше. */
 					vinfo_mid = (plat->sink == SINK_VENDOR_MODE)
@@ -4534,60 +4558,41 @@ static int run_atv14 (const platform_t *plat)
 						       cur_sf_id);
 
 					colorspace_hold (true);
+					bool mid_applied = false;
 					if (vinfo_mid >= 0)
-						atv14_apply_mode (plat, vinfo_mid,
-						                  "повтор: промежуточный режим");
+						mid_applied = atv14_apply_mode (plat, vinfo_mid,
+						                              "повтор: промежуточный режим") == 0;
 					int rc = atv14_apply_mode (plat, cur_sf_id,
 					                           "повтор: частота не применилась");
 					colorspace_hold (false);
 
 					if (rc == 0)
 					{
-						/* Формат — в точке «режим устоялся» (см. cs_ready):
-						 * сразу после транзакции узел ещё показывает прежний
-						 * режим, и запись отменила бы переход. */
+						/* Формат — в точке «режим устоялся»: сразу после
+						 * транзакции узел ещё показывает прежний режим, и
+						 * запись отменила бы переход. */
 						mstime_update ();
 						mstime_arm (&hdrinfo_timer, HDRINFO_SETTLE_MS);
 						hdrinfo_armed = true;
-						retry_ok = true;
+						break;
 					}
-				}
 
-				if (!retry_ok)
-				{
-					int mid_hz = (vinfo_mid >= 0)
-					           ? sfmodes_current_hz (g_sf_modes, g_sf_modes_n, vinfo_mid)
-					           : 0;
-
-					/* Если удалось остаться на удвоении (25 -> 50), оставляем
-					 * его: 50 Гц для 25-к/с контента ровнее исходных 60 с
-					 * рваной подачей, а главное — экран сохраняет сигнал.
-					 * Иначе возвращаем исходный режим и профиль. */
-					if ((plat->sink != SINK_VENDOR_MODE) && (mid_hz > 0) &&
-					    (vhz == mid_hz))
+					/* Повтор не удался. Остаться можно только на удвоении,
+					 * иначе — штатный возврат режима вместе с профилем. */
+					if (seq_retry_result (&seq, mid_applied, mid_is_double) == SEQ_KEEP_MID)
 					{
 						trace (0, "целевая частота не применилась — оставляю "
 						       HZ_FMT " Гц (удвоение)\n", HZ_ARGS (mid_hz));
 						cur_sf_id = vinfo_mid;
-						vinfo_state = 0;
 						measure_failed = true;
-						/* Цель снимаем: иначе guard_decide на каждой
-						 * итерации возвращал бы SWITCH и переключал режим
-						 * заново. До конца видео больше не пробуем. */
 						want_sf_id = -1;
-						retry_gave_up = true;
-						/* Остались на промежуточном режиме — формат
-						 * ставим по нему. */
-						cs_ready = true;
+						colorspace_apply_current_mode ();
 					}
 					else
 					{
 						trace (0, "частота не применилась повторно — возвращаю режим\n");
-						vinfo_state = 0;
 						measure_failed = true;
 						want_sf_id = -1;
-						retry_gave_up = true;
-
 						if (held &&
 						    (atv14_restore_mode (plat, orig_sf_id,
 						                         "частота не применилась") == 0))
@@ -4597,14 +4602,45 @@ static int run_atv14 (const platform_t *plat)
 							held = false;
 						}
 					}
+					break;
 				}
-			}
 
-			/* Режим устоялся (или мы сознательно остались на удвоении) —
-			 * самое время поставить формат: узел имени режима уже отражает
-			 * новое состояние, и запись не отменит переход. */
-			if (cs_ready)
-				colorspace_apply_current_mode ();
+				case SEQ_KEEP_MID:
+					/* Повтор кончился на удвоении (25 -> 50): 50 Гц для
+					 * 25-к/с контента ровнее исходных 60 с рваной подачей, и
+					 * экран точно с сигналом. До конца видео не переключаем. */
+					trace (0, "целевая частота не применилась — оставляю "
+					       HZ_FMT " Гц (удвоение)\n", HZ_ARGS (mid_hz));
+					cur_sf_id = vinfo_mid;
+					measure_failed = true;
+					want_sf_id = -1;
+					colorspace_apply_current_mode ();
+					break;
+
+				case SEQ_RESTORE:
+					trace (0, "частота не применилась повторно — возвращаю режим\n");
+					measure_failed = true;
+					want_sf_id = -1;
+					if (held &&
+					    (atv14_restore_mode (plat, orig_sf_id,
+					                         "частота не применилась") == 0))
+					{
+						cur_sf_id = orig_sf_id;
+						orig_sf_id = -1;
+						held = false;
+					}
+					break;
+
+				case SEQ_SET_FORMAT:
+					/* Режим устоялся и частота та, что просили, — ставим
+					 * формат: узел имени уже отражает новое состояние, и
+					 * запись не отменит переход. */
+					colorspace_apply_current_mode ();
+					break;
+
+				default:
+					break;
+			}
 		}
 		else if (cadence_armed && mstime_expired (&cadence_timer))
 		{
@@ -4801,8 +4837,8 @@ cadence_done: ;
 			want_sf_id = -1;
 			/* После сдачи по неприменённому режиму замер не возобновляем:
 			 * иначе снимается measure_failed, решение принимается заново и
-			 * начинается новый круг переключений (см. retry_gave_up). */
-			if (!retry_gave_up)
+			 * начинается новый круг переключений (seq.h, инвариант I2). */
+			if (!seq_gave_up (&seq))
 				measure_failed = false;
 			retries = 0;
 			/* Метку быстрого решения НЕ снимаем: заявленная частота от
@@ -5688,7 +5724,7 @@ cadence_done: ;
 				mstime_update ();
 				mstime_arm (&hdrinfo_timer, HDRINFO_SETTLE_MS);
 				hdrinfo_armed = true;
-				vinfo_state = 0;
+				seq_note_applied (&seq);
 				vinfo_confirm = false;
 				vinfo_mid = -1;
 

@@ -104,9 +104,13 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
     * Giving up on an unapplied mode now lasts until the end of the video: the
       measurement recheck (fps.recheck.delay.ms) no longer clears the "nothing to
-      measure" flag after ~0.6 s. In the tester's log of 03.11 that produced 18
-      switches in 6.5 minutes and four full cycles on a single channel; now
-      there is at most one cycle per video.
+      measure" flag after ~0.6 s, and a decoder restart caused by our own mode
+      switch no longer counts as a new video — that used to depend on the clamp
+      lists, so for a player without a "ceiling" the give-up lived 6 seconds (in
+      the tester's log of 03.11: 18 switches in 6.5 minutes and four full cycles
+      on one channel). Now there is at most one cycle per video. The sequence
+      itself ("verified → retried → gave up") moved to seq.c and is checked
+      against recorded logs (tests/test_seq.c).
 
     * The "auto" fractional rate policy (mode.use.fract=0) is real now on
       Android 10-14: an integer rate is used only when the source declared an
