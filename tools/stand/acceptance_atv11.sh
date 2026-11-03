@@ -120,7 +120,7 @@ restart_daemon () {
 restore_ini () {
 	su_ "sed -i s@^vendor.disp.cap=.*@vendor.disp.cap=/sys/class/amhdmitx/amhdmitx0/disp_cap@ $INI" >/dev/null
 	su_ "sed -i s@^vendor.disp.cli=.*@vendor.disp.cli=$HELPER@ $INI" >/dev/null
-	su_ "sed -i s@^fps.declare.fast=.*@fps.declare.fast=1@ $INI" >/dev/null
+	su_ "sed -i s@^#\?fps.declare.fast=.*@fps.declare.fast=1@ $INI" >/dev/null
 }
 
 # Одна проверка клипа: <№> <файл> <ожидаемый режим|-> <макс. секунд>
@@ -266,7 +266,7 @@ say ""
 
 # --- 5. fps.declare.fast=0: только замер ------------------------------------
 say "5. fps.declare.fast=0 (решение только замером)"
-su_ "sed -i s@^fps.declare.fast=.*@fps.declare.fast=0@ $INI" >/dev/null
+su_ "sed -i s@^#\?fps.declare.fast=.*@fps.declare.fast=0@ $INI" >/dev/null
 restart_daemon
 mark=$(log_len)
 play "$C25"
@@ -283,7 +283,7 @@ else
 fi
 stop_player
 wait_mode "$MODE0" 15 >/dev/null || fail "нет возврата после fps.declare.fast=0"
-su_ "sed -i s@^fps.declare.fast=.*@fps.declare.fast=1@ $INI" >/dev/null
+su_ "sed -i s@^#\?fps.declare.fast=.*@fps.declare.fast=1@ $INI" >/dev/null
 restart_daemon
 say ""
 

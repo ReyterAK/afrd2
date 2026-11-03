@@ -97,7 +97,6 @@ public class SettingsFragment extends PreferenceFragment
         "fps_cadence_fix_ms",
         "fps_prefer_api",
         "fps_declare_fast",
-        "pause_keep",
         "pause_mode",
         "switch_restore_on_stop",
         "switch_bump_pkg",
@@ -113,7 +112,6 @@ public class SettingsFragment extends PreferenceFragment
      * после конца видео, на новом его роль играет pause.mode. */
     private static final String [] kReplacedOnAtv14 =
     {
-        "pause_keep",
         "switch_delay_off",
     };
 

@@ -26,9 +26,6 @@
                         android:entryValues="@array/pause_mode_value" android:key="pause_mode"
                         android:summary="@string/prefsum_pause_mode"
                         android:title="@string/prefs_pause_mode"/>
-        <SwitchPreference android:defaultValue="1" android:key="pause_keep"
-                          android:summary="@string/prefsum_pause_keep"
-                          android:title="@string/prefs_pause_keep"/>
         <!-- switch.delay.off — ключ обоих путей: на Android 12-14 это предел
              удержания режима на паузе, на старом пути — задержка возврата после
              остановки видео. Стоит рядом с паузой, потому что на новом пути его
@@ -82,7 +79,7 @@
         <SwitchPreference android:defaultValue="0" android:key="mode_prefer_exact"
                           android:summary="@string/prefsum_mode_prefer_exact"
                           android:title="@string/prefs_mode_prefer_exact"/>
-        <ru.cobra.zap.xprefs.XListPreference android:defaultValue="0" android:entries="@array/mode_use_fract"
+        <ru.cobra.zap.xprefs.XListPreference android:defaultValue="1" android:entries="@array/mode_use_fract"
                         android:entryValues="@array/mode_use_fract_value" android:key="mode_use_fract"
                         android:summary="@string/prefsum_mode_use_fract"
                         android:title="@string/prefs_mode_use_fract"/>

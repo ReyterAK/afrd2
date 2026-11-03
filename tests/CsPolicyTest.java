@@ -25,39 +25,39 @@ public class CsPolicyTest
     public static void main (String [] args)
     {
         /* Каждый пункт — своё значение, и оно распознаётся обратно. */
+        java.util.List<String> fixed = java.util.Arrays.asList (CsPolicy.VALUES);
         for (int i = 0; i < CsPolicy.VALUES.length; i++)
-            eq ("пункт " + i, CsPolicy.indexOf (CsPolicy.valueAt (i)), i);
+            eq ("пункт " + i, CsPolicy.indexOf (fixed.get (i), fixed), i);
 
         /* Первый пункт — «Не изменять формат»: пустое значение. Только он, все
          * остальные пункты обязаны нести защиту полосы 4K (иначе на 3840x2160
          * при 50/60 Гц пользователь получит 4:4:4 или RGB, который в полосу
          * HDMI не пролезает). */
-        eq ("не изменять", CsPolicy.valueAt (CsPolicy.NONE), "");
+        eq ("не изменять", fixed.get (0), "");
         for (String v : CsPolicy.VALUES)
             eq ("защита 4K в [" + v + "]",
                 v.isEmpty () || v.startsWith (CsPolicy.BASE_4K), true);
 
         /* Пункты различаются только выбором формата для остальных режимов. */
-        eq ("авто", CsPolicy.valueAt (CsPolicy.AUTO), CsPolicy.BASE_4K);
-        eq ("rgb", CsPolicy.valueAt (CsPolicy.RGB), CsPolicy.BASE_4K + " .*=rgb");
-        eq ("444", CsPolicy.valueAt (CsPolicy.YUV444), CsPolicy.BASE_4K + " .*=444");
+        eq ("авто", fixed.get (1), CsPolicy.BASE_4K);
+        eq ("rgb", fixed.get (2), CsPolicy.BASE_4K + " .*=rgb");
+        eq ("444", fixed.get (3), CsPolicy.BASE_4K + " .*=444");
 
         /* Профиль ATV14 (config/afrd2.ini) — это «Авто». */
-        eq ("профиль 11-14", CsPolicy.indexOf ("2160p[4-9].*=420"), CsPolicy.AUTO);
+        eq ("профиль 11-14", CsPolicy.indexOf ("2160p[4-9].*=420", fixed), 1);
         /* Профиль Android 6-9 (config/afrd-android8+.ini) явно ставит 444 всем
          * остальным режимам — настройка показывает это честно, а не «Авто». */
-        eq ("профиль 6-9", CsPolicy.indexOf ("2160p[4-9].*=420 .*=444"), CsPolicy.YUV444);
+        eq ("профиль 6-9", CsPolicy.indexOf ("2160p[4-9].*=420 .*=444", fixed), 3);
 
         /* Лишние пробелы и порядок «как написал пользователь» не мешают:
          * значение могло остаться от текстового поля прежних версий. */
-        eq ("пробелы", CsPolicy.indexOf ("  2160p[4-9].*=420    "), CsPolicy.AUTO);
-        eq ("переносы", CsPolicy.indexOf ("2160p[4-9].*=420\t.*=rgb"), CsPolicy.RGB);
+        eq ("пробелы", CsPolicy.indexOf ("  2160p[4-9].*=420    ", fixed), 1);
+        eq ("переносы", CsPolicy.indexOf ("2160p[4-9].*=420\t.*=rgb", fixed), 2);
 
         /* Своё значение не подменяется: показываем его как есть. */
-        eq ("свой текст", CsPolicy.indexOf ("1080p.*=rgb"), -1);
-        eq ("пусто", CsPolicy.indexOf (""), CsPolicy.NONE);
-        eq ("null", CsPolicy.indexOf (null), -1);
-        eq ("вне диапазона", CsPolicy.valueAt (99), null);
+        eq ("свой текст", CsPolicy.indexOf ("1080p.*=rgb", fixed), -1);
+        eq ("пусто", CsPolicy.indexOf ("", fixed), 0);
+        eq ("null", CsPolicy.indexOf (null, fixed), -1);
 
         /* Список по возможностям ТВ (dc_cap): сворачиваем комбинации
          * «формат,глубина» в форматы, сохраняя порядок узла, и строим по

@@ -230,88 +230,40 @@ public class Config
         File out_ini = new File (ini.getPath () + "~");
         try
         {
-            FileInputStream fis = new FileInputStream (ini);
+            /* Итоговые значения: Boolean → 1/0. Пишем файл одним проходом через
+             * IniRewrite — на каждый ключ одна активная строка, подсказки
+             * остаются комментариями. Прежняя построчная запись «оживляла»
+             * подсказки профиля и могла оставить две активные строки ключа:
+             * демон читает последнюю, GUI показывает первую (журнал §104). */
+            java.util.LinkedHashMap<String, String> values = new java.util.LinkedHashMap<> ();
+            for (int i = 0; i < mItems.size (); i++)
+            {
+                Object v = mItems.valueAt (i);
+                if (v == null)
+                    continue;
+
+                values.put (mItems.keyAt (i),
+                            (v instanceof Boolean) ? (((Boolean) v) ? "1" : "0") : v.toString ());
+            }
+
+            String text = "";
+            if (ini.exists ())
+            {
+                FileInputStream fis = new FileInputStream (ini);
+                byte [] buf = new byte [(int) ini.length ()];
+                int n = fis.read (buf);
+                fis.close ();
+                if (n > 0)
+                    text = new String (buf, 0, n, StandardCharsets.UTF_8);
+            }
+
+            String out = IniRewrite.apply (text, values);
+
             FileOutputStream fos = new FileOutputStream (out_ini);
-            BufferedReader bufr = new BufferedReader (new InputStreamReader (fis, StandardCharsets.UTF_8));
             BufferedWriter bufw = new BufferedWriter (new OutputStreamWriter (fos, StandardCharsets.UTF_8));
-            String line;
-            ArrayMap<String,Object> items_copy = new ArrayMap<> (mItems);
-            while ((line = bufr.readLine ()) != null)
-            {
-                boolean disabled = false;
-                line = line.trim ();
-
-                // check for commented key=value pairs
-                if (line.length () != 0 && line.charAt (0) == '#')
-                {
-                    int eq = line.indexOf ('=');
-                    if (eq > 0)
-                    {
-                        String key = line.substring (1, eq).trim ();
-                        if (items_copy.containsKey (key) ||
-                            itemType.containsKey (key))
-                        {
-                            // it's a commented key=something
-                            disabled = true;
-                            line = line.substring (1);
-                        }
-                    }
-                }
-
-                // skip comments
-                if (line.length () == 0 || line.charAt (0) == '#')
-                {
-                    bufw.write (line);
-                }
-                else
-                {
-                    // otherwise, split key=value
-                    String key;
-                    Object val;
-                    int eq = line.indexOf ('=');
-                    if (eq < 0)
-                    {
-                        // consider it a wrongly formed "key=" line
-                        key = line;
-                        val = "";
-                    }
-                    else
-                    {
-                        key = line.substring (0, eq);
-                        val = line.substring (eq + 1);
-                    }
-
-                    if (items_copy.containsKey (key))
-                    {
-                        val = items_copy.get (key);
-                        if (val instanceof Boolean)
-                            val = ((Boolean) val) ? 1 : 0;
-
-                        items_copy.remove (key);
-
-                        disabled = (val == null);
-                    }
-
-                    if (disabled)
-                        bufw.write ('#');
-                    bufw.write (key);
-                    bufw.write ("=");
-                    bufw.write (val != null ? val.toString () : "");
-                }
-                bufw.newLine ();
-            }
-
-            // write the rest of items not encountered in config
-            for (int i = 0; i < items_copy.size (); i++)
-            {
-                bufw.write (items_copy.keyAt (i));
-                bufw.write ("=");
-                Object val = items_copy.valueAt (i);
-                bufw.write (val != null ? val.toString () : "");
-                bufw.newLine ();
-            }
-
+            bufw.write (out);
             bufw.flush ();
+            bufw.close ();
         }
         catch (IOException e)
         {

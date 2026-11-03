@@ -84,37 +84,15 @@ public class Control
     {
         try
         {
-            java.util.List<String> lines = new java.util.ArrayList<> ();
-            boolean found = false;
-
-            if (mIni.exists ())
-            {
-                java.io.BufferedReader r = new java.io.BufferedReader (
-                        new java.io.InputStreamReader (new java.io.FileInputStream (mIni)));
-                String line;
-                while ((line = r.readLine ()) != null)
-                {
-                    if (line.startsWith (key + "="))
-                    {
-                        lines.add (key + "=" + value);
-                        found = true;
-                    }
-                    else
-                        lines.add (line);
-                }
-                r.close ();
-            }
-
-            if (!found)
-            {
-                lines.add ("# путь к помощнику смены режима (Android 10/11), ставит приложение");
-                lines.add (key + "=" + value);
-            }
-
-            java.io.PrintWriter w = new java.io.PrintWriter (mIni, "UTF-8");
-            for (String line : lines)
-                w.println (line);
-            w.close ();
+            /* Тот же проход, что и у Config.save: одна активная строка на
+             * ключ, подсказки-комментарии не «оживают» (журнал §104). Раньше
+             * здесь к любому ключу дописывался комментарий про помощник смены
+             * режима и могла появиться вторая активная строка. */
+            String text = readText (mIni);
+            String out = IniRewrite.apply (text == null ? "" : text,
+                                           java.util.Collections.singletonMap (key, value));
+            if (!writeText (mIni, out))
+                return;
         }
         catch (Exception exc)
         {

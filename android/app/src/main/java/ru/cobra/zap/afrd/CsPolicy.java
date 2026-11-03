@@ -38,7 +38,8 @@ public class CsPolicy
      * видимым выбором, а не отсутствием настройки. */
     public static final String NONE_VALUE = "";
 
-    /** Статический набор: не изменять, авто, RGB, YUV 4:4:4 (умолчание и откат). */
+    /** Статический набор: не изменять, авто, RGB, YUV 4:4:4 (умолчание — «авто»,
+     * это второй пункт; откат при нечитаемом dc_cap — весь набор). */
     public static final String [] VALUES =
     {
         NONE_VALUE,
@@ -46,8 +47,6 @@ public class CsPolicy
         BASE_4K + " .*=rgb",
         BASE_4K + " .*=444",
     };
-
-    public static final int NONE = 0, AUTO = 1, RGB = 2, YUV444 = 3;
 
     /**
      * Пункты выбора по списку форматов ТВ (CsFormats): «Не изменять», «Авто»
@@ -78,13 +77,8 @@ public class CsPolicy
         return out;
     }
 
-    /** Номер пункта по значению настройки; -1 — значение не из списка (свой текст). */
-    public static int indexOf (String value)
-    {
-        return indexOf (value, Arrays.asList (VALUES));
-    }
-
-    /** То же по произвольному списку пунктов (он строится из возможностей ТВ). */
+    /** Номер пункта по произвольному списку пунктов (он строится из
+     * возможностей ТВ); -1 — значение не из списка (свой текст). */
     public static int indexOf (String value, List<String> values)
     {
         if (value == null)
@@ -98,11 +92,6 @@ public class CsPolicy
                 return i;
 
         return -1;
-    }
-
-    public static String valueAt (int index)
-    {
-        return ((index >= 0) && (index < VALUES.length)) ? VALUES [index] : null;
     }
 
     private static String normalize (String value)

@@ -77,9 +77,11 @@
 #                     код 124 от timeout — норма);
 #   LOG             — файл, в который дописывается протокол (иначе только stdout).
 #
-# Для PAUSE_EXPECT=restore нужно предварительно выставить pause.keep=0 в конфиге
-# НА УСТРОЙСТВЕ и перезапустить демон (reconf в ATV14-пути не действует):
-#   adb -s $D shell "sed -i 's/^pause.keep=.*/pause.keep=0/' /data/local/tmp/afrd.ini"
+# Для PAUSE_EXPECT=restore нужно предварительно выставить pause.mode=off в конфиге
+# НА УСТРОЙСТВЕ и перезапустить демон (reconf в ATV14-пути не действует).
+# pause.keep=0 тут не годится: если настройки хоть раз открывали, в файле есть
+# pause.mode=keep, и он перекрывает старый ключ (журнал §99.3):
+#   adb -s $D shell "sed -i 's/^#\?pause.mode=.*/pause.mode=off/' /data/local/tmp/afrd.ini"
 #   adb -s $D shell '/data/local/tmp/afrd -k -D /data/local/tmp/afrd.ini'
 #   PAUSE_TEST=1 PAUSE_EXPECT=restore sh tools/stand/acceptance_matrix.sh
 #

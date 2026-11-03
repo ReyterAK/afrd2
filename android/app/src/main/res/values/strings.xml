@@ -177,9 +177,6 @@
         zapping down. 0 — confirm immediately. For IPTV with slow stream opening use 10000-12000: the
         original mode is then not restored on a dead channel at all. Restoring is also governed by
         "Restore mode on stop", but with "Fix rate clamping" on it happens anyway.</string>
-    <string name="prefs_pause_keep">Keep mode while paused</string>
-    <string name="prefsum_pause_keep">On — the mode is kept on pause; off — the original mode is restored
-        on pause and set again on resume.</string>
     <string name="prefs_switch_restore_on_stop">Restore mode on stop</string>
     <string name="prefsum_switch_restore_on_stop">Restore the original HDMI mode when the video ends. Players from the "players to unclamp" list are not restored immediately: the mode is raised at the start of the next clip, and restored once the player leaves the screen, which means fewer flashes between clips. Disabled — the video mode stays until you leave the player.</string>
     <string name="prefs_fps_correct_list">Corrections (package=percent)</string>
