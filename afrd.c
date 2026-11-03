@@ -1876,6 +1876,10 @@ static int atv_current_target (const platform_t *plat, int *w, int *h)
  * уровне 2, то есть в обычный журнал не попадает. */
 static int g_dec_last_hz = -1;
 static int g_dec_last_id = -1;
+/* Последнее решение, о котором печатали «видео: …». Нужно отдельно от
+ * g_dec_last_hz: политика точности «перещёлкивает» 23.98/24.00, и сравнение с
+ * g_dec_last_hz давало строку каждые 14 с на одном ролике (лог тестера 03.11). */
+static int g_dec_logged_hz = -1;
 
 static int mode_resolve (const platform_t *plat, int hz, int w, int h, int floor)
 {
@@ -3730,6 +3734,8 @@ static int run_atv14 (const platform_t *plat)
 	bool av1_fast_skip_logged = false;
 	/* «Замер совпал с дисплеем — поправку AV1 не применяю» — тоже раз на видео. */
 	bool av1_lock_logged = false;
+	/* «Счётчик fb-декодера удвоен» — раз на видео (иначе строка каждые 14 с). */
+	bool fb_double_logged = false;
 
 	/* Поведенческие ключи профиля (R28). */
 	int prefer_api = cfg_get_int ("fps.prefer.api", 1);
@@ -4362,6 +4368,8 @@ static int run_atv14 (const platform_t *plat)
 				av1_lock_logged = false;
 				g_dec_last_hz = -1;
 				g_dec_last_id = -1;
+				g_dec_logged_hz = -1;
+				fb_double_logged = false;
 				counter_restart_log_us = 0;
 				/* Политика прошлого видео к новому не относится: пока замер
 				 * молчит, дробность не трогаем (желание выставит решение).
@@ -4603,6 +4611,7 @@ static int run_atv14 (const platform_t *plat)
 			fast_veto_logged = false;
 			av1_fast_skip_logged = false;
 			av1_lock_logged = false;
+			fb_double_logged = false;
 			fast_class = 0;
 			/* R56: перепроверка — тоже на текущее видео */
 			recheck_armed = false;
@@ -5429,12 +5438,10 @@ cadence_done: ;
 					: fps_env_decide (&env, env_us, env_skip_us, env_sub_us,
 					                  env_corr, av1_off, &env_hz);
 
-				/* Строку печатаем, только когда решение новое: замер идёт
-				 * непрерывно, и на одном ролике она повторялась каждые 14 с
-				 * (лог тестера 27.10). */
-				if (env_early && env_decided && (env_hz != g_dec_last_hz))
-					trace (1, "раннее решение огибающей: подокна согласны (%d мс наблюдения)\n",
-					       (int)(env_early_us / 1000));
+				/* Запоминаем, что решение пришло из первого вызова: расширенный
+				 * горизонт ниже может его переопределить, и тогда это уже не
+				 * «раннее» решение. */
+				bool decided_early = env_early && env_decided;
 
 				/* базовый горизонт неоднозначен — решаем на расширенном
 				 * (fps.measure.envelope.max.ms), но только когда он набран */
@@ -5517,15 +5524,21 @@ cadence_done: ;
 
 					if ((decl_hz > 0) && (fixed != hz))
 					{
-						trace (0, "счётчик %s даёт " HZ_FMT " Гц при заявленных "
-						       HZ_FMT " Гц — это удвоение fb-декодера, беру заявленную\n",
-						       v0.device, HZ_ARGS (hz), HZ_ARGS (decl_hz));
+						if (!fb_double_logged)
+						{
+							fb_double_logged = true;
+							trace (0, "счётчик %s даёт " HZ_FMT " Гц при заявленных "
+							       HZ_FMT " Гц — это удвоение fb-декодера, беру заявленную\n",
+							       v0.device, HZ_ARGS (hz), HZ_ARGS (decl_hz));
+						}
 						hz = fixed;
 					}
 				}
 
 				/* заявленная длительность кадра (frame dur) уточняет решение —
 				 * как и раньше, но теперь уточняется решение огибающей */
+				int refined_hz = -1;
+				int refined_from = 0;
 				if (v0.decl_dur)
 				{
 					int refined = 0;
@@ -5533,13 +5546,27 @@ cadence_done: ;
 					                         (double)declared_pct, &refined))
 					{
 						if (refined != hz)
-							trace (1, "частота уточнена по frame dur (%u): "
-							       HZ_FMT " Гц вместо " HZ_FMT " Гц\n",
-							       v0.decl_dur, HZ_ARGS (refined), HZ_ARGS (hz));
-
+						{
+							refined_hz = refined;
+							refined_from = hz;
+						}
 						hz = refined;
 					}
 				}
+
+				/* Решение печатаем один раз: политика точности перещёлкивает
+				 * 23.98/24.00, и сравнение с g_dec_last_hz давало строку каждые
+				 * 14 с на одном ролике (лог тестера 03.11). */
+				bool new_decision = (hz != g_dec_logged_hz);
+
+				if ((refined_hz > 0) && new_decision)
+					trace (1, "частота уточнена по frame dur (%u): " HZ_FMT
+					       " Гц вместо " HZ_FMT " Гц\n",
+					       v0.decl_dur, HZ_ARGS (refined_hz), HZ_ARGS (refined_from));
+
+				if (decided_early && new_decision)
+					trace (1, "раннее решение огибающей: подокна согласны (%d мс наблюдения)\n",
+					       (int)(env_early_us / 1000));
 
 				/* Быстрое решение было — сверяем его с замером: расхождение
 				 * по ГРУППЕ частот значит, что драйвер заявил неверно (23.976 и
@@ -5554,12 +5581,14 @@ cadence_done: ;
 					       HZ_ARGS (hz));
 				}
 
-				trace ((hz == g_dec_last_hz) ? 3 : 1,
+				trace (new_decision ? 1 : 3,
 				       "видео: " HZ_FMT " Гц по огибающей (%d с наблюдения, "
 				       "горизонт %d мс), ищу режим\n",
 				       HZ_ARGS (hz),
 				       (int)((env.s [env.n - 1].t_us - env.s [0].t_us) / 1000000),
 				       (int)(env_used_us / 1000));
+
+				g_dec_logged_hz = hz;
 
 				/* Замер мог быть задушен текущим режимом: поверхность
 				 * забирает не больше кадров, чем даёт экран, и счётчик
