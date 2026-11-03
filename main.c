@@ -420,6 +420,11 @@ static void daemonize ()
  * Возврат: 0 — демон ответил; -1 — ответа нет (демона нет или он не
  * отвечает); ответ печатается в out. */
 #define AFRD_API_PORT	50505
+/* Демон во время смены режима занят до 4 с (DISPSERVE_REPLY_MS в dispserve.c)
+ * и сокет в это время не читает: 700 мс давали ложное «daemon … did not answer
+ * the API» при живой команде, которая выполнялась следом (P2 прохода 2).
+ * Ждём с запасом на занятый цикл. */
+#define API_REPLY_MS	4500
 
 static int api_send (const char *cmd, char *out, size_t out_sz)
 {
@@ -439,11 +444,11 @@ static int api_send (const char *cmd, char *out, size_t out_sz)
 		return -1;
 	}
 
-	/* Ответ короткий и приходит сразу; 700 мс — с запасом на занятый цикл
-	 * демона (он опрашивает сокет раз в trigger.poll.ms, по умолчанию 300). */
+	/* Ответ короткий и приходит сразу, но цикл демона может быть занят сменой
+	 * режима до 4 с — ждём API_REPLY_MS. */
 	struct pollfd pfd = { fd, POLLIN, 0 };
 	int rc = -1;
-	if (poll (&pfd, 1, 700) > 0)
+	if (poll (&pfd, 1, API_REPLY_MS) > 0)
 	{
 		int n = recv (fd, out, out_sz - 1, 0);
 		if (n > 0)
