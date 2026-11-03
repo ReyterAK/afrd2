@@ -1028,7 +1028,12 @@ static void delay_framerate_switch (bool restore, int hz, const char *modalias)
 		strncpy (g_state.modalias, modalias, sizeof (g_state.modalias));
 	}
 
-	if (g_state.restore != restore) {
+	/* Новый декодер (add) — новый ролик: частоту и статистику прошлого видео
+	 * не переносим даже если флаг restore уже false (remove потерялся,
+	 * видео сменилось внутри плеера). Раньше сброс шёл только по смене
+	 * флага, и add при уже false оставлял частоту прошлого ролика
+	 * (P2 прохода 2). */
+	if (!restore || (g_state.restore != restore)) {
 		g_state.restore = restore;
 		g_state.hz = hz;
 		// start collecting stats all over again

@@ -227,6 +227,14 @@ adb -s $D shell '/data/local/tmp/afrd -s'                             # стат
 adb -s $D shell 'echo status | timeout 2 nc -u -w1 127.0.0.1 50505'   # статус через API
 ```
 
+`status` отвечает строками `stamp` (штамп shmem), `enabled`, `active`, `blackened`, `version`,
+`build`, `current hz`, `original hz`, `hdr mode/policy/priority`, `sdr mode`, `force hdr mode`,
+`burst`, `burst left ms`, `burst hz`.
+
+Ключ `-p <файл>` задаёт pid-файл, а общая память кладётся рядом с ним (`<каталог>/afrd.ipc`).
+Приложение читает фиксированный `/dev/run/afrd.ipc`, поэтому демон, запущенный с другим `-p`,
+в GUI не виден — это стендовый режим.
+
 ### Встраивание в прошивку (для разработчика прошивки)
 
 Документ `docs/integration-rom.md` — для случая, когда демон встраивается в сборку slimBOXtv (или
