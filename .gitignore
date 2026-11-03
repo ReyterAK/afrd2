@@ -25,3 +25,4 @@
 
 # артефакт сборки вендорного помощника (собирается tools/droidlogic/build-dex.sh)
 /tools/droidlogic/afrd-disp.dex
+afrd2-journal.md
