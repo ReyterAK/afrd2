@@ -13,6 +13,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.drawable.Drawable;
+import android.net.Uri;
 
 import java.text.Collator;
 import java.util.ArrayList;
@@ -129,19 +130,37 @@ public class Apps
         PackageManager pm = ctx.getPackageManager ();
         List<String> pkgs = new ArrayList<> ();
 
-        for (String mime : VIDEO_MIME)
+        /* Одного «тип без данных» мало: фильтр, объявивший scheme (file, content,
+         * http — так делают почти все настоящие плееры, иначе файл из проводника
+         * не открыть), такой интент не принимает. Живой случай 03.11: на ATV9
+         * список показывал 2 плеера из 8 — пропадали Nova, GTvBox, галерея.
+         * Спрашиваем оба вида и объединяем: без URI и с URI ходовых схем. */
+        Uri [] uris =
         {
-            Intent in = new Intent (Intent.ACTION_VIEW);
-            in.setType (mime);
-            List<ResolveInfo> found = pm.queryIntentActivities (in, 0);
-            if (found == null)
-                continue;
+            null,
+            Uri.parse ("file:///video.mp4"),
+            Uri.parse ("content://media/external/video/media/1"),
+            Uri.parse ("http://localhost/video.mp4"),
+        };
 
-            for (ResolveInfo ri : found)
-                if ((ri.activityInfo != null) &&
-                    !pkgs.contains (ri.activityInfo.packageName))
-                    pkgs.add (ri.activityInfo.packageName);
-        }
+        for (String mime : VIDEO_MIME)
+            for (Uri uri : uris)
+            {
+                Intent in = new Intent (Intent.ACTION_VIEW);
+                if (uri == null)
+                    in.setType (mime);
+                else
+                    in.setDataAndType (uri, mime);
+
+                List<ResolveInfo> found = pm.queryIntentActivities (in, 0);
+                if (found == null)
+                    continue;
+
+                for (ResolveInfo ri : found)
+                    if ((ri.activityInfo != null) &&
+                        !pkgs.contains (ri.activityInfo.packageName))
+                        pkgs.add (ri.activityInfo.packageName);
+            }
 
         return build (ctx, pkgs);
     }

@@ -274,6 +274,16 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       after that). Live measurement: the maximum is held ~5.3 s instead of
       14-31 s.
 
+    * The "Players only" list in settings no longer loses players. The query
+      was ACTION_VIEW with a type and no URI, and a filter that declares a
+      scheme (file/content/http — nearly every player does, otherwise it cannot
+      open a file from a file manager) does not accept such an intent, so the
+      player disappeared: on ATV9 the list had 2 entries out of 8, missing Vimu
+      (net.gtvbox) and the gallery; on ATV14 Nova was missing. Both forms are
+      queried now (no URI plus file/content/http URIs) and merged: ATV9 — 6
+      entries, ATV14 — 7. File managers and browsers able to open video are
+      listed too; the "Players only" checkbox still narrows the list.
+
     * Fixed: switch.skip.pkg did not actually block mode changes on the new
       path since 1.0.0 — the gate was applied after the fast decision, so a
       player listed under "AFR interferes" still got switched. Now neither the
