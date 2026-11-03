@@ -4942,7 +4942,12 @@ cadence_done: ;
 			if (!pkg_probed)
 			{
 				pkg_probed = true;
-				if (correct_enable || (g_mode_min_hz_count > 0) || (g_skip_pkgs.size > 0))
+				/* Плеер нужен не только поправке замера и списку «AFR мешает»:
+			 * по нему же решается, возвращать ли режим на стопе
+			 * (switch.bump.pkg). Без этого условия правило молча не работало,
+			 * если все три ключа пусты (P2-3). */
+				if (correct_enable || (g_mode_min_hz_count > 0) ||
+				    (g_skip_pkgs.size > 0) || (g_bump_pkgs.size > 0))
 				{
 					pkg_probe_logged (plat);
 					video_corr = fps_correct_factor (g_cur_pkg);

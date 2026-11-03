@@ -465,6 +465,40 @@ public class SettingsFragment extends PreferenceFragment
         pref.setEntryValues (values.toArray (new CharSequence [0]));
     }
 
+    /* «Поправка счётчика AV1»: в ini может стоять число (проценты), которого нет
+     * в списке «Авто / Выключено». Показываем его отдельным пунктом — иначе
+     * строка выглядит пустой, а первая же правка молча затирает значение
+     * (P2-13; у «Формата HDMI» так сделано с самого начала). */
+    private void setupAv1Pref ()
+    {
+        Preference p = findPreference ("fps_correct_av1");
+        if (!(p instanceof XListPreference))
+            return;
+
+        XListPreference pref = (XListPreference) p;
+        String value = pref.getValue ();
+        if ((value == null) || value.isEmpty ())
+            return;
+
+        CharSequence [] vals = pref.getEntryValues ();
+        CharSequence [] ents = pref.getEntries ();
+        if ((vals == null) || (ents == null))
+            return;
+
+        for (CharSequence v : vals)
+            if (value.contentEquals (v))
+                return;
+
+        CharSequence [] newEnts = new CharSequence [ents.length + 1];
+        CharSequence [] newVals = new CharSequence [vals.length + 1];
+        System.arraycopy (ents, 0, newEnts, 0, ents.length);
+        System.arraycopy (vals, 0, newVals, 0, vals.length);
+        newEnts [ents.length] = getString (R.string.cs_policy_other, value);
+        newVals [vals.length] = value;
+        pref.setEntries (newEnts);
+        pref.setEntryValues (newVals);
+    }
+
     @Override
     public void onActivityResult (int requestCode, int resultCode, Intent data)
     {
@@ -513,6 +547,7 @@ public class SettingsFragment extends PreferenceFragment
                 setupAppsPrefs ();
                 setupRatesPref ();
                 setupCsPref ();
+                setupAv1Pref ();
                 removeInapplicable (getPreferenceScreen ());
                 break;
             }

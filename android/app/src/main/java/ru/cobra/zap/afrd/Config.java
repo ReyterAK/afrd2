@@ -9,6 +9,7 @@ package ru.cobra.zap.afrd;
 
 import android.content.SharedPreferences;
 import android.util.ArrayMap;
+import android.util.Log;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -353,14 +354,19 @@ public class Config
                     switch (it & TYPE_MASK)
                     {
                         case TYPE_BOOL: val = prefs.getBoolean (key, true); break;
-                        case TYPE_INT: val = Integer.parseInt (prefs.getString (key, "0")); break;
+                        /* Через тот же разбор, что и ini: пустая строка в
+                         * целочисленной настройке раньше молча выпадала из
+                         * переноса (NumberFormatException в пустом catch), и
+                         * правка «не доезжала» до демона (P2-14). */
+                        case TYPE_INT: val = IniValue.parse (it, prefs.getString (key, "0")); break;
                         case TYPE_STR: val = prefs.getString (key, ""); break;
                         default: continue;
                     }
                     put (ini_key, val);
                 }
-                catch (Exception ignored)
+                catch (Exception e)
                 {
+                    Log.w ("afrd2", "настройка «" + key + "» не перенесена в ini: " + e);
                 }
         }
     }

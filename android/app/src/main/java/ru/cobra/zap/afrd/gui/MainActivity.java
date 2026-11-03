@@ -747,9 +747,11 @@ public class MainActivity extends Activity
         // reset application preferences
         mOptions.edit ().clear ().apply ();
 
-        // delete ini file & re-extract ini file from raw resources
-        if (!mControl.mIni.delete () ||
-            !prepareConfig ())
+        /* ini не удаляем: профиль переизвлечётся (afrd_ini_ver сброшен) и
+         * сольётся с текущим файлом — ключи, включённые руками, останутся
+         * (IniMerge). Раньше файл удалялся, и вместе с настройками молча
+         * пропадали ручные правки из README (P2-12). */
+        if (!prepareConfig ())
         {
             showToast (R.string.msg_reset_prefs_failed, true);
             return;
