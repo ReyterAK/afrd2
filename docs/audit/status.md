@@ -39,7 +39,11 @@ Host-тесты: `sh tests/run_tests.sh` — 21 C-набор + 7 Java.
 | API/службы | 1 | 1 (проверено на `.50`) | 7 | 3 (`frame_rate_hint`, `burst` на legacy, `daemon_pid`) | 10 |
 | GUI | 5 | 5 (FGS — код; живой прогон с отозванным root на боксе) | 8 | 6 (`fd`, `shmem`, `RootShell`, `Burst`, `ini` атомарно, таймеры) | 8 |
 
-Плюс закрыты: `hdcp.c` NULL, `dispserve` (счётчики), `Control` (вывод `su`).
+Плюс закрыты: `hdcp.c` NULL, `dispserve` (счётчики и трубы), `Control` (вывод `su`), `shmem`
+(`O_TRUNC`), `apisock` (`SOCK_CLOEXEC`), `modes.c` (лог неудачной записи).
+
+Итог дня: в проходе 2 отмечено 18 исправленных пунктов; дерево чистое, комплект пересобран,
+стенды усыплены.
 
 ## Где смотреть дальше
 
