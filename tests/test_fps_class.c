@@ -452,6 +452,16 @@ static void t_correct_av1_pct(void)
 	assert(fps_correct_av1_factor("amvdec_av1_v4l", "org.videolan.vlc") == 1.0);
 	assert(fps_correct_av1_factor("amvdec_av1_v4l", NULL) == 1.0);
 
+	/* список через запятую: auto на ATV14 ограничен Cobalt-плеерами, чтобы
+	 * не ломать точный счётчик Just Player/VLC (живой замер §174: 24p →
+	 * 23.98, 25p → 25.00 — глобальные 5 % уводили 25p в 24) */
+	fps_correct_set_av1_pct(5.0,
+		"io.gh.reisxd.tizentube.cobalt,com.google.android.youtube.tv");
+	assert(fps_correct_av1_factor("amvdec_av1_v4l", "io.gh.reisxd.tizentube.cobalt") > 1.0);
+	assert(fps_correct_av1_factor("amvdec_av1_v4l", "com.google.android.youtube.tv") > 1.0);
+	assert(fps_correct_av1_factor("amvdec_av1_v4l", "com.brouken.player") == 1.0);
+	assert(fps_correct_av1_factor("amvdec_av1_v4l", "io.gh.reisxd.tizentube.cobalt.extra") == 1.0);
+
 	/* аддитивная и относительная сосуществуют: вызов одной не затирает другую.
 	 * clear() нужен, потому что выше поправка была ограничена пакетом. */
 	fps_correct_clear();

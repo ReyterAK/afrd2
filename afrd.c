@@ -4022,8 +4022,23 @@ static int run_atv14 (const platform_t *plat)
 		fps_av1_resolve (cfg_get_str ("fps.correct.av1", NULL),
 		                 av1_legacy_add, av1_legacy_pct, auto_add, auto_pct, &av1);
 
-		fps_correct_set_av1 (av1.offset, av1_pkg);
-		fps_correct_set_av1_pct ((av1.factor > 1.0) ? (av1.factor - 1.0) * 100.0 : 0.0, av1_pkg);
+		/* Auto-поправка на ATV14 привязана к Cobalt-плеерам: только там
+		 * счётчик AV1 завышает 24p до ~25.2–25.5 (живой замер §174).
+		 * Just Player/VLC на том же боксе считают точно (24p → 23.98,
+		 * 25p → 25.00), и глобальные 5 % ломали честный 25p — он уходил
+		 * в 24. Явный fps.correct.av1.pkg перекрывает список; явные
+		 * 5 % (не auto) применяются ко всем, как раньше. */
+		static const char *av1_cobalt_pkgs =
+			"io.gh.reisxd.tizentube.cobalt,com.google.android.youtube.tv,"
+			"com.google.android.youtube";
+		bool av1_auto_scoped = (av1.src == FPS_AV1_AUTO) &&
+		                       (plat->kind == PLAT_ATV14) &&
+		                       (av1.factor > 1.0) && !(av1_pkg && *av1_pkg);
+		const char *av1_filter_pkg = av1_auto_scoped ? av1_cobalt_pkgs : av1_pkg;
+
+		fps_correct_set_av1 (av1.offset, av1_filter_pkg);
+		fps_correct_set_av1_pct ((av1.factor > 1.0) ? (av1.factor - 1.0) * 100.0 : 0.0,
+		                         av1_filter_pkg);
 
 		switch (av1.src)
 		{
@@ -4036,7 +4051,8 @@ static int run_atv14 (const platform_t *plat)
 			       (av1.offset > 0.0)
 			       ? "аддитивная"
 			       : (av1.factor > 1.0) ? "относительная" : "выключена",
-			       (av1_pkg && *av1_pkg) ? ", только для одного плеера" : "");
+			       (av1_pkg && *av1_pkg) ? ", только для одного плеера"
+			       : av1_auto_scoped ? ", только Cobalt-плееры" : "");
 			if ((av1.offset <= 0.0) && (av1.factor > 1.0))
 				trace (1, "поправка AV1: минус %.2f %%\n",
 				       (av1.factor - 1.0) * 100.0);

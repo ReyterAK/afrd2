@@ -380,12 +380,38 @@ void fps_correct_set_av1_pct (double pct, const char *package)
 	}
 }
 
+/* Фильтр пакетов для поправки AV1: список через запятую
+ * (fps.correct.av1.pkg). Пустой фильтр — поправка для всех; имена
+ * пакетов регистрозависимы, поэтому сравнение точное. */
+static bool pkg_filter_match (const char *list, const char *package)
+{
+	if (!list || !*list)
+		return true;
+	if (!package || !*package)
+		return false;
+
+	const char *p = list;
+	while (*p)
+	{
+		const char *comma = strchr (p, ',');
+		size_t len = comma ? (size_t)(comma - p) : strlen (p);
+
+		if (len && (strlen (package) == len) && (strncmp (p, package, len) == 0))
+			return true;
+		if (!comma)
+			break;
+		p = comma + 1;
+	}
+
+	return false;
+}
+
 double fps_correct_av1_factor (const char *device, const char *package)
 {
 	if (k_av1.pct <= 0.0)
 		return 1.0;
 
-	if (k_av1.pkg [0] && (!package || (strcmp (k_av1.pkg, package) != 0)))
+	if (!pkg_filter_match (k_av1.pkg, package))
 		return 1.0;
 
 	if (!contains_ci (device, "av1"))
@@ -399,7 +425,7 @@ double fps_correct_av1_offset (const char *device, const char *package)
 	if (k_av1.offset <= 0.0)
 		return 0.0;
 
-	if (k_av1.pkg [0] && (!package || (strcmp (k_av1.pkg, package) != 0)))
+	if (!pkg_filter_match (k_av1.pkg, package))
 		return 0.0;
 
 	if (!contains_ci (device, "av1"))
