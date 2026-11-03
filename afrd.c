@@ -124,6 +124,10 @@ static burst_t g_burst;
  * заканчивается — «строго одно переключение» честнее, чем переизмерять
  * каждый канал. */
 static bool g_burst_video_changed;
+/* В сеансе видео кончилось (стоп, конец ролика или пауза сверх предела):
+ * «строго одно переключение» — возвращаем режим и завершаем сеанс, иначе
+ * пауза внутри сеанса добавляла ещё два переключения (P1-6). */
+static bool g_burst_video_ended;
 /* Сеанс запущен самим вызовом `afrd --burst` (демона не было): только в этом
  * случае `enable=0` в конфиге не должен уводить процесс в пассив. При
  * перезапуске демона по reconf флаг уже снят. */
@@ -3505,6 +3509,7 @@ static void burst_session_end (const platform_t *plat, int *orig_sf_id,
 	burst_notify (strcmp (why, "отмена") == 0 ? "cancelled" : "finished");
 	burst_finish (&g_burst);
 	g_burst_video_changed = false;
+	g_burst_video_ended = false;
 	g_burst_self = false;
 }
 
@@ -4011,10 +4016,11 @@ static int run_atv14 (const platform_t *plat)
 		 * конфиг и вернёт демон в пассив. */
 		if (burst_running (&g_burst) &&
 		    (burst_expired (&g_burst, now_us ()) || g_burst_video_changed ||
-		     burst_cancel_requested (&g_burst)))
+		     g_burst_video_ended || burst_cancel_requested (&g_burst)))
 		{
 			burst_session_end (plat, &orig_sf_id, &cur_sf_id, &held,
 			                   burst_cancel_requested (&g_burst) ? "отмена"
+			                   : g_burst_video_ended ? "видео кончилось"
 			                   : g_burst_video_changed ? "видео сменилось"
 			                                           : "срок истёк");
 			reconf = true;
@@ -4471,6 +4477,18 @@ static int run_atv14 (const platform_t *plat)
 		 * прежнее. */
 		if (!video_eff)
 		{
+			/* Короткий провал декодера при перезапуске (в том числе после
+			 * нашего же переключения) — не конец видео для проверки частоты:
+			 * таймер сверки не снимаем, иначе «приняло ли ядро режим»
+			 * остаётся непроверенным (P1-9, прогон `.50` 11:45). */
+			bool blip = hdrinfo_armed && own_switch_recent (cur_sf_id);
+
+			/* Сеанс «по кнопке» кончается вместе с видео: иначе стоп или
+			 * пауза сверх предела добавляли к сеансу ещё переключения, а
+			 * обещано одно. */
+			if (!blip && burst_running (&g_burst))
+				g_burst_video_ended = true;
+
 			want_sf_id = -1;
 			/* видео закончилось — следующее мерим заново: и счётчик попыток,
 			 * и признак «частота не определилась» относятся к текущему видео */
@@ -4496,11 +4514,18 @@ static int run_atv14 (const platform_t *plat)
 			cadence_heal_wait = false;
 			cadence_heal_useless = false;
 			cadence_reverted = false;
-			hdrinfo_armed = false;
-			mstime_disable (&hdrinfo_timer);
-			vinfo_confirm = false;
-			vinfo_mid = -1;
-			seq_new_video (&seq);
+			/* Сверку частоты и сдачу не снимаем на коротком провале декодера:
+			 * проверять «приняло ли ядро режим» всё равно нужно, а сдача не
+			 * должна сниматься до настоящего нового видео (P1-9). */
+			if (!blip)
+			{
+				hdrinfo_armed = false;
+				mstime_disable (&hdrinfo_timer);
+				vinfo_confirm = false;
+				vinfo_mid = -1;
+				mode_verified = false;
+				seq_new_video (&seq);
+			}
 			counter_last_grow_us = 0;
 			counter_stall_logged = false;
 			crosscheck_logged = false;
@@ -5695,8 +5720,12 @@ cadence_done: ;
 				/* Отказ применения (в том числе ненулевой код вендорного
 				 * помощника): не повторять на каждой итерации цикла (~300 мс) —
 				 * это fork/exec sh + app_process и строки в журнале на весь
-				 * ролик. Признак сбрасывается новым видео. */
-				if ((apply_rc == -2) && (plat->sink == SINK_VENDOR_MODE))
+				 * ролик. Признак сбрасывается новым видео.
+				 *
+				 * Раньше ветка была только для вендорного пути, а на новом
+				 * (ATV14, backdoor 1035) цель оставалась в want_sf_id, и
+				 * guard_decide повторял транзакцию каждые ~300 мс (P1-7). */
+				if (apply_rc == -2)
 				{
 					measure_failed = true;
 					/* Мало снять замер: цель остаётся в want_sf_id, и
@@ -5712,8 +5741,13 @@ cadence_done: ;
 						held = false;
 						orig_sf_id = -1;
 					}
-					trace (0, "вендорный SystemControl не применил режим — "
-					       "больше не пробую до конца видео\n");
+					/* Сдаёмся и по нашему пути: повтор транзакции каждые
+					 * ~300 мс ничего не изменит, а режим остаётся прежним. */
+					seq_give_up (&seq);
+					trace (0, "%s не применил режим — больше не пробую до "
+					       "конца видео\n",
+					       (plat->sink == SINK_VENDOR_MODE)
+					       ? "вендорный SystemControl" : "backdoor");
 				}
 			}
 

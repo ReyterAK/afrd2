@@ -21,7 +21,7 @@
              категориях: это один выбор из трёх состояний. На Android 6-9
              пункт скрыт, а тумблер и число остаются (там switch.delay.off
              значит другое — задержку возврата после конца видео). -->
-        <ru.cobra.zap.xprefs.XListPreference android:defaultValue="keep"
+        <ru.cobra.zap.xprefs.XListPreference android:defaultValue=""
                         android:entries="@array/pause_mode"
                         android:entryValues="@array/pause_mode_value" android:key="pause_mode"
                         android:summary="@string/prefsum_pause_mode"

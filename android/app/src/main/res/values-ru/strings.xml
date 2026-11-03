@@ -226,6 +226,7 @@
     <string name="av1_fix_off">Выключено</string>
     <string name="prefs_pause_mode">На паузе</string>
     <string name="prefsum_pause_mode">Держать режим, пока стоит пауза. «Держать 20 с» — пауза дольше этого считается концом видео: режим вернётся, а на возобновлении вернётся без нового замера. «Возвращать сразу» — на любой паузе показывать исходную частоту (больше миганий, зато рабочий стол всегда в своём режиме). Предел задаётся ключом switch.delay.off в ini.</string>
+    <string name="pause_mode_legacy">Как раньше (по тумблеру ниже)</string>
     <string name="pause_mode_keep">Держать до конца паузы</string>
     <string name="pause_mode_timeout">Держать 20 с, потом вернуть</string>
     <string name="pause_mode_off">Возвращать сразу</string>

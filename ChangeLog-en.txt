@@ -129,6 +129,29 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       player hint, "no mode for X Hz" and a failed quick decision now raise the
       same give-up flag as a failed retry.
 
+    * The on-demand AFR session now ends together with the video: a stop, the
+      end of the clip or a pause beyond the limit restore the mode and close the
+      session. Before, the session lived until its deadline, and a pause inside
+      it added two more switches although only one was promised.
+
+    * A rejected mode on the new path (the backdoor refused) is no longer retried
+      every ~300 ms: the target is dropped, the measurement stops, one line in
+      the log. Previously this was done on the vendor path only.
+
+    * Hand-written ini settings survive an APK update: the profile from resources
+      is merged with the current file — active keys of the release win, while the
+      ones the user enabled (switch.ceiling.method, switch.revert, fps.feed.*,
+      fps.correct.av1.*, burst.ms, vendor.disp.persist) are kept; a line
+      commented out in the profile is uncommented in place, without a duplicate.
+
+    * The "On pause" item got the value "As before (use the switch below)" and no
+      longer writes pause.mode=keep on the first opening of the settings: for a
+      1.1.0 user with the switch off the behaviour changed silently.
+
+    * The actual-rate check is no longer cancelled by a short decoder dropout
+      (a restart caused by our own switch): otherwise "did the kernel take the
+      mode" stayed unchecked.
+
     * The "auto" fractional rate policy (mode.use.fract=0) is real now on
       Android 10-14: an integer rate is used only when the source declared an
       integer one (player hint frame_rate_hint — 24.000 vs 23.976, or the

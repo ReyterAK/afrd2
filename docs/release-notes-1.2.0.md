@@ -192,13 +192,13 @@
 
 | Файл | Размер | MD5 | SHA-256 |
 |---|---|---|---|
-| `ru.reyter.afrd2-1.2.0-release.apk` | 496 147 Б | `d24faf7d04e5ba818fab70a054547b27` | `969bbe909db0d7718548937b9b3924eb4af72d839c69f6b66cf1c523cfc21f0e` |
-| `afrd2-magisk-armeabi-v7a.zip` | 78 339 Б | `af0f23988fddfca6ce4fb6f78b69c9e6` | `6549f5e78eac303a92d24fa7089c7ef8bd93d61990a017473d23b6303b73c5c6` |
-| `afrd2-magisk-arm64-v8a.zip` | 91 563 Б | `075f4d43063d39d32f7cc7b74e4f4aad` | `1600ae087d332a4a83d5bdcf591b537c292848ca9c4495aac0cc251731dc8978` |
-| `afrd2-1.2.0-for-rom-dev.zip` | 595 269 Б | `12d5d6e2da0470a7be433b54877124a9` | `bcc425f3d09dcad1367467f8dc379d082196fbc1449e4bb1ef72a4b8da28b44e` |
+| `ru.reyter.afrd2-1.2.0-release.apk` | 498 163 Б | `26bf2c66e0271616dc3b34314597b0e4` | `cb279aeec01a15fa158a564df36c33822a78a345c56409d131ae43b4e3f2c972` |
+| `afrd2-magisk-armeabi-v7a.zip` | 78 510 Б | `7fe400d932632864496c742af9fd4540` | `10cef332aead1be0357366099bd7b2e03b51ede94b17c282cd88c2ac4fc34740` |
+| `afrd2-magisk-arm64-v8a.zip` | 91 660 Б | `f429febaab428cf254835886fe2826eb` | `06258a3ba1d9d8e19d3072b6b9c53611de6e5b2b384f140f626c6972cb8b93ac` |
+| `afrd2-1.2.0-for-rom-dev.zip` | 597 592 Б | `5846ef22f2b6d5b9d1a35c7dd2a43b9b` | `e4b54fc79cf0147d5a7c29b9c7314e05f0df48d134df99f3383010d6b7041f91` |
 
-Демоны (внутри APK и модулей — те же байты): `afrd-1.2.0-armeabi-v7a` 108 500 Б
-(`c94934b7…`), `afrd-1.2.0-arm64-v8a` 155 472 Б (`c346f72d…`).
+Демоны (внутри APK и модулей — те же байты): `afrd-1.2.0-armeabi-v7a` 108 724 Б
+(`24b525ba…`), `afrd-1.2.0-arm64-v8a` 155 584 Б (`4dabc82b…`).
 
 APK подписан релизным ключом; обновления ставятся поверх только той же подписью.
 Демон собран из исходников тега `1.2.0`.

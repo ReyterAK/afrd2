@@ -51,13 +51,16 @@ mkdir -p out/host-tests/java
 	android/app/src/main/java/ru/cobra/zap/afrd/CsFormats.java \
 	android/app/src/main/java/ru/cobra/zap/afrd/CsPolicy.java \
 	android/app/src/main/java/ru/cobra/zap/afrd/IniValue.java \
+	android/app/src/main/java/ru/cobra/zap/afrd/IniMerge.java \
 	tests/PkgValuesTest.java tests/SeedTest.java \
-	tests/RateListTest.java tests/CsPolicyTest.java tests/IniValueTest.java && {
+	tests/RateListTest.java tests/CsPolicyTest.java tests/IniValueTest.java \
+	tests/IniMergeTest.java && {
 	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.PkgValuesTest &&
 	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.SeedTest &&
 	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.RateListTest &&
 	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.CsPolicyTest &&
-	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.IniValueTest
+	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.IniValueTest &&
+	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.IniMergeTest
 } || status=1
 
 exit $status

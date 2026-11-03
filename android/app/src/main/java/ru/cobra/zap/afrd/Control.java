@@ -197,8 +197,27 @@ public class Control
         else
             return ctx.getString (R.string.failed_detect_ostype, kver, hardware, model);
 
+        String before = readText (mIni);
+
         if (!jfun.extractFile (ctx, res_id, mIni))
             return ctx.getString (R.string.failed_copy_raw, mIni.getPath ());
+
+        /* Профиль из ресурсов заменяет файл целиком, и ключи, которые
+         * пользователь включил руками (README их и предлагает править руками:
+         * switch.ceiling.method, switch.revert, fps.feed.*, fps.correct.av1.*,
+         * burst.ms, vendor.disp.persist), терялись молча при каждом обновлении
+         * APK. Дописываем их в конец: активные ключи профиля главнее, а
+         * закомментированные в профиле — подсказка, а не значение. */
+        if ((before != null) && !before.isEmpty ())
+        {
+            String fresh = readText (mIni);
+            if (fresh != null)
+            {
+                String merged = IniMerge.appendMissing (before, fresh);
+                if (!merged.equals (fresh))
+                    writeText (mIni, merged);
+            }
+        }
 
         /* Путь к помощнику смены режима (Android 10/11) зависит от каталога
          * приложения, поэтому профиль, извлечённый из ресурсов, дополняем
@@ -207,6 +226,40 @@ public class Control
             setIniKey ("vendor.disp.cli", mDispSh.getPath ());
 
         return "";
+    }
+
+    private static String readText (File f)
+    {
+        if (!f.exists ())
+            return null;
+
+        try
+        {
+            FileInputStream fis = new FileInputStream (f);
+            byte [] buf = new byte [(int) f.length ()];
+            int n = fis.read (buf);
+            fis.close ();
+            return (n <= 0) ? "" : new String (buf, 0, n, java.nio.charset.StandardCharsets.UTF_8);
+        }
+        catch (IOException e)
+        {
+            return null;
+        }
+    }
+
+    private static boolean writeText (File f, String text)
+    {
+        try
+        {
+            FileOutputStream fos = new FileOutputStream (f);
+            fos.write (text.getBytes (java.nio.charset.StandardCharsets.UTF_8));
+            fos.close ();
+            return true;
+        }
+        catch (IOException e)
+        {
+            return false;
+        }
     }
 
     public String extractDaemon (Context ctx)

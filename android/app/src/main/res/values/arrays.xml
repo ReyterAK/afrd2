@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string-array name="pause_mode">
+        <item>@string/pause_mode_legacy</item>
         <item>@string/pause_mode_keep</item>
         <item>@string/pause_mode_timeout</item>
         <item>@string/pause_mode_off</item>
     </string-array>
     <string-array name="pause_mode_value">
+        <item></item>
         <item>keep</item>
         <item>timeout</item>
         <item>off</item>
