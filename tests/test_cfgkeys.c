@@ -59,6 +59,31 @@ static void test_notes (void)
 	/* ключи старого пути */
 	assert (cfgkeys_note ("mode.extra", CFGKEY_LEGACY) == NULL);
 	assert (cfgkeys_note ("mode.extra", CFGKEY_ATV14) != NULL);
+	assert (cfgkeys_note ("mode.extra", CFGKEY_VENDOR) != NULL);
+
+	/* третий путь (вендорный SystemControl, Android 10-11): ключи нового
+	 * цикла действуют, собственные ключи вендора — только там */
+	assert (cfgkeys_note ("switch.bump", CFGKEY_VENDOR) == NULL);
+	assert (cfgkeys_note ("pause.mode", CFGKEY_VENDOR) == NULL);
+	assert (cfgkeys_note ("fps.measure.envelope.ms", CFGKEY_VENDOR) == NULL);
+	assert (cfgkeys_note ("vendor.disp.cli", CFGKEY_VENDOR) == NULL);
+	assert (cfgkeys_note ("vendor.disp.cap", CFGKEY_VENDOR) == NULL);
+	assert (cfgkeys_note ("vendor.disp.persist", CFGKEY_VENDOR) == NULL);
+	assert (cfgkeys_note ("vendor.disp.cli", CFGKEY_ATV14) != NULL);
+	assert (strstr (cfgkeys_note ("vendor.disp.cli", CFGKEY_ATV14), "Android 12-14") != NULL);
+	assert (cfgkeys_note ("switch.delay.on", CFGKEY_VENDOR) != NULL);
+	assert (strstr (cfgkeys_note ("switch.delay.on", CFGKEY_VENDOR), "Android 10-14") != NULL);
+
+	/* сисключи, которые читает и вендорный путь: mode.path — все три
+	 * (цветовое пространство нового пути читает узел режима), hdmi.sysfs —
+	 * legacy и вендор (frac_rate_policy, disp_cap), на backdoor не нужен */
+	assert (cfgkeys_note ("mode.path", CFGKEY_LEGACY) == NULL);
+	assert (cfgkeys_note ("mode.path", CFGKEY_VENDOR) == NULL);
+	assert (cfgkeys_note ("mode.path", CFGKEY_ATV14) == NULL);
+	assert (cfgkeys_note ("hdmi.sysfs", CFGKEY_LEGACY) == NULL);
+	assert (cfgkeys_note ("hdmi.sysfs", CFGKEY_VENDOR) == NULL);
+	assert (cfgkeys_note ("hdmi.sysfs", CFGKEY_ATV14) != NULL);
+
 	/* cs.* с 2026-10-02 действуют на обоих путях: на ATV14 — через
 	 * вендорский сервис, а не только записью в sysfs */
 	assert (cfgkeys_note ("cs.select", CFGKEY_LEGACY) == NULL);
@@ -128,6 +153,12 @@ static void test_profiles (void)
 {
 	g_warn [0] = 0;
 	assert (cfgkeys_audit ("config/afrd2.ini", CFGKEY_ATV14, collect, NULL) == 0);
+	assert (g_warn [0] == 0);
+
+	/* тот же профиль обслуживает и вендорный путь Android 10/11: там тоже
+	 * не должно быть ни одного недействующего ключа */
+	g_warn [0] = 0;
+	assert (cfgkeys_audit ("config/afrd2.ini", CFGKEY_VENDOR, collect, NULL) == 0);
 	assert (g_warn [0] == 0);
 
 	g_warn [0] = 0;

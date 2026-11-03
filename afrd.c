@@ -6195,7 +6195,9 @@ int afrd_run ()
 	 * должна быть названа в логе, а не молча проигнорирована (именно так
 	 * потерялось удвоение частоты, mode.prefer.exact). */
 	cfgkeys_audit (g_config,
-	               (g_plat.kind == PLAT_LEGACY) ? CFGKEY_LEGACY : CFGKEY_ATV14,
+	               (g_plat.kind == PLAT_LEGACY) ? CFGKEY_LEGACY
+	             : (g_plat.kind == PLAT_ATV11) ? CFGKEY_VENDOR
+	             : CFGKEY_ATV14,
 	               cfg_audit_warn, NULL);
 
 	if (g_plat.kind != PLAT_LEGACY)

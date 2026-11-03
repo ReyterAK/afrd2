@@ -295,12 +295,14 @@ ATV14, `.50` — ATV14 + SlimBox) показала: локальные файл�
 пути они действуют. Ключ, который на текущем пути не действует (или вообще неизвестен —
 опечатка), **называется в логе при старте**, а не игнорируется молча:
 
-| ключ | новый путь: ATV14/ATV11 (Android 11-14) | legacy (Android 6-9) |
-|---|---|---|
-| `enable`, `log.file`, `log.enable`, `mode.prefer.exact`, `mode.use.fract`, `mode.blacklist.rates`, `switch.timeout`, `switch.delay.off` (на новом пути — предел терпения к паузе, умолчание `0`; см. таблицу выше), `switch.skip.pkg`, `mode.min.hz.list`, `cs.select`, `cs.restore`, `cs.list.path`, `cs.path` | действует | действует |
-| `trigger.poll.ms`, `trigger.start.debounce.ms`, `trigger.stop.debounce.ms`, `fps.*`, `pause.keep`, `switch.restore.on.stop`, `switch.bump`, `switch.bump.on.app`, `switch.ceiling.reset` | действует | — |
-| `mode.extra`, `mode.path`, `vdec.sysfs`, `vdec.blacklist`, `frhint.vdec.blacklist`, `hdmi.sysfs`, `hdmi.state`, `switch.delay.on/retry`, `switch.blackout`, `switch.ignore`, `switch.hdmi`, `uevent.filter.*` | — (в логе: «не действует на новом пути») | действует |
-| `toast.hz` | — (настройка приложения, демон её не читает) | — |
+| ключ | backdoor ATV14 (Android 12-14) | вендорный режим (Android 10-11) | legacy (Android 6-9) |
+|---|---|---|---|
+| `enable`, `log.file`, `log.enable`, `mode.prefer.exact`, `mode.use.fract`, `mode.blacklist.rates`, `switch.timeout`, `switch.delay.off` (на новом пути — предел терпения к паузе, умолчание `0`; см. таблицу выше), `switch.skip.pkg`, `mode.min.hz.list`, `cs.select`, `cs.restore`, `cs.list.path`, `cs.path`, `mode.path` | действует | действует | действует |
+| `trigger.poll.ms`, `trigger.start.debounce.ms`, `trigger.stop.debounce.ms`, `fps.*`, `pause.keep`, `pause.mode`, `burst.ms`, `burst.broadcast`, `switch.restore.on.stop`, `switch.bump`, `switch.bump.on.app`, `switch.bump.pkg`, `switch.bump.probe.ms`, `switch.ceiling.*`, `switch.revert` | действует | действует | — |
+| `vendor.disp.cli`, `vendor.disp.cap`, `vendor.disp.persist` | — (в логе: «не действует на новом пути (Android 12-14)») | действует | — |
+| `mode.extra`, `vdec.sysfs`, `vdec.blacklist`, `frhint.vdec.blacklist`, `hdmi.state`, `switch.delay.on/retry`, `switch.blackout`, `switch.ignore`, `switch.hdmi`, `uevent.filter.*` | — (в логе: «не действует на новом пути») | — | действует |
+| `hdmi.sysfs` | — | действует (`frac_rate_policy`, `disp_cap`) | действует |
+| `toast.hz` | — (настройка приложения, демон её не читает) | — | — |
 
 Пути sysfs на новой ветке определяются автодетектом (`platform_detect()`), а не конфигом.
 В GUI приложения настройки, недействующие на текущем пути, **не показываются**:

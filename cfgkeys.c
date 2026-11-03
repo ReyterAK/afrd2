@@ -45,24 +45,24 @@ static const struct
 	/* Подъём режима до максимальной частоты ТВ при старте видео (Android 11+).
 	 * Плеер фиксирует частоту в начале сессии проигрывания; если дисплей в этот
 	 * момент медленнее контента, темп не поднимется никогда (журнал §47.6). */
-	{ "switch.bump",		CFGKEY_ATV14, NULL },
+	{ "switch.bump",		CFGKEY_NEWPATH, NULL },
 
 	/* Кому применяются механики зажима: список пакетов (по умолчанию —
 	 * штатный YouTube). Зажим измерен только у него, а запасной способ
 	 * сброса — смена конфигурации экрана, на которой часть плееров
 	 * перезапускает Activity (живой случай: OTT Navigator). Журнал §55.9. */
-	{ "switch.bump.pkg",		CFGKEY_ATV14, NULL },
+	{ "switch.bump.pkg",		CFGKEY_NEWPATH, NULL },
 
 	/* Сброс «потолка» частоты у плеера (Android 10-14): перезапуск процесса
 	 * кодека, при отказе — смена плотности. Не зависит от подъёма режима;
 	 * умолчание следует за switch.bump. Журнал §47.9, §60, §67. */
-	{ "switch.ceiling.reset",	CFGKEY_ATV14, NULL },
+	{ "switch.ceiling.reset",	CFGKEY_NEWPATH, NULL },
 
 	/* Чем сбрасывать потолок: codec — перезапуском процесса кодека (быстро,
 	 * 1.1 с, декодер пересоздаётся у всех приложений), density — сменой
 	 * плотности экрана (медленно, 6.8 с, в пределах приложения), auto —
 	 * кодек с запасным путём на плотность. Журнал §60. */
-	{ "switch.ceiling.method",	CFGKEY_ATV14, NULL },
+	{ "switch.ceiling.method",	CFGKEY_NEWPATH, NULL },
 
 	/* Кому применяется сброс «потолка». Отдельный список нужен потому, что
 	 * подъём режима (switch.bump.pkg) для некоторых плееров безопасен, а
@@ -70,78 +70,78 @@ static const struct
 	 * только штатный YouTube (ветка «следует за switch.bump.pkg» больше не
 	 * достигается: список заполняется явно, см. start-up), задан пустым —
 	 * никому. */
-	{ "switch.ceiling.pkg",		CFGKEY_ATV14, NULL },
+	{ "switch.ceiling.pkg",		CFGKEY_NEWPATH, NULL },
 
 	/* Короткий пробник подачи после подъёма: пока держим максимум, решаем по
 	 * данным видео-слоя (мс; 0 — выключено). Журнал §111.4, §118. */
-	{ "switch.bump.probe.ms",	CFGKEY_ATV14, NULL },
+	{ "switch.bump.probe.ms",	CFGKEY_NEWPATH, NULL },
 
 	/* Возврат режима, когда подача после переключения осталась «зажатой»
 	 * (switch.revert): плеер держит темп от старта под другим режимом, и
 	 * вылечить это «туда-обратно» не удалось. Возврат к прежнему режиму даёт
 	 * гладкую картинку ценой потери части кадров контента. Только плеерам из
 	 * switch.bump.pkg; один раз на видео. Журнал §113. */
-	{ "switch.revert",		CFGKEY_ATV14, NULL },
+	{ "switch.revert",		CFGKEY_NEWPATH, NULL },
 
 	/* Порог «неровной подачи» по данным видео-слоя: интервал считается
 	 * выбросом, если он больше ratio процентов от базы (максимум из периода
 	 * дисплея и ожидаемого интервала), а доля выбросов выше gap процентов
 	 * означает «подача неровная» — по этой проверке срабатывает лечение
 	 * (журнал §110: медиана видела 40 мс при 20 % провалов по 80 мс). */
-	{ "fps.feed.ratio.pct",		CFGKEY_ATV14, NULL },
-	{ "fps.feed.gap.pct",		CFGKEY_ATV14, NULL },
+	{ "fps.feed.ratio.pct",		CFGKEY_NEWPATH, NULL },
+	{ "fps.feed.gap.pct",		CFGKEY_NEWPATH, NULL },
 
 	/* Подъём режима при выходе плеера на передний план: на Android 10/11 это
 	 * успевает до того, как плеер запомнит частоту (журнал §49.13). */
-	{ "switch.bump.on.app",		CFGKEY_ATV14, NULL },
+	{ "switch.bump.on.app",		CFGKEY_NEWPATH, NULL },
 
 	/* Быстрое решение по заявленной частоте кадра: живёт в цикле нового пути
 	 * (на старом свой тайминг по uevent'ам, заявленную частоту он не читает).
 	 * Умолчание зависит от вида нового пути: на Android 10/11 включено, на
 	 * ATV14 выключено. */
-	{ "fps.declare.fast",		CFGKEY_ATV14, NULL },
+	{ "fps.declare.fast",		CFGKEY_NEWPATH, NULL },
 
 	/* только новый путь (Android 10-14) */
 	/* Вендорный путь смены режима (Android 10/11, Amlogic): путь к помощнику
 	 * и список режимов ТВ. Помощник раскладывают приложение и Magisk-модуль,
 	 * поэтому путь настраиваемый; список нужен, потому что таблицы режимов
 	 * SurfaceFlinger на 10/11 нет. */
-	{ "vendor.disp.cli",		CFGKEY_ATV14, NULL },
+	{ "vendor.disp.cli",		CFGKEY_VENDOR, NULL },
 	/* Постоянный помощник смены режима: держит VM загруженной, снимая ~490 мс
 	 * запуска app_process с каждой смены (журнал §49.9). */
-	{ "vendor.disp.persist",	CFGKEY_ATV14, NULL },
-	{ "vendor.disp.cap",		CFGKEY_ATV14, NULL },
-	{ "trigger.poll.ms",		CFGKEY_ATV14, NULL },
-	{ "trigger.start.debounce.ms",	CFGKEY_ATV14, NULL },
-	{ "trigger.stop.debounce.ms",	CFGKEY_ATV14, NULL },
-	{ "fps.measure.envelope.ms",	CFGKEY_ATV14, NULL },
-	{ "fps.measure.envelope.early.ms", CFGKEY_ATV14, NULL },
-	{ "fps.measure.envelope.max.ms", CFGKEY_ATV14, NULL },
-	{ "fps.measure.envelope.sub.ms", CFGKEY_ATV14, NULL },
-	{ "fps.measure.envelope.skip.ms", CFGKEY_ATV14, NULL },
-	{ "fps.measure.retries",	CFGKEY_ATV14, NULL },
-	{ "fps.declared.crosscheck.pct", CFGKEY_ATV14, NULL },
-	{ "fps.recheck.delay.ms",	CFGKEY_ATV14, NULL },
-	{ "fps.cadence.fix.ms",		CFGKEY_ATV14, NULL },
-	{ "fps.prefer.api",		CFGKEY_ATV14, NULL },
-	{ "pause.keep",			CFGKEY_ATV14, NULL },
+	{ "vendor.disp.persist",	CFGKEY_VENDOR, NULL },
+	{ "vendor.disp.cap",		CFGKEY_VENDOR, NULL },
+	{ "trigger.poll.ms",		CFGKEY_NEWPATH, NULL },
+	{ "trigger.start.debounce.ms",	CFGKEY_NEWPATH, NULL },
+	{ "trigger.stop.debounce.ms",	CFGKEY_NEWPATH, NULL },
+	{ "fps.measure.envelope.ms",	CFGKEY_NEWPATH, NULL },
+	{ "fps.measure.envelope.early.ms", CFGKEY_NEWPATH, NULL },
+	{ "fps.measure.envelope.max.ms", CFGKEY_NEWPATH, NULL },
+	{ "fps.measure.envelope.sub.ms", CFGKEY_NEWPATH, NULL },
+	{ "fps.measure.envelope.skip.ms", CFGKEY_NEWPATH, NULL },
+	{ "fps.measure.retries",	CFGKEY_NEWPATH, NULL },
+	{ "fps.declared.crosscheck.pct", CFGKEY_NEWPATH, NULL },
+	{ "fps.recheck.delay.ms",	CFGKEY_NEWPATH, NULL },
+	{ "fps.cadence.fix.ms",		CFGKEY_NEWPATH, NULL },
+	{ "fps.prefer.api",		CFGKEY_NEWPATH, NULL },
+	{ "pause.keep",			CFGKEY_NEWPATH, NULL },
 	/* Один ключ на поведение при паузе (keep|timeout|off): в GUI заменяет
 	 * pause.keep и switch.delay.off, старые ключи продолжают работать. */
-	{ "pause.mode",			CFGKEY_ATV14, NULL },
-	{ "burst.ms",			CFGKEY_ATV14, NULL },
-	{ "burst.broadcast",		CFGKEY_ATV14, NULL },
-	{ "switch.restore.on.stop",	CFGKEY_ATV14, NULL },
-	{ "fps.correct.enable",		CFGKEY_ATV14, NULL },
-	{ "fps.correct.list",		CFGKEY_ATV14, NULL },
+	{ "pause.mode",			CFGKEY_NEWPATH, NULL },
+	{ "burst.ms",			CFGKEY_NEWPATH, NULL },
+	{ "burst.broadcast",		CFGKEY_NEWPATH, NULL },
+	{ "switch.restore.on.stop",	CFGKEY_NEWPATH, NULL },
+	{ "fps.correct.enable",		CFGKEY_NEWPATH, NULL },
+	{ "fps.correct.list",		CFGKEY_NEWPATH, NULL },
 	/* Одна настройка на поправку AV1: auto | off | проценты. Старые ключи
 	 * .offset и .pct остаются известными (старые конфиги) и читаются, только
 	 * если нового ключа нет, — взаимоисключающе (журнал §99.5). */
-	{ "fps.correct.av1",		CFGKEY_ATV14, NULL },
-	{ "fps.correct.av1.offset",	CFGKEY_ATV14, NULL },
+	{ "fps.correct.av1",		CFGKEY_NEWPATH, NULL },
+	{ "fps.correct.av1.offset",	CFGKEY_NEWPATH, NULL },
 	/* Относительная поправка AV1 (проценты): на Android 10/11 завышение
 	 * пропорционально частоте (журнал §49.18). */
-	{ "fps.correct.av1.pct",	CFGKEY_ATV14, NULL },
-	{ "fps.correct.av1.pkg",	CFGKEY_ATV14, NULL },
+	{ "fps.correct.av1.pct",	CFGKEY_NEWPATH, NULL },
+	{ "fps.correct.av1.pkg",	CFGKEY_NEWPATH, NULL },
 
 	/* заменены огибающей (наблюдение 20 с): ключ известен, но на новом пути
 	 * не действует — старый конфиг получает внятное сообщение, а не
@@ -151,11 +151,16 @@ static const struct
 
 	/* только старый путь (Android 6-9) */
 	{ "mode.extra",			CFGKEY_LEGACY, NULL },
-	{ "mode.path",			CFGKEY_LEGACY, NULL },
+	/* узел текущего режима читает и цветовое пространство нового пути
+	 * (colorspace_apply_current_mode), поэтому действует на всех трёх */
+	{ "mode.path",			CFGKEY_BOTH, NULL },
 	{ "vdec.sysfs",			CFGKEY_LEGACY, NULL },
 	{ "vdec.blacklist",		CFGKEY_LEGACY, NULL },
 	{ "frhint.vdec.blacklist",	CFGKEY_LEGACY, NULL },
-	{ "hdmi.sysfs",			CFGKEY_LEGACY, NULL },
+	/* hdmi.sysfs: frac_rate_policy и disp_cap читаются и на вендорном пути
+	 * (vendor_frac_ensure, atv14_report_hz); на backdoor их роль играет
+	 * транзакция SurfaceFlinger */
+	{ "hdmi.sysfs",			CFGKEY_LEGACY | CFGKEY_VENDOR, NULL },
 	{ "hdmi.state",			CFGKEY_LEGACY, NULL },
 	{ "switch.delay.on",		CFGKEY_LEGACY, NULL },
 	{ "switch.delay.retry",		CFGKEY_LEGACY, NULL },
@@ -190,9 +195,24 @@ const char *cfgkeys_note (const char *key, unsigned path)
 			if (k_keys [i].paths & CFGKEY_APP)
 				return "ключ настройки приложения — демон его не читает";
 
-			return (path == CFGKEY_ATV14)
-				? "не действует на новом пути (Android 10-14)"
-				: "не действует на старом пути (Android 6-9)";
+			/* Путь назван точно: ключ может отсутствовать на одном из двух
+			 * новых путей, хотя на другом действует. */
+			switch (path)
+			{
+			case CFGKEY_VENDOR:
+				if (k_keys [i].paths & CFGKEY_ATV14)
+					return "не действует на вендорном пути (Android 10-11)";
+				break;
+
+			case CFGKEY_ATV14:
+				if (k_keys [i].paths & CFGKEY_VENDOR)
+					return "не действует на новом пути (Android 12-14)";
+				break;
+			}
+
+			return (path == CFGKEY_LEGACY)
+				? "не действует на старом пути (Android 6-9)"
+				: "не действует на новом пути (Android 10-14)";
 		}
 
 	return "неизвестный ключ (опечатка?)";
