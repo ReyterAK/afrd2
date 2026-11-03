@@ -97,14 +97,6 @@ public class Config
         itemType.put ("switch.ceiling.reset", TYPE_BOOL);
     }
 
-    public Object get (String key, Object defval)
-    {
-        if (mItems.containsKey (key))
-            return mItems.get (key);
-
-        return defval;
-    }
-
     public boolean getBoolean (String key, boolean defval)
     {
         if (mItems.containsKey (key))
