@@ -232,7 +232,13 @@ void display_mode_switch (display_mode_t *mode, bool force)
 	trace (1, "Switching display mode to "DISPMODE_FMT"\n",
 		DISPMODE_ARGS (*mode, display_mode_hz (mode)));
 
-	sysfs_write (g_mode_path, mode->name);
+	/* Результат записи виден в журнале: раньше он игнорировался, и после
+	 * неудачной записи демон считал режим применённым, а экран оставался
+	 * «null» до конца видео (нашло ревью legacy). */
+	if (sysfs_write (g_mode_path, mode->name) != 0)
+		trace (1, "не удалось записать режим %s (узел %s)\n",
+		       mode->name, g_mode_path);
+
 	g_current_mode = *mode;
 	g_blackened = false;
 

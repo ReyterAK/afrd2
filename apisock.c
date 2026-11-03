@@ -24,7 +24,7 @@ static int g_apisock = -1;
 
 bool apisock_init ()
 {
-	g_apisock = socket (AF_INET, SOCK_DGRAM, 0);
+	g_apisock = socket (AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 	if (g_apisock == -1) {
 		trace (0, "Failed to create socket\n");
 		return false;

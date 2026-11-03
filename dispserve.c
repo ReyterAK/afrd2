@@ -114,13 +114,22 @@ static int start (const char *script)
 	 * возвращает ошибку, и мы уходим на разовый запуск. */
 	signal (SIGPIPE, SIG_IGN);
 
-	int to_child [2], from_child [2];
+	/* -1 по умолчанию: при отказе первого pipe второй массив остаётся
+	 * неинициализированным, и «закрытие» его полей рвало чужие дескрипторы
+	 * (нашло ревью API). */
+	int to_child [2] = { -1, -1 };
+	int from_child [2] = { -1, -1 };
 	if ((pipe (to_child) != 0) || (pipe (from_child) != 0))
 	{
 		if (to_child [0] >= 0)
 		{
 			close (to_child [0]);
 			close (to_child [1]);
+		}
+		if (from_child [0] >= 0)
+		{
+			close (from_child [0]);
+			close (from_child [1]);
 		}
 		return -1;
 	}

@@ -89,7 +89,7 @@ bool shmem_init (bool read)
 	if (read)
 		g_shmem_h = open (g_shmem_path, O_RDONLY | O_CLOEXEC);
 	else
-		g_shmem_h = open (g_shmem_path, O_CREAT | O_RDWR | O_CLOEXEC, 0644);
+		g_shmem_h = open (g_shmem_path, O_CREAT | O_TRUNC | O_RDWR | O_CLOEXEC, 0644);
 
 	if (g_shmem_h < 0) {
 		trace (0, "failed to open shared memory %s\n", g_shmem_path);
