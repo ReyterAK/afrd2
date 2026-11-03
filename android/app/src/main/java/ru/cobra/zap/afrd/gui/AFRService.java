@@ -12,6 +12,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.pm.ServiceInfo;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -77,7 +78,7 @@ public class AFRService extends Service
          * получает ForegroundServiceDidNotStartInTimeException и демон не
          * поднимается (нашло ревью GUI). Ниже updateNotification заменит
          * извещение настоящим. */
-        startForeground (NOTIF_STATUS_ID, placeholderNotification ());
+        startForegroundCompat (placeholderNotification ());
 
         mOptions = getSharedPreferences ("ini_options", 0);
         updateAll ();
@@ -171,6 +172,18 @@ public class AFRService extends Service
         }, 1000);
     }
 
+    /* Android 14 (targetSdk 34): тип foreground-службы обязателен. Манифест
+     * объявляет specialUse; на 34+ его надо передать и третьим аргументом,
+     * иначе система бросает MissingForegroundServiceTypeException. */
+    private void startForegroundCompat (Notification n)
+    {
+        if (Build.VERSION.SDK_INT >= 34)
+            startForeground (NOTIF_STATUS_ID, n,
+                             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+        else
+            startForeground (NOTIF_STATUS_ID, n);
+    }
+
     @SuppressWarnings ("deprecation")
     private void updateNotification (boolean changed)
     {
@@ -205,7 +218,8 @@ public class AFRService extends Service
         nbuilder
             .setSmallIcon (R.drawable.ic_afrd)
             .setLargeIcon (Icon.createWithResource (this, R.drawable.ic_afrd))
-            .setContentIntent (PendingIntent.getActivity (this, 0, runApp, 0))
+            .setContentIntent (PendingIntent.getActivity (this, 0, runApp,
+                PendingIntent.FLAG_IMMUTABLE))
             .setOngoing (true)
             .setOnlyAlertOnce (true)
             .setLocalOnly (true)
@@ -222,7 +236,8 @@ public class AFRService extends Service
             Notification.Action action = new Notification.Action.Builder (
                 Icon.createWithResource (this, mStatus.mEnabled ? R.drawable.ic_stop : R.drawable.ic_play),
                 getString (mStatus.mEnabled ? R.string.notif_stop_afrd : R.string.notif_start_afrd),
-                PendingIntent.getActivity (this, 0, startStop, 0)).build ();
+                PendingIntent.getActivity (this, 0, startStop,
+                    PendingIntent.FLAG_IMMUTABLE)).build ();
             nbuilder
                 .addAction (action)
                 .setContentText (getResources ().getString (R.string.notif_hz,
@@ -235,7 +250,7 @@ public class AFRService extends Service
             nbuilder
                 .setContentTitle (getString (R.string.notif_notrunning));
 
-        startForeground (NOTIF_STATUS_ID, nbuilder.build ());
+        startForegroundCompat (nbuilder.build ());
     }
 
     @Override

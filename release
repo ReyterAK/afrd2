@@ -5,6 +5,9 @@
 
 test -z "$NDK" && export NDK=$HOME/Android/Sdk/android-ndk-r26d
 
+# AGP 8 и Gradle 8.2 собираются только на JDK 17 (на JDK 11 — отказ).
+export JAVA_HOME=${AFRD_JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}
+
 # abort on first error
 set -e
 
@@ -25,7 +28,7 @@ VERSION=`sed main.c -ne '/const char \*g_version/{' -e 's/^.*= *"//' -e 's/".*$/
 SUFFIX=`sed main.c -ne '/const char \*g_ver_sfx/{' -e 's/^.*= *"//' -e 's/".*$//' -e p -e '}'`
 
 mkdir -p releases
-RELEASE=releases/$(basename "$APK")
+RELEASE=releases/ru.reyter.afrd2-${VERSION}${SUFFIX}-release.apk
 mv "$APK" "$RELEASE"
 
 echo "Finished $RELEASE"

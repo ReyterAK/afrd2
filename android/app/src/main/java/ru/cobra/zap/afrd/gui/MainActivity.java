@@ -7,6 +7,7 @@
 
 package ru.cobra.zap.afrd.gui;
 
+import android.Manifest;
 import android.app.ActionBar;
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -72,6 +73,13 @@ public class MainActivity extends Activity
             ab.hide ();
 
         setContentView (R.layout.activity_main);
+
+        /* Android 13+: без POST_NOTIFICATIONS уведомление службы не видно
+         * (сама служба и демон работают). Просим при открытии. */
+        if (Build.VERSION.SDK_INT >= 33 &&
+            (checkSelfPermission (Manifest.permission.POST_NOTIFICATIONS) !=
+             PackageManager.PERMISSION_GRANTED))
+            requestPermissions (new String [] { Manifest.permission.POST_NOTIFICATIONS }, 1);
 
         try
         {

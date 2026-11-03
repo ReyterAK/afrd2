@@ -11,14 +11,14 @@ if (keystorePropsFile.exists ()) {
 }
 
 android {
-    compileSdkVersion 27
+    namespace 'ru.cobra.zap.afrd.gui'
+    compileSdk 34
     defaultConfig {
         applicationId 'ru.reyter.afrd2'
         minSdkVersion 23
-        compileSdkVersion 27
         versionCode 10200
         versionName '1.2.0'
-        targetSdkVersion 28
+        targetSdkVersion 34
         versionNameSuffix ''
         project.ext.set ('archivesBaseName', "${applicationId}-${versionName}${versionNameSuffix}".toString ())
     }
@@ -39,11 +39,20 @@ android {
         debug {
         }
     }
-    buildToolsVersion '28.0.3'
+    buildToolsVersion '34.0.0'
     productFlavors {
     }
-    lintOptions {
+    lint {
         abortOnError false
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    /* AGP 8 больше не генерирует BuildConfig сам; он нужен GUI (VERSION_NAME,
+     * BUILD_TYPE). */
+    buildFeatures {
+        buildConfig true
     }
 }
 

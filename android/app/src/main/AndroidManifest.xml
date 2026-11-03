@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-          xmlns:tools="http://schemas.android.com/tools"
-          package="ru.cobra.zap.afrd.gui">
+          xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Сеанс «AFR по требованию»: команда уходит демону по UDP на loopback
          (127.0.0.1:50505). Без INTERNET сокет не создаётся вовсе — проверено
@@ -10,6 +9,15 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <!-- Android 14: тип службы specialUse требует своего разрешения. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <!-- Android 13: без него уведомление службы не видно (сама служба работает). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Android 11+: список «Все приложения» и определение плееров по пакетам
+         требуют видимости пакетов. Приложение ставится сайдлоадом, для Play
+         это разрешение не годится (tools:ignore — на lint). -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+                     tools:ignore="QueryAllPackagesPermission"/>
 
     <uses-feature android:name="android.software.leanback" android:required="false"/>
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -21,6 +29,7 @@
                  android:allowBackup="true" android:fullBackupContent="@xml/backup_files">
 
         <activity android:name="ru.cobra.zap.afrd.gui.MainActivity" android:label="@string/app_name"
+                  android:exported="true"
                   android:screenOrientation="landscape"
                   android:configChanges="orientation">
             <intent-filter>
@@ -30,7 +39,7 @@
             </intent-filter>
         </activity>
 
-        <activity android:name="ru.cobra.zap.afrd.gui.ActionActivity">
+        <activity android:name="ru.cobra.zap.afrd.gui.ActionActivity" android:exported="true">
             <intent-filter>
                 <action android:name="ru.cobra.afrd.START"/>
                 <category android:name="android.intent.category.DEFAULT"/>
@@ -70,7 +79,12 @@
             </intent-filter>
         </receiver>
 
-        <service android:name="ru.cobra.zap.afrd.gui.AFRService" android:enabled="true" android:exported="false" />
+        <service android:name="ru.cobra.zap.afrd.gui.AFRService" android:enabled="true"
+                 android:exported="false"
+                 android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                      android:value="display mode and frame rate control via root daemon"/>
+        </service>
     </application>
 
 </manifest>
