@@ -57,13 +57,20 @@ void hdcp_restore (bool force)
 		"0", "14", "22"
 	};
 
-	if (force && (g_hdcp_enabled == 0))
-		g_hdcp_enabled = 1;
+	int mode_idx = g_hdcp_enabled;
 
-	if ((g_hdcp_enabled == 0) || g_blackened)
+	/* force — разовая попытка вернуть линк, когда HDCP выключил HDMI.
+	 * Раньше она навсегда поднимала g_hdcp_enabled, и демон начинал считать
+	 * HDCP 1.4 своей настройкой: писал её на каждой смене режима и в
+	 * hdcp_check, хотя до сбоя HDCP был выключен (P3 прохода 2). Теперь
+	 * состояние не меняется — пишем 1.4 один раз. */
+	if ((mode_idx == 0) && force)
+		mode_idx = 1;
+
+	if ((mode_idx == 0) || g_blackened)
 		return;
 
-	const char *mode = hdcp_mode [g_hdcp_enabled];
+	const char *mode = hdcp_mode [mode_idx];
 	sysfs_set_str (g_hdmi_dev, "hdcp_mode", mode);
 	trace (1, "Setting HDCP mode to %s\n", mode);
 }
