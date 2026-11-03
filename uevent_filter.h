@@ -26,6 +26,10 @@ typedef struct
 	int size;
 	// Number of matches since last reset
 	int matches;
+	// Для каждого атрибута: уже совпал в этом uevent. Повтор имени атрибута
+	// (ядро бывает шлёт одну строку дважды) не должен считаться дважды —
+	// иначе matches > size и фильтр «не срабатывает» (P3 прохода 2).
+	bool hit [16];
 } uevent_filter_t;
 
 /// Initialize an uEvent filter object from filter expression string

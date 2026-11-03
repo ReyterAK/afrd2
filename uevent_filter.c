@@ -89,6 +89,7 @@ bool uevent_filter_load (uevent_filter_t *uevf, const char *kw)
 void uevent_filter_reset (uevent_filter_t *uevf)
 {
 	uevf->matches = 0;
+	memset (uevf->hit, 0, sizeof (uevf->hit));
 }
 
 bool uevent_filter_match (uevent_filter_t *uevf, const char *attr, const char *value)
@@ -104,7 +105,13 @@ bool uevent_filter_match (uevent_filter_t *uevf, const char *attr, const char *v
 
 			trace (3, "\t  matched filter %s\n", uevf->name);
 
-			uevf->matches++;
+			/* Один и тот же атрибут может прийти дважды: считаем
+			 * совпадение один раз на запись фильтра, иначе matches
+			 * превышает size и matched() ложно. */
+			if (!uevf->hit [i]) {
+				uevf->hit [i] = true;
+				uevf->matches++;
+			}
 			return true;
 		}
 
