@@ -3405,6 +3405,15 @@ static bool fg_is_desktop (const char *pkg)
 int afrd_burst (int ms)
 {
 	unsigned long long now = now_us ();
+
+	/* Сеанс «по кнопке» реализован только в цикле ATV14; на старом пути
+	 * команда принималась, отвечала «pending» и висела до перезапуска
+	 * (нашло ревью API). Отказываем честно. */
+	if (g_plat.kind == PLAT_LEGACY)
+	{
+		trace (0, "сеанс AFR: на старом пути (Android 6-9) не поддерживается\n");
+		return BURST_REQ_TOO_SOON;
+	}
 	if (ms < 0)
 		ms = burst_clamp_ms (cfg_get_int ("burst.ms", 0));
 	burst_req_t r = burst_request (&g_burst, ms, now);

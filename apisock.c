@@ -123,8 +123,17 @@ static void apisock_cmd (char *cmd, int fd, struct sockaddr *src_addr, socklen_t
 		} else if (apisock_is_cmd (&cmd, "frame_rate_hint")) {
 			int fr = parse_int (&cmd);
 			cmd += strspn (cmd, spaces);
-			if (!*cmd)
+			if (!*cmd) {
+				/* Драйвер и плеер присылают сюда своё поле: 0 значит «нет
+				 * данных», а большие значения переполняют fr*256 (замер:
+				 * 8388608 → -2147483) и уводили режим на 23.976. Держим
+				 * 1..240000 (0.001..240 к/с); 0 — снять подсказку. */
+				if (fr < 0)
+					fr = 0;
+				if (fr > 240000)
+					fr = 240000;
 				afrd_frame_rate_hint ((fr * 256) / 1000);
+			}
 		} else if (apisock_is_cmd (&cmd, "status")) {
 			/* +5 строк на атрибуты дисплея (hdrinfo), +3 на сеанс burst */
 			char status [420];

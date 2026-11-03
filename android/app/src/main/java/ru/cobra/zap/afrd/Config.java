@@ -286,9 +286,9 @@ public class Config
             return false;
         }
 
-        if (!ini.delete ())
-            return false;
-
+        /* rename(2) заменяет файл атомарно. Раньше было delete → rename:
+         * в этом окне демон видел отсутствующий конфиг и завершался
+         * (нашло ревью GUI/API). */
         if (!out_ini.renameTo (ini))
             return false;
 

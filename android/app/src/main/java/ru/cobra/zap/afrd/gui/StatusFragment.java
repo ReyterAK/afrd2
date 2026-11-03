@@ -78,7 +78,10 @@ public class StatusFragment extends Fragment
             public void run ()
             {
                 update ();
-                mTimer.postDelayed (this, 500);
+                /* После onDetach таймер не продлеваем: иначе опрос 500 мс
+                 * живёт вечно и держит фрагмент с View (нашло ревью GUI). */
+                if (mAttached)
+                    mTimer.postDelayed (this, 500);
             }
         });
     }
