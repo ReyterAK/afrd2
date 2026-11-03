@@ -3615,6 +3615,9 @@ static int run_atv14 (const platform_t *plat)
 	/* Текущий заход hdrinfo_timer — только повторное чтение vinfo (без
 	 * повторного разбора HDR-атрибутов) */
 	bool vinfo_confirm = false;
+	/* Частота текущего режима подтверждена сверкой: только тогда можно
+	 * писать формат, и проверка подачи тоже не пишет его раньше (P1-2). */
+	bool mode_verified = false;
 	int preferred_id;
 	/* поправка частоты для плеера текущего видео (fps.correct.list):
 	 * пакет определяется один раз на видео, при первом замере */
@@ -4281,11 +4284,20 @@ static int run_atv14 (const platform_t *plat)
 				bump_probe_done = false;
 				bump_probe_last_us = 0;
 				bump_probe_veto_logged = false;
-				hdrinfo_armed = false;
-				mstime_disable (&hdrinfo_timer);
-				seq_note_applied (&seq);
-				vinfo_confirm = false;
-				vinfo_mid = -1;
+				/* Проверку частоты снимаем только когда это не наш сброс:
+				 * перезапуск декодера после собственного переключения (2–9 с,
+				 * здесь бывало и 0.3 с) иначе отменял сверку, и «принял ли
+				 * ядро режим» не проверялось вовсе — ровно тот случай, ради
+				 * которого сверка и делалась. */
+				if (!own_reset)
+				{
+					hdrinfo_armed = false;
+					mstime_disable (&hdrinfo_timer);
+					seq_note_applied (&seq);
+					mode_verified = false;
+					vinfo_confirm = false;
+					vinfo_mid = -1;
+				}
 				/* плеер нового видео может быть другим — поправку
 				 * (fps.correct.list) берём заново */
 				pkg_probed = false;
@@ -4521,6 +4533,7 @@ static int run_atv14 (const platform_t *plat)
 			switch (step.action)
 			{
 				case SEQ_RECHECK:
+					mode_verified = false;
 					/* Частота не та, что просили (живой случай 02.11, бокс
 					 * тестера X5/ATV14: на 25-фпс канале просили 2160p25,
 					 * ядро оставило 60 Гц, телевизор показал «нет сигнала»).
@@ -4535,6 +4548,7 @@ static int run_atv14 (const platform_t *plat)
 
 				case SEQ_RETRY:
 				{
+					mode_verified = false;
 					/* Один повтор «через удвоение цели» (25 -> 50): у тестера
 					 * 60 -> 25 не применялся, а 50 -> 25 — применялся.
 					 * Повторная выдача того же id не пересобирает vsync-путь
@@ -4574,6 +4588,17 @@ static int run_atv14 (const platform_t *plat)
 						mstime_update ();
 						mstime_arm (&hdrinfo_timer, HDRINFO_SETTLE_MS);
 						hdrinfo_armed = true;
+						/* Проверку подачи взводим заново: её таймер шёл от
+						 * прежнего переключения, и без перевзвода она
+						 * срабатывала раньше сверки частоты — то есть
+						 * писала формат в момент перехода (P1-2). */
+						if (cadence_fix_ms > 0)
+						{
+							mstime_update ();
+							mstime_arm (&cadence_timer, (uint32_t) cadence_fix_ms);
+							cadence_armed = true;
+							cadence_checked = false;
+						}
 						break;
 					}
 
@@ -4614,11 +4639,13 @@ static int run_atv14 (const platform_t *plat)
 					cur_sf_id = vinfo_mid;
 					measure_failed = true;
 					want_sf_id = -1;
+					mode_verified = true;
 					colorspace_apply_current_mode ();
 					break;
 
 				case SEQ_RESTORE:
 					trace (0, "частота не применилась повторно — возвращаю режим\n");
+					mode_verified = false;
 					measure_failed = true;
 					want_sf_id = -1;
 					if (held &&
@@ -4635,6 +4662,7 @@ static int run_atv14 (const platform_t *plat)
 					/* Режим устоялся и частота та, что просили, — ставим
 					 * формат: узел имени уже отражает новое состояние, и
 					 * запись не отменит переход. */
+					mode_verified = true;
 					colorspace_apply_current_mode ();
 					break;
 
@@ -4671,8 +4699,14 @@ static int run_atv14 (const platform_t *plat)
 			 * режима уже устоялось. Фреймворк переустанавливает цветовое
 			 * пространство сам — асинхронно после смены режима, и применение
 			 * «в момент» переключения им же и перебивалось (проверено
-			 * живьём: через пару секунд значение возвращалось к исходному). */
-			colorspace_apply_current_mode ();
+			 * живьём: через пару секунд значение возвращалось к исходному).
+			 *
+			 * Только если частота уже сверена: этот таймер идёт от прежнего
+			 * переключения, и до правки он мог сработать в момент нового
+			 * перехода — запись отменяла смену режима (P1-2, лог тестера:
+			 * запись 03:07:06.732 между повтором и сверкой). */
+			if (mode_verified)
+				colorspace_apply_current_mode ();
 
 			int pm = 0, md = 0, gap = 0;
 			int gap_thr = cfg_get_int ("fps.feed.gap.pct", 10);
@@ -5180,6 +5214,7 @@ cadence_done: ;
 								fast_applied = true;
 								fast_class = 0;
 								measure_failed = true;
+								seq_give_up (&seq);
 								trace (0, "быстрое решение: режим не применился — "
 								       "больше не пробую до конца видео\n");
 							}
@@ -5415,6 +5450,10 @@ cadence_done: ;
 				       HZ_ARGS (hz));
 				measure_failed = true;
 				want_sf_id = -1;
+				/* Режима для этой частоты нет — повтор замера его не создаст:
+				 * сдаёмся до конца видео, иначе перепроверка запускает новый
+				 * 14–20-секундный цикл (P1-8). */
+				seq_give_up (&seq);
 
 				/* Если таблица режимов сменилась прямо во время замера, id в
 				 * orig_sf_id — из старой нумерации, и в транзакцию 1035 его
@@ -5441,7 +5480,7 @@ cadence_done: ;
 		 * (`want_sf_id >= 0`) или замер не удался: раньше подсказка читалась
 		 * только до первого решения, и смена эпизода/канала в том же плеере
 		 * оставляла прежний режим (R53). Подсказка применяется один раз. */
-		else if (prefer_api && video_eff &&
+		else if (prefer_api && video_eff && seq_allows_switch (&seq) &&
 		         mstime_running (&g_frame_rate_hint.stamp) &&
 		         (g_frame_rate_hint.stamp != hint_seen))
 		{
@@ -5725,6 +5764,7 @@ cadence_done: ;
 				mstime_arm (&hdrinfo_timer, HDRINFO_SETTLE_MS);
 				hdrinfo_armed = true;
 				seq_note_applied (&seq);
+				mode_verified = false;
 				vinfo_confirm = false;
 				vinfo_mid = -1;
 

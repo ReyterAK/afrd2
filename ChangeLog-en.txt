@@ -112,6 +112,23 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       itself ("verified → retried → gave up") moved to seq.c and is checked
       against recorded logs (tests/test_seq.c).
 
+    * The HDMI format is no longer written on "stale" timers: the feed check
+      applied it on the schedule of a previous switch and could write the format
+      in the middle of a new transition. Now it writes only after the actual
+      rate has been verified, and it re-arms on the retry; the rate check itself
+      is no longer cancelled by a decoder restart caused by our own switch.
+
+    * The app no longer crashes on a config the daemon accepts:
+      `switch.timeout=3000 # ms` (a legal line for the daemon) raised
+      NumberFormatException in MainActivity and the settings screen would not
+      open — the reset button lives in that same screen. The value is parsed by
+      the daemon's rules now (the comment is cut off), and a non-numeric value of
+      an integer key is preserved as is.
+
+    * "No more switching until the end of the video" is no longer bypassed: the
+      player hint, "no mode for X Hz" and a failed quick decision now raise the
+      same give-up flag as a failed retry.
+
     * The "auto" fractional rate policy (mode.use.fract=0) is real now on
       Android 10-14: an integer rate is used only when the source declared an
       integer one (player hint frame_rate_hint — 24.000 vs 23.976, or the

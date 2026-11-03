@@ -90,3 +90,14 @@ bool seq_gave_up (const seq_t *st)
 {
 	return st->gave_up;
 }
+
+bool seq_allows_switch (const seq_t *st)
+{
+	return !st->gave_up;
+}
+
+void seq_give_up (seq_t *st)
+{
+	st->state = SEQ_IDLE;
+	st->gave_up = true;
+}

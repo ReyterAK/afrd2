@@ -160,6 +160,16 @@ int main (void)
 	CHECK (seq_settled (&st, 15360, 6400, 12800, true).action == SEQ_NOTHING,
 	       "после применения и сдачи — ничего");
 
+	/* После сдачи новые переключения запрещены любым путём (I2): подсказка
+	 * плеера, «режим не найден» и быстрое решение спрашивают этот признак. */
+	st = (seq_t) {SEQ_IDLE, false};
+	CHECK (seq_allows_switch (&st), "до сдачи переключать можно");
+	seq_give_up (&st);
+	CHECK (!seq_allows_switch (&st), "после сдачи переключать нельзя");
+	CHECK (seq_gave_up (&st), "seq_give_up не выставил признак сдачи");
+	seq_new_video (&st);
+	CHECK (seq_allows_switch (&st), "новое видео снимает запрет");
+
 	run_fixture ("ok-25");
 	run_fixture ("no-doubling");
 	run_fixture ("retry-fail");

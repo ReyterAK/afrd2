@@ -27,10 +27,10 @@ public class Config
     private boolean mModified = false;
 
     // Configuration item data type
-    public static final int TYPE_MASK = 0x0000000F;
-    public static final int TYPE_BOOL = 0x00000001;
-    public static final int TYPE_INT  = 0x00000002;
-    public static final int TYPE_STR  = 0x00000003;
+    public static final int TYPE_MASK = IniValue.TYPE_MASK;
+    public static final int TYPE_BOOL = IniValue.TYPE_BOOL;
+    public static final int TYPE_INT  = IniValue.TYPE_INT;
+    public static final int TYPE_STR  = IniValue.TYPE_STR;
 
     public static ArrayMap<String, Integer> itemType;
 
@@ -199,15 +199,10 @@ public class Config
                     val = line.substring (eq + 1).trim ();
                 }
 
-                Object oval = val;
+                Object oval = IniValue.strip (val);
                 Integer it = itemType.get (key);
                 if (it != null)
-                    switch (it & TYPE_MASK)
-                    {
-                        case TYPE_BOOL: oval = parseBoolean (val); break;
-                        case TYPE_INT: oval = Integer.parseInt (val); break;
-                        case TYPE_STR: break;
-                    }
+                    oval = IniValue.parse (it, val);
 
                 mItems.put (key, oval);
             }

@@ -50,12 +50,14 @@ mkdir -p out/host-tests/java
 	android/app/src/main/java/ru/cobra/zap/afrd/RateList.java \
 	android/app/src/main/java/ru/cobra/zap/afrd/CsFormats.java \
 	android/app/src/main/java/ru/cobra/zap/afrd/CsPolicy.java \
+	android/app/src/main/java/ru/cobra/zap/afrd/IniValue.java \
 	tests/PkgValuesTest.java tests/SeedTest.java \
-	tests/RateListTest.java tests/CsPolicyTest.java && {
+	tests/RateListTest.java tests/CsPolicyTest.java tests/IniValueTest.java && {
 	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.PkgValuesTest &&
 	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.SeedTest &&
 	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.RateListTest &&
-	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.CsPolicyTest
+	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.CsPolicyTest &&
+	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.IniValueTest
 } || status=1
 
 exit $status
