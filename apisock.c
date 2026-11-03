@@ -21,17 +21,26 @@
 #include <arpa/inet.h>
 
 static int g_apisock = -1;
+/* Отказ bind уже назван в журнале: без этого цикл опроса повторял попытку
+ * каждые ~300 мс и писал строку уровня 0 три раза в секунду (P2 прохода 2). */
+static bool g_bind_failed_logged = false;
 
 bool apisock_init ()
 {
 	g_apisock = socket (AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 	if (g_apisock == -1) {
-		trace (0, "Failed to create socket\n");
+		if (!g_bind_failed_logged) {
+			g_bind_failed_logged = true;
+			trace (0, "Failed to create socket\n");
+		}
 		return false;
 	}
 
-	int opt = 1;
-	setsockopt (g_apisock, SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof (opt));
+	/* SO_REUSEADDR здесь намеренно НЕ ставится: на UDP он позволяет второму
+	 * демону занять тот же порт, и команды уходят то одному, то другому.
+	 * Без него второй экземпляр получает EADDRINUSE и не притворяется
+	 * владельцем API. Закрытый сокет порт освобождает сразу — перезапуск
+	 * через `-k` не страдает. */
 
 	struct sockaddr_in addr;
 	memset (&addr, 0, sizeof (addr));
@@ -39,10 +48,17 @@ bool apisock_init ()
 	addr.sin_addr.s_addr = htonl (INADDR_LOOPBACK);
 	addr.sin_port = htons (AFRD_API_PORT);
 	if (bind (g_apisock, (const struct sockaddr *)&addr, sizeof (addr)) < 0) {
-		trace (0, "Failed to bind socket to port %d\n", AFRD_API_PORT);
+		if (!g_bind_failed_logged) {
+			g_bind_failed_logged = true;
+			trace (0, "Failed to bind socket to port %d (errno %d) — API "
+			          "у этого экземпляра нет, порт занят другим демоном\n",
+			          AFRD_API_PORT, errno);
+		}
 		apisock_fini ();
 		return false;
 	}
+
+	g_bind_failed_logged = false;
 
 	//fcntl (g_apisock, F_SETFL, O_NONBLOCK);
 

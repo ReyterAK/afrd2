@@ -6333,12 +6333,14 @@ void afrd_frame_rate_hint (int hz)
 
 void afrd_refresh_rate (int hz)
 {
-	/* в ATV14-режиме принудительный refresh_rate не поддержан: переключением
-	 * управляет только run_atv14 (иначе API молча дёргал бы legacy-состояние
-	 * g_state/framerate_switch без всякого эффекта) */
-	if (g_plat.kind == PLAT_ATV14)
+	/* Принудительный refresh_rate не поддержан на новом пути: на ATV14
+	 * переключением управляет только run_atv14, на вендорном режиме
+	 * (Android 10/11) режим задаёт SystemControl, а legacy-путь писал бы
+	 * g_mode_path, который там режим не переключает, зато печатал
+	 * «Switching display mode…» (P2 прохода 2). */
+	if (g_plat.kind != PLAT_LEGACY)
 	{
-		trace (1, "refresh_rate в ATV14 не поддержан\n");
+		trace (1, "refresh_rate не поддержан на новом пути (Android 10-14)\n");
 		return;
 	}
 

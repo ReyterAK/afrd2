@@ -633,8 +633,13 @@ int main (int argc, char *const *argv)
 	signal (SIGSEGV, signal_emerg);
 
 	for (;;) {
-		if ((ret = afrd_init ()) < 0)
+		/* Любой ненулевой код afrd_init — отказ инициализации: раньше
+		 * EPERM (нет uevent) проходил проверку `< 0`, и демон жил без
+		 * uevent, а затем выходил с кодом 0 (P2 прохода 2). */
+		if ((ret = afrd_init ()) != 0) {
+			ret = EXIT_FAILURE;
 			break;
+		}
 		ret = afrd_run ();
 		afrd_fini ();
 
