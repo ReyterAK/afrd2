@@ -1312,18 +1312,31 @@ static void mstime_adjust (int delta, mstime_t *ost)
 
 static void safe_mstime_update (int to)
 {
+	(void) to;
+	static long long prev_mono;
+
+	long long now_mono = mstime_mono ();
 	int old_mstime = g_mstime;
 	mstime_update ();
 
-	// time difference is substantially larger than timeout?
 	int delta_mstime = g_mstime - old_mstime;
-	if ((delta_mstime < 0) || (delta_mstime > to + 10000)) {
-		delta_mstime -= to;
-		trace (1, "System timer changed, adjusting all timers by %d ms\n", delta_mstime);
-		mstime_adjust (delta_mstime, &g_ost_switch);
-		mstime_adjust (delta_mstime, &g_ost_hdmi);
-		mstime_adjust (delta_mstime, &g_ost_blackout);
-		mstime_adjust (delta_mstime, &g_ost_config);
+	long long mono_delta = (prev_mono && now_mono) ? (now_mono - prev_mono) : 0;
+	prev_mono = now_mono;
+
+	if (mono_delta <= 0)
+		return;
+
+	/* Скачок часов, а не долгая итерация: сравниваем настенную дельту с
+	 * монотонной. Раньше признаком считалось «прошло больше to+10 с», и
+	 * просто долгая итерация (смена режима, сон) сдвигала все таймеры
+	 * (P3 прохода 2). */
+	int jump = mstime_jump (delta_mstime, mono_delta);
+	if (abs (jump) > 1000) {
+		trace (1, "System timer changed, adjusting all timers by %d ms\n", jump);
+		mstime_adjust (jump, &g_ost_switch);
+		mstime_adjust (jump, &g_ost_hdmi);
+		mstime_adjust (jump, &g_ost_blackout);
+		mstime_adjust (jump, &g_ost_config);
 	}
 }
 

@@ -32,6 +32,7 @@ run test_vinfo vinfo.c
 run test_burst burst.c
 run test_colorspace colorspace.c
 run test_uevent_filter uevent_filter.c strfun.c tests/stub.c
+run test_mstime mstime.c
 
 # Проверки по исходникам и данным, а не по коду на C: согласованность версии
 # во всех местах, где она записана, формат ЧАВО, контракт запуска Magisk-модуля,

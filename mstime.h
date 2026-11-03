@@ -146,4 +146,17 @@ static inline bool mstime_running (mstime_t *timer)
 	return false;
 }
 
+/**
+ * Монотонное время (CLOCK_MONOTONIC) в миллисекундах. Нужно только для того,
+ * чтобы отличить скачок системных часов от долгой итерации цикла: g_mstime
+ * считается по gettimeofday и скачет вместе с NTP/ручной правкой.
+ */
+extern long long mstime_mono ();
+
+/**
+ * Скачок системных часов: wall_delta — сколько прошло по g_mstime,
+ * mono_delta — сколько реально (монотонно). Возврат: скачок в мс.
+ */
+extern int mstime_jump (int wall_delta, long long mono_delta);
+
 #endif /* __MSTIME_H__ */
