@@ -28,10 +28,14 @@ public class CsPolicyTest
         for (int i = 0; i < CsPolicy.VALUES.length; i++)
             eq ("пункт " + i, CsPolicy.indexOf (CsPolicy.valueAt (i)), i);
 
-        /* Защита полосы 4K — во всех пунктах (инвариант, ради которого список
-         * и сделан закрытым: свой текст мог бы её потерять). */
+        /* Первый пункт — «Не изменять формат»: пустое значение. Только он, все
+         * остальные пункты обязаны нести защиту полосы 4K (иначе на 3840x2160
+         * при 50/60 Гц пользователь получит 4:4:4 или RGB, который в полосу
+         * HDMI не пролезает). */
+        eq ("не изменять", CsPolicy.valueAt (CsPolicy.NONE), "");
         for (String v : CsPolicy.VALUES)
-            eq ("защита 4K в [" + v + "]", v.startsWith (CsPolicy.BASE_4K), true);
+            eq ("защита 4K в [" + v + "]",
+                v.isEmpty () || v.startsWith (CsPolicy.BASE_4K), true);
 
         /* Пункты различаются только выбором формата для остальных режимов. */
         eq ("авто", CsPolicy.valueAt (CsPolicy.AUTO), CsPolicy.BASE_4K);
@@ -51,7 +55,7 @@ public class CsPolicyTest
 
         /* Своё значение не подменяется: показываем его как есть. */
         eq ("свой текст", CsPolicy.indexOf ("1080p.*=rgb"), -1);
-        eq ("пусто", CsPolicy.indexOf (""), -1);
+        eq ("пусто", CsPolicy.indexOf (""), CsPolicy.NONE);
         eq ("null", CsPolicy.indexOf (null), -1);
         eq ("вне диапазона", CsPolicy.valueAt (99), null);
 
@@ -63,16 +67,18 @@ public class CsPolicyTest
         eq ("dc_cap: форматы", caps.toString (), "[444, 422, rgb]");
 
         List<String> dyn = CsPolicy.valuesFor (caps);
-        eq ("динамических пунктов", dyn.size (), 4);
-        eq ("динамический 0", dyn.get (0), CsPolicy.BASE_4K);
-        eq ("динамический 444", dyn.get (1), CsPolicy.BASE_4K + " .*=444");
-        eq ("динамический 422", dyn.get (2), CsPolicy.BASE_4K + " .*=422");
-        eq ("динамический rgb", dyn.get (3), CsPolicy.BASE_4K + " .*=rgb");
+        eq ("динамических пунктов", dyn.size (), 5);
+        eq ("динамический 0", dyn.get (0), CsPolicy.NONE_VALUE);
+        eq ("динамический авто", dyn.get (1), CsPolicy.BASE_4K);
+        eq ("динамический 444", dyn.get (2), CsPolicy.BASE_4K + " .*=444");
+        eq ("динамический 422", dyn.get (3), CsPolicy.BASE_4K + " .*=422");
+        eq ("динамический rgb", dyn.get (4), CsPolicy.BASE_4K + " .*=rgb");
         for (String v : dyn)
-            eq ("4K-защита в [" + v + "]", v.startsWith (CsPolicy.BASE_4K), true);
+            eq ("4K-защита в [" + v + "]",
+                v.isEmpty () || v.startsWith (CsPolicy.BASE_4K), true);
 
         /* Индекс считается по тому же списку, который показан. */
-        eq ("индекс 422", CsPolicy.indexOf (CsPolicy.BASE_4K + " .*=422", dyn), 2);
+        eq ("индекс 422", CsPolicy.indexOf (CsPolicy.BASE_4K + " .*=422", dyn), 3);
         eq ("индекс чужого", CsPolicy.indexOf ("1080p.*=rgb", dyn), -1);
 
         /* Без узла — прежний статический набор. */

@@ -243,6 +243,23 @@ int main (void)
 	assert (colorspace_restore ());
 	assert (vendor_sets == 0);
 
+	/* «Не изменять формат»: cs.select пуст — демон не пишет формат вообще.
+	 * Раньше в этом случае применялся default (значение узла на старте): после
+	 * того как система сама поставила другой формат, демон возвращал свой, и
+	 * на каждой смене режима шла запись, отменявшая переход (лог тестера
+	 * 03.11: все смены режима с записью формата не применились). */
+	setup (kAtv14, "444,8bit", "");
+	snprintf (node_cur, sizeof (node_cur), "rgb,8bit");
+	written [0] = 0;
+	assert (!colorspace_apply ("1080p24hz"));
+	assert (written [0] == 0);
+	/* и на режиме, который раньше совпал бы с правилом */
+	written [0] = 0;
+	assert (!colorspace_apply ("2160p25hz"));
+	assert (written [0] == 0);
+	/* запоминать «профиль до изменения» тоже нечего — возвращать нечего */
+	assert (!colorspace_restore ());
+
 	colorspace_fini ();
 	printf ("colorspace: OK\n");
 	return 0;

@@ -84,6 +84,30 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       smoother than 60) or restores the original mode together with the color
       profile; no more switching until the end of the video.
 
+    * The HDMI format is written only once the mode has settled. Previously the
+      daemon wrote the color space right after the mode transaction, while the
+      mode node still showed the previous mode: that write reconfigures the HDMI
+      path and cancels the switch itself. The tester's log of 03.11 shows it
+      directly — every 60/50 -> 25 Hz switch followed by a format write did not
+      apply, and the single one without a write did; the same effect appears as
+      "SurfaceFlinger mode table changed" (31 -> 37 -> 31). Now the rule is
+      applied at the "mode has settled" point — 2.5 s later, after the actual
+      rate is cross-checked through vinfo; if the rate is wrong, no format is
+      written at all.
+
+    * "Do not change the format" is back in the HDMI format setting. An empty
+      cs.select means the daemon never writes the format — neither by a rule nor
+      by a "default". 1.1.0 had no such item (every item of the list carried the
+      4K protection rule), while an empty rule set in the code meant "apply the
+      default", i.e. a write on every mode switch. The item is first; "Auto"
+      remains the default.
+
+    * Giving up on an unapplied mode now lasts until the end of the video: the
+      measurement recheck (fps.recheck.delay.ms) no longer clears the "nothing to
+      measure" flag after ~0.6 s. In the tester's log of 03.11 that produced 18
+      switches in 6.5 minutes and four full cycles on a single channel; now
+      there is at most one cycle per video.
+
     * The "auto" fractional rate policy (mode.use.fract=0) is real now on
       Android 10-14: an integer rate is used only when the source declared an
       integer one (player hint frame_rate_hint — 24.000 vs 23.976, or the

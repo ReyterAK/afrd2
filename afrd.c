@@ -2426,8 +2426,10 @@ static int vinfo_log_actual (void)
 }
 
 /* Применить правила cs.select к режиму, который сейчас в узле: на новом пути
- * цветовое пространство ставится после смены режима (фреймворк переустанавливает
- * своё значение асинхронно, поэтому читаем имя из узла). */
+ * цветовое пространство ставится, когда режим устоялся (фреймворк обновляет
+ * узел асинхронно, а запись во время перехода отменяет саму смену режима).
+ * Вызывается из точки «после переключения» (hdrinfo_timer) и из проверки
+ * подачи, когда система могла вернуть своё значение. */
 static void colorspace_apply_current_mode (void)
 {
 	char *cm = sysfs_read (g_mode_path);
@@ -2520,9 +2522,13 @@ static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skip
 	 * транзакции 1035 в нём ещё прежнее значение — проверено живьём. */
 	g_vinfo_expect_hz = expect_hz;
 
-	/* Цветовое пространство по правилам cs.select — как делал legacy-путь при
-	 * каждой смене режима (modes.c: switch_mode). */
-	colorspace_apply_current_mode ();
+	/* Цветовое пространство здесь НЕ ставим: транзакция 1035 возвращается
+	 * раньше, чем фреймворк переключил режим, а узел имени ещё показывает
+	 * прежний. Запись формата в этот момент переконфигурирует HDMI-путь и
+	 * отменяет переход (лог тестера 03.11: все пять 60/50 -> 25 с записью
+	 * формата не применились; единственная попытка без записи — применилась).
+	 * Формат ставит точка «режим устоялся» после сверки фактической частоты,
+	 * см. hdrinfo_timer в run_atv14. */
 
 	return 0;
 }
@@ -3577,6 +3583,11 @@ static int run_atv14 (const platform_t *plat)
 	/* Текущий заход hdrinfo_timer — только повторное чтение vinfo (без
 	 * повторного разбора HDR-атрибутов) */
 	bool vinfo_confirm = false;
+	/* Сдали неприменённый режим (остались на удвоении или вернули исходный):
+	 * до конца видео больше не переключаем. Перепроверка замера (R56) иначе
+	 * снимала measure_failed через ~0.6 с и запускала новый круг: лог тестера
+	 * 03.11 — 18 переключений за 6.5 мин, четыре полных цикла на одном канале. */
+	bool retry_gave_up = false;
 	int preferred_id;
 	/* поправка частоты для плеера текущего видео (fps.correct.list):
 	 * пакет определяется один раз на видео, при первом замере */
@@ -4207,6 +4218,7 @@ static int run_atv14 (const platform_t *plat)
 				want_sf_id = -1;
 				measure_failed = false;
 				retries = 0;
+				retry_gave_up = false;	/* новое видео — можно пробовать снова */
 				fast_applied = false;	/* новое видео — быстрое решение заново */
 				fast_mismatch_logged = false;
 				fast_veto_logged = false;
@@ -4444,6 +4456,7 @@ static int run_atv14 (const platform_t *plat)
 			vinfo_state = 0;
 			vinfo_confirm = false;
 			vinfo_mid = -1;
+			retry_gave_up = false;
 			counter_last_grow_us = 0;
 			counter_stall_logged = false;
 			crosscheck_logged = false;
@@ -4465,6 +4478,11 @@ static int run_atv14 (const platform_t *plat)
 			int vhz = vinfo_log_actual ();
 			bool bad = (g_vinfo_expect_hz > 0) && (vhz > 0) &&
 			           fps_group_differs (g_vinfo_expect_hz, vhz);
+
+			/* Формат ставим, только когда режим устоялся и частота та, что
+			 * просили (или сверять нечего). Пока переход в полёте, правило
+			 * применять нельзя — см. комментарий в atv14_apply_mode. */
+			bool cs_ready = !bad;
 
 			if (!bad)
 				vinfo_state = 0;
@@ -4525,7 +4543,9 @@ static int run_atv14 (const platform_t *plat)
 
 					if (rc == 0)
 					{
-						colorspace_apply_current_mode ();
+						/* Формат — в точке «режим устоялся» (см. cs_ready):
+						 * сразу после транзакции узел ещё показывает прежний
+						 * режим, и запись отменила бы переход. */
 						mstime_update ();
 						mstime_arm (&hdrinfo_timer, HDRINFO_SETTLE_MS);
 						hdrinfo_armed = true;
@@ -4551,12 +4571,22 @@ static int run_atv14 (const platform_t *plat)
 						cur_sf_id = vinfo_mid;
 						vinfo_state = 0;
 						measure_failed = true;
+						/* Цель снимаем: иначе guard_decide на каждой
+						 * итерации возвращал бы SWITCH и переключал режим
+						 * заново. До конца видео больше не пробуем. */
+						want_sf_id = -1;
+						retry_gave_up = true;
+						/* Остались на промежуточном режиме — формат
+						 * ставим по нему. */
+						cs_ready = true;
 					}
 					else
 					{
 						trace (0, "частота не применилась повторно — возвращаю режим\n");
 						vinfo_state = 0;
 						measure_failed = true;
+						want_sf_id = -1;
+						retry_gave_up = true;
 
 						if (held &&
 						    (atv14_restore_mode (plat, orig_sf_id,
@@ -4569,6 +4599,12 @@ static int run_atv14 (const platform_t *plat)
 					}
 				}
 			}
+
+			/* Режим устоялся (или мы сознательно остались на удвоении) —
+			 * самое время поставить формат: узел имени режима уже отражает
+			 * новое состояние, и запись не отменит переход. */
+			if (cs_ready)
+				colorspace_apply_current_mode ();
 		}
 		else if (cadence_armed && mstime_expired (&cadence_timer))
 		{
@@ -4763,7 +4799,11 @@ cadence_done: ;
 			 * (например, стартовое окно занизило 60 fps до 50) — поправим. */
 			trace (1, "перепроверка замера после переключения\n");
 			want_sf_id = -1;
-			measure_failed = false;
+			/* После сдачи по неприменённому режиму замер не возобновляем:
+			 * иначе снимается measure_failed, решение принимается заново и
+			 * начинается новый круг переключений (см. retry_gave_up). */
+			if (!retry_gave_up)
+				measure_failed = false;
 			retries = 0;
 			/* Метку быстрого решения НЕ снимаем: заявленная частота от
 			 * драйвера может «плавать» (на синтетическом клипе она то 24, то

@@ -409,6 +409,8 @@ public class SettingsFragment extends PreferenceFragment
      * позиции в нём не фиксированы. */
     private int csLabel (String value)
     {
+        if (value.isEmpty ())
+            return R.string.cs_policy_none;
         if (value.equals (CsPolicy.BASE_4K))
             return R.string.cs_policy_auto;
         if (value.endsWith ("=rgb"))

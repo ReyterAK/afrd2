@@ -209,8 +209,10 @@
 
 ! Open "Settings" -> "Other" -> "HDMI format (color space)" and choose
 ! "RGB instead of YUV" - YUV444 will be replaced with RGB. The "Auto" item
-! returns the previous behaviour. The 4K bandwidth rule (4:2:0 is kept there)
-! is preserved in every item.
+! returns the previous behaviour. The first item, "Do not change the format",
+! leaves the format to the system: the daemon never writes it, neither by a
+! rule nor by a "default". The 4K bandwidth rule (4:2:0 is kept there) is
+! preserved in every item except that one.
 
 ! Next to it, in "Misc", there is the "Restore the color profile" switch: when
 ! the video ends, the daemon returns the mode and, together with it, the
@@ -229,8 +231,9 @@
 ! over an HDMI link - 4:2:0 is kept there in every item; that is a property
 ! of the link, not a setting.
 
-! On Android 11 and above this works too: the daemon applies the selected
-! format after every mode switch (through the built-in service). The exception
+! On Android 11 and above this works too: the selected format is applied after
+! the mode switch, once the mode has settled (about 2.5 s later, after the
+! actual rate is cross-checked), not at the moment of the switch. The exception
 ! is HDR/Dolby Vision: they are managed by the system and the player.
 
 ? My TV doesn't "like" certain refresh rates

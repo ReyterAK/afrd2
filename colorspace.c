@@ -422,6 +422,17 @@ bool colorspace_apply (const char *mode)
 		return false;
 	}
 
+	/* Правил нет — формат не трогаем вовсе: это пункт «Не изменять формат».
+	 * Раньше в этом случае применялся default (значение узла на старте
+	 * демона), то есть при каждой смене режима шла запись, а если стартовая
+	 * глубина отличалась от выбранной по EDID — настоящая смена формата.
+	 * Явно заданный через -c override по-прежнему работает. */
+	if ((g_cs_filter_size == 0) && !g_override_cs_enabled)
+	{
+		trace (3, "правил формата нет — не меняю\n");
+		return false;
+	}
+
 	const char *cs_attr;
 
 	/* default colorspace parameters */

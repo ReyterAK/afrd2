@@ -53,8 +53,10 @@
     <string name="prefs_cs_restore">Restore the color profile</string>
     <string name="prefsum_cs_restore">When the mode is returned, write back the format that was in effect before the switch; otherwise the selected format stays in place after the video ends.</string>
     <string name="prefsum_cs_select">Which format to send to the TV. RGB helps with green-ish image
-        and black screens, but does not fit the HDMI bandwidth at 4K 50/60Hz — there 4:2:0 is kept
+        and black screens, but does not fit the HDMI bandwidth at 4K 50/60Hz — there 4:2:0 is kept.
+        «Do not change» leaves the format to the system: the daemon does not write it at all
     </string>
+    <string name="cs_policy_none">Do not change the format</string>
     <string name="cs_policy_auto">Auto (4:2:0 on 4K only)</string>
     <string name="cs_policy_rgb">RGB instead of YUV</string>
     <string name="cs_policy_yuv444">YUV 4:4:4</string>
