@@ -1015,7 +1015,11 @@ static void delay_framerate_switch (bool restore, int hz, const char *modalias)
 	}
 
 	if (modalias) {
-		if (strlist_contains (&g_vdec_blacklist, modalias)) {
+		/* Чёрный список — про НОВОЕ видео: запрещённый кодек не должен
+		 * отменять уже взведённый возврат режима. Раньше `return` стоял
+		 * здесь для любого события с modalias, гасил `g_ost_switch` и
+		 * оставлял режим удержанным (P2 прохода 2). */
+		if (!restore && strlist_contains (&g_vdec_blacklist, modalias)) {
 			trace (1, "Blacklisted vdec %s, skipping AFR\n", modalias);
 			return;
 		}
@@ -1056,9 +1060,12 @@ static void delay_framerate_switch (bool restore, int hz, const char *modalias)
 
 	mstime_arm (&g_ost_switch, delay);
 
-	if (restore)
+	if (restore) {
 		mstime_disable (&g_state.hz_ost);
-	else {
+		/* Возврат снял «идёт переключение»: иначе окно switch.ignore не
+		 * срабатывало на play→stop→play (P2 прохода 2). */
+		g_state.delayed_switch = false;
+	} else {
 		g_state.delayed_switch = true;
 		mstime_arm (&g_state.hz_ost, g_switch_timeout);
 		// when movie starts, disable screen until we switch to actual frame rate
