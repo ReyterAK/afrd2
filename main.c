@@ -158,6 +158,8 @@ static void on_term (int sig)
 static void signal_emerg (int sig)
 {
 	// shit happened, just remove files and quit
+	/* Здесь нельзя читать pid-файл: open/read в обработчике сигнала не
+	 * async-signal-safe. Удаляем как раньше — путь аварийный. */
 	if (g_daemon)
 		unlink (g_pidfile);
 	afrd_emerg ();
@@ -216,6 +218,46 @@ static pid_t daemon_pid ()
 	return pid;
 }
 
+/* Это процесс нашего демона? PID из файла мог достаться чужому процессу
+ * (kill -9, переиспользование pid), и SIGINT ушёл бы ему. */
+static bool pid_is_afrd (pid_t pid)
+{
+	char path [64];
+	char buf [256];
+
+	snprintf (path, sizeof (path), "/proc/%d/cmdline", (int) pid);
+	int h = open (path, O_RDONLY | O_CLOEXEC);
+	if (h < 0)
+		return false;
+
+	ssize_t n = read (h, buf, sizeof (buf) - 1);
+	close (h);
+	if (n <= 0)
+		return false;
+
+	buf [n] = 0;
+	return strstr (buf, "afrd") != NULL;
+}
+
+/* Что лежит в pid-файле сейчас (без проверки живости). */
+static bool pidfile_read (pid_t *out)
+{
+	int h = open (g_pidfile, O_RDONLY | O_CLOEXEC);
+	if (h < 0)
+		return false;
+
+	char tmp [11];
+	ssize_t n = read (h, tmp, sizeof (tmp) - 1);
+	close (h);
+
+	if (n <= 0)
+		return false;
+
+	tmp [n] = 0;
+	*out = (pid_t) strtoul (tmp, NULL, 0);
+	return true;
+}
+
 static int kill_daemon ()
 {
 	pid_t pid = daemon_pid ();
@@ -226,16 +268,43 @@ static int kill_daemon ()
 		unlink (g_pidfile);
 		fprintf (stderr, "%s: PID file exists, but daemon is dead\n",
 			g_program);
+	} else if (!pid_is_afrd (pid)) {
+		/* pid из файла принадлежит не демону: не трогаем чужой процесс и
+		 * файл не удаляем — пусть разбирается человек (нашло ревью API). */
+		fprintf (stderr, "%s: PID %d in '%s' is not afrd — not killing\n",
+			g_program, (int) pid, g_pidfile);
 	} else if (kill (pid, SIGINT)) {
 		fprintf (stderr, "%s: failed to kill daemon PID %d\n",
 			g_program, pid);
 	} else {
-		for (int i = 0; i < 80; i++) {
+		/* Ждём до 10 с: на выходе демон возвращает удержанный режим, и это
+		 * может занять секунды. Раньше ждали 2 с и удаляли pid-файл
+		 * безусловно — старый демон затем удалял файлы уже нового
+		 * экземпляра (pid и shmem), и поднимались два демона. */
+		bool dead = false;
+		for (int i = 0; i < 400; i++) {
 			usleep (25000);
-			if (kill (pid, 0) && (errno == ESRCH))
+			if (kill (pid, 0) && (errno == ESRCH)) {
+				dead = true;
 				break;
+			}
 		}
-		unlink (g_pidfile);
+
+		if (!dead) {
+			fprintf (stderr, "%s: daemon PID %d did not exit in 10 s — "
+			         "not starting another one\n", g_program, (int) pid);
+			return EXIT_FAILURE;
+		}
+
+		/* Удаляем файл, только если в нём всё ещё тот же pid: новый демон
+		 * мог уже успеть записать свой. */
+		pid_t cur = -1;
+		if (pidfile_read (&cur) && (cur != pid)) {
+			fprintf (stderr, "%s: PID file already belongs to %d — leave it\n",
+			         g_program, (int) cur);
+		} else
+			unlink (g_pidfile);
+
 		return EXIT_SUCCESS;
 	}
 
@@ -298,7 +367,7 @@ static void daemonize ()
 			chmod (dn, 0755);
 		free (pidfile);
 
-		int h = open (g_pidfile, O_CREAT | O_WRONLY | O_CLOEXEC, 0644);
+		int h = open (g_pidfile, O_CREAT | O_TRUNC | O_WRONLY | O_CLOEXEC, 0644);
 		if (h >= 0) {
 			char tmp [10];
 			write (h, tmp, snprintf (tmp, sizeof (tmp), "%d", pid));
@@ -573,8 +642,13 @@ int main (int argc, char *const *argv)
 	if (g_cfg)
 		cfg_free (g_cfg);
 
-	if (g_daemon)
-		unlink (g_pidfile);
+	if (g_daemon) {
+		/* Только свой файл: при наложении перезапусков здесь можно удалить
+		 * pid уже нового демона. */
+		pid_t cur = -1;
+		if (pidfile_read (&cur) && (cur == getpid ()))
+			unlink (g_pidfile);
+	}
 
 	return ret;
 }

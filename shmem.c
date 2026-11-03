@@ -144,8 +144,10 @@ void shmem_fini ()
 	}
 
 	close (g_shmem_h);
-	if (!g_shmem_read)
-		unlink (g_shmem_path);
+	/* Файл НЕ удаляем: читателям уже сказано «переоткрой» (size=0, crc32++),
+	 * а unlink при перезапуске удалял shmem уже нового демона — GUI видел
+	 * «демон не запущен» и сторож поднимал второй (нашло ревью API). Новый
+	 * экземпляр пересоздаёт файл с O_TRUNC. */
 
 	if (g_shmem_path) {
 		free (g_shmem_path);

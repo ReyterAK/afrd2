@@ -1105,10 +1105,17 @@ static void modes_refresh_platform (void)
  * и уже один раз привело к разбору несуществующей поломки (журнал §42.1).
  * Заодно убран hdcp_fini() при переинициализации: он обнуляет только кэш
  * состояния, который hdcp_init() всё равно читает из sysfs заново. */
-static void modes_release (void)
+/* keep_orig: при перезагрузке конфига запомненный исходный режим обязан
+ * пережить освобождение списка — иначе после reload на стопе
+ * framerate_restore пишет режим сам в себя, и рабочий стол остаётся в частоте
+ * видео (регрессия форка, режим 1.2.0; в upstream afrd_fini orig не трогал).
+ * Для настоящего HPD-события orig сбрасывается как раньше. */
+static void modes_release (bool keep_orig)
 {
 	display_modes_fini ();
-	memset (&g_state.orig_mode, 0, sizeof (g_state.orig_mode));
+
+	if (!keep_orig)
+		memset (&g_state.orig_mode, 0, sizeof (g_state.orig_mode));
 }
 
 static void handle_hdmi_switch (int state)
@@ -1121,7 +1128,7 @@ static void handle_hdmi_switch (int state)
 		 * следствие переинициализации (см. modes_release) */
 		trace (1, "HDMI not active, clearing video mode list\n");
 		hdcp_fini ();
-		modes_release ();
+		modes_release (false);
 	} else {
 		modes_refresh_platform ();
 		colorspace_refresh ();
@@ -6560,8 +6567,9 @@ void afrd_fini ()
 	g_vendor_frac_wanted = -1;
 
 	/* Освобождение намеренное (переинициализация), поэтому без сообщения
-	 * «HDMI not active» — см. modes_release(). */
-	modes_release ();
+	 * «HDMI not active» — см. modes_release(). Запомненный исходный режим
+	 * сохраняем: иначе после reload его нечем вернуть. */
+	modes_release (true);
 	apisock_fini ();
 	colorspace_fini ();
 	/* Постоянный помощник режима: его процесс держит HIDL-вызовы, поэтому при
