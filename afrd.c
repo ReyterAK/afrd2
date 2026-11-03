@@ -6102,6 +6102,99 @@ static void cfg_audit_warn (const char *msg, void *ctx)
 	trace (0, "%s\n", msg);
 }
 
+/* Возврат режима, который прошлый экземпляр демона оставил удержанным на
+ * legacy: его убили (kill -9, паника), remove-uevent не пришёл, и рабочий стол
+ * остался на частоте видео. «Записку» (g_prev_stats) читает afrd_init, но на
+ * старом пути её никто не применял (P2 прохода 2). Если восстановление
+ * возврата не отключено пользователем (switch.delay.off=0 — «не возвращать»,
+ * см. upstream 00a7d68) и видео сейчас не играет, возвращаем исходный режим. */
+static void legacy_recover_stale (void)
+{
+	if (!g_prev_stats_valid || (g_switch_delay_off <= 0))
+		return;
+
+	int hz = guard_recover_hz (g_prev_stats.switched, g_prev_stats.original_hz);
+	if (!hz)
+		return;
+
+	/* Видео уже идёт — пусть цикл сам разберётся с режимом. */
+	vdec_status_t vst;
+	vdec_sel_t vsel;
+	memset (&vsel, 0, sizeof (vsel));
+	if ((vdec_read (g_vdec_sysfs, &vst, &vsel) == 0) && vst.active)
+		return;
+
+	/* Режим ищем по частоте И геометрии текущего (удержанного) режима:
+	 * по одной частоте список legacy отдаёт первый попавшийся, например
+	 * 576p50 вместо 1080p50 (поймано на .48). */
+	display_mode_t best;
+	char nm [32];
+	int mhz = 0;
+	if (modes_select_by_hz (g_modes, g_modes_n, hz,
+	                        g_current_mode.width ? g_current_mode.width : 1920,
+	                        g_current_mode.height ? g_current_mode.height : 1080,
+	                        g_current_mode.interlaced,
+	                        g_mode_prefer_exact, 0,
+	                        rate_allowed_cb, NULL,
+	                        &best, nm, sizeof (nm), &mhz) != 0)
+	{
+		trace (0, "прошлый экземпляр оставлен с удержанным режимом (" HZ_FMT
+		       " Гц), но подходящего режима в списке нет — не возвращаю\n",
+		       HZ_ARGS (hz));
+		return;
+	}
+
+	trace (0, "прошлый экземпляр оставлен с удержанным режимом (" HZ_FMT
+	       " Гц) — возвращаю %s\n", HZ_ARGS (hz), nm);
+	display_mode_switch (&best, true);
+}
+
+/* Сторож удержания на legacy: если декодер исчез, а remove-uevent потерялся,
+ * режим остался бы до следующего видео. Возврат отключён пользователем
+ * (switch.delay.off=0) — не вмешиваемся: это его выбор. */
+static void legacy_hold_watchdog (void)
+{
+	static unsigned long long gone_us;
+
+	if ((g_switch_delay_off <= 0) || !g_state.orig_mode.name [0] ||
+	    g_state.restore || mstime_running (&g_ost_switch))
+	{
+		gone_us = 0;
+		return;
+	}
+
+	vdec_status_t st;
+	vdec_sel_t sel;
+	memset (&sel, 0, sizeof (sel));
+
+	if (vdec_read (g_vdec_sysfs, &st, &sel) < 0)
+	{
+		gone_us = 0;		/* узел не читается — не угадываем */
+		return;
+	}
+
+	if (st.active)
+	{
+		gone_us = 0;
+		return;
+	}
+
+	unsigned long long now = now_us ();
+	if (!gone_us)
+	{
+		gone_us = now;
+		return;
+	}
+
+	if ((now - gone_us) >= 30000000ULL)
+	{
+		gone_us = 0;
+		trace (0, "декодер отсутствует 30 с, а режим удержан — возвращаю "
+		          "исходный (событие remove потеряно)\n");
+		delay_framerate_switch (true, 0, NULL);
+	}
+}
+
 int afrd_run ()
 {
 	/* Статистику публикуем ДО платформенной разведки: shmem заводится пустым
@@ -6269,6 +6362,10 @@ int afrd_run ()
 	trace (1, "afrd running\n");
 	mstime_update ();
 
+	/* Прошлый экземпляр могли убить с удержанным режимом — вернуть его
+	 * некому, кроме нас (P2 прохода 2). */
+	legacy_recover_stale ();
+
 	struct pollfd pfd [16];
 	pfd [0].events = POLLIN;
 	pfd [0].fd = g_uevent_sock;
@@ -6329,6 +6426,9 @@ int afrd_run ()
 				handle_uevents ();
 			apisock_handle (pfd, n_pfd);
 		}
+
+		/* Потерянный remove: декодер исчез, уведомления нет. */
+		legacy_hold_watchdog ();
 
 		// disable screen at start of playback
 		if (mstime_expired (&g_ost_blackout) && !g_state.restore)
