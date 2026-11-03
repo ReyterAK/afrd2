@@ -3623,6 +3623,9 @@ static int run_atv14 (const platform_t *plat)
 	/* Частота текущего режима подтверждена сверкой: только тогда можно
 	 * писать формат, и проверка подачи тоже не пишет его раньше (P1-2). */
 	bool mode_verified = false;
+	/* Узел vinfo не читается: сообщить один раз, иначе «режим применён»
+	 * выглядит как проверенный (P2-5). */
+	bool vinfo_missing_logged = false;
 	int preferred_id;
 	/* поправка частоты для плеера текущего видео (fps.correct.list):
 	 * пакет определяется один раз на видео, при первом замере */
@@ -4260,7 +4263,15 @@ static int run_atv14 (const platform_t *plat)
 				 * (иначе цикл «сдали → через 6 с снова пробуем», лог
 				 * тестера 03.11: 18 переключений за 6.5 мин). */
 				if (!own_reset)
+				{
 					seq_new_video (&seq);
+					/* Сверка источников относится к текущему видео: у нового
+					 * счётчик и подача — другие числа, а «сообщили один раз»
+					 * оставалось с прошлого канала (P2-4). */
+					crosscheck_logged = false;
+					g_content_hz = 0;
+					vinfo_missing_logged = false;
+				}
 				fast_applied = false;	/* новое видео — быстрое решение заново */
 				fast_mismatch_logged = false;
 				fast_veto_logged = false;
@@ -4545,6 +4556,15 @@ static int run_atv14 (const platform_t *plat)
 			vinfo_confirm = false;
 
 			int vhz = vinfo_log_actual ();
+			/* Узел vinfo не читается — сверки нет, и «режим применён» не
+			 * доказано. Молчать нельзя: вся детекция «просили 25, ядро отдало
+			 * 60» держится на этом узле (P2-5). */
+			if ((vhz <= 0) && (g_vinfo_expect_hz > 0) && !vinfo_missing_logged)
+			{
+				vinfo_missing_logged = true;
+				trace (0, "vinfo недоступен — фактическую частоту проверить "
+				       "нечем (режим применён без сверки)\n");
+			}
 			int mid_hz = (vinfo_mid >= 0)
 			           ? sfmodes_current_hz (g_sf_modes, g_sf_modes_n, vinfo_mid)
 			           : 0;
@@ -5596,6 +5616,10 @@ cadence_done: ;
 				{
 					cur_sf_id = orig_sf_id;
 					orig_sf_id = -1;
+					/* Остальные пути возврата снимают флаг backdoor
+					 * (give_up, invalidate, выход): здесь его забывали, и он
+					 * оставался поднятым до перезапуска демона (P2-2). */
+					sink_release_backdoor (plat->sink);
 				}
 				guard_note_restored (&held);
 			}
