@@ -71,6 +71,14 @@ public class AFRService extends Service
             }
         }
 
+        /* Пятисекундный срок на startForeground (Android 8+): извещение
+         * ставим СРАЗУ, до updateAll → checkDaemon, которая может надолго
+         * залипнуть на su/root-запросе. Иначе на BOOT_COMPLETED служба
+         * получает ForegroundServiceDidNotStartInTimeException и демон не
+         * поднимается (нашло ревью GUI). Ниже updateNotification заменит
+         * извещение настоящим. */
+        startForeground (NOTIF_STATUS_ID, placeholderNotification ());
+
         mOptions = getSharedPreferences ("ini_options", 0);
         updateAll ();
 
@@ -83,6 +91,25 @@ public class AFRService extends Service
                 mTimer.postDelayed (this, 3000);
             }
         });
+    }
+
+    /* Минимальное извещение до первой синхронизации со статусом. */
+    private Notification placeholderNotification ()
+    {
+        Notification.Builder nbuilder;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            nbuilder = new Notification.Builder (this, NOTIF_CHANNEL);
+        else
+            nbuilder = new Notification.Builder (this);
+
+        return nbuilder
+            .setSmallIcon (R.drawable.ic_afrd)
+            .setContentTitle (getString (R.string.notif_notrunning))
+            .setOngoing (true)
+            .setOnlyAlertOnce (true)
+            .setLocalOnly (true)
+            .setCategory (Notification.CATEGORY_SERVICE)
+            .build ();
     }
 
     private void updateAll ()

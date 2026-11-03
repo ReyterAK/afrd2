@@ -15,6 +15,16 @@ int g_hdcp_enabled = 0;
 void hdcp_init ()
 {
 	char *hdcp = sysfs_get_str (g_hdmi_dev, "hdcp_mode");
+	/* Узла может не быть (ядро 5.15 без hdmi_dev, прошивка без HDCP): раньше
+	 * результат разыменовывался без проверки — демон падал по SIGSEGV на
+	 * старте и на каждом HPD (нашло ревью legacy). */
+	if (!hdcp)
+	{
+		g_hdcp_enabled = 0;
+		trace (1, "HDCP: узел hdcp_mode не читается — не трогаю\n");
+		return;
+	}
+
 	char *cur = hdcp + strspn (hdcp, spaces);
 	strip_trailing_spaces (strchr (cur, 0), cur);
 	g_hdcp_enabled = 0;
@@ -64,6 +74,10 @@ void hdcp_check ()
 		return;
 
 	char *auth = sysfs_read (DEFAULT_HDCP_AUTHENTICATED);
+	/* Тот же класс: узла нет — проверять нечего, не падаем. */
+	if (!auth)
+		return;
+
 	char *cur = auth + strspn (auth, spaces);
 	strip_trailing_spaces (strchr (cur, 0), cur);
 	bool disabled = (strcmp (cur, "0") == 0);
