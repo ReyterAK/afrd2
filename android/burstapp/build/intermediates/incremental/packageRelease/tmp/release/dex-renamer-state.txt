@@ -1,4 +1,4 @@
-#Wed Nov 04 13:29:40 MSK 2026
+#Wed Nov 04 21:43:54 MSK 2026
 base.0=/home/reyter/AI/afrd2/android/burstapp/build/intermediates/dex/release/minifyReleaseWithR8/classes.dex
 renamed.0=classes.dex
 path.0=classes.dex
