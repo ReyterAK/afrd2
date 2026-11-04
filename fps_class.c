@@ -106,6 +106,15 @@ int fps_rate_exact_member (int hz)
 	return 0;
 }
 
+int fps_rate_fract_member (int hz)
+{
+	for (int i = 0; i < FPS_RATE_COUNT; i++)
+		if (fps_rate_hz (i) == hz)
+			return fps_rate_hz (k_group_lead [i]);
+
+	return 0;
+}
+
 int fps_rate_declared_exact (int declared_hz)
 {
 	if (declared_hz <= 0)
@@ -133,6 +142,17 @@ int fps_rate_apply_policy (int hz, int declared_hz, int policy)
 	{
 		int exact = fps_rate_exact_member (hz);
 		return exact ? exact : hz;
+	}
+
+	/* «Всегда дробная»: приводим к дробному представителю группы. Для
+	 * решения замера это ничего не меняет (окно уже отдаёт 23.976/29.97/59.94),
+	 * но подсказка плеера и быстрое решение по полю `frame rate` приходят
+	 * как 24.000/30.000/60.000 — без приведения они уводили первый переход
+	 * в целый режим, а замер через 14-20 с переключал его в дробный. */
+	if (policy == 1)
+	{
+		int frac = fps_rate_fract_member (hz);
+		return frac ? frac : hz;
 	}
 
 	if (policy != 0)

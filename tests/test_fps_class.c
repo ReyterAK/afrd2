@@ -193,6 +193,22 @@ static void t_exact_member(void)
 	assert(fps_rate_exact_member(12345) == 0);                        /* не из таблицы */
 }
 
+/* Дробный представитель группы — для mode.use.fract=1 («всегда дробная»).
+ * Сюда приходят источники, которые называют частоту точно: подсказка плеера
+ * (24000) и быстрое решение по полю `frame rate` (24 fps -> 24.000). */
+static void t_fract_member(void)
+{
+	assert(fps_rate_fract_member(fps_rate_hz(1)) == fps_rate_hz(0));  /* 24.000 -> 23.976 */
+	assert(fps_rate_fract_member(fps_rate_hz(0)) == fps_rate_hz(0));
+	assert(fps_rate_fract_member(fps_rate_hz(2)) == fps_rate_hz(2));  /* 25 без изменений */
+	assert(fps_rate_fract_member(fps_rate_hz(4)) == fps_rate_hz(3));  /* 30.000 -> 29.97 */
+	assert(fps_rate_fract_member(fps_rate_hz(3)) == fps_rate_hz(3));
+	assert(fps_rate_fract_member(fps_rate_hz(5)) == fps_rate_hz(5));  /* 50 без изменений */
+	assert(fps_rate_fract_member(fps_rate_hz(7)) == fps_rate_hz(6));  /* 60.000 -> 59.94 */
+	assert(fps_rate_fract_member(fps_rate_hz(6)) == fps_rate_hz(6));
+	assert(fps_rate_fract_member(12345) == 0);                        /* не из таблицы */
+}
+
 /* «Авто» (mode.use.fract=0): целое берётся только если источник заявил целое.
  * Заявленная частота приходит в 24.8 fixed-point — как frame_rate_hint (fps*1000
  * -> *256/1000) или как 96000/frame dur. */
@@ -231,6 +247,18 @@ static void t_policy(void)
 
 	/* 1 — дробные: решение не меняется, даже если заявлено целое */
 	assert(fps_rate_apply_policy(f23976, 24000 * 256 / 1000, 1) == f23976);
+
+	/* 1 — дробные: целая частота приводится к дробному представителю группы.
+	 * Это источники, которые называют частоту точно: подсказка плеера и
+	 * быстрое решение по полю `frame rate` (живой случай `.50` 04.11: первый
+	 * переход уходил в 24.000, замер через 15 с — в 23.976). */
+	assert(fps_rate_apply_policy(f24, 0, 1) == f23976);
+	assert(fps_rate_apply_policy(fps_rate_hz(4), 0, 1) == fps_rate_hz(3));  /* 30 -> 29.97 */
+	assert(fps_rate_apply_policy(fps_rate_hz(7), 0, 1) == fps_rate_hz(6));  /* 60 -> 59.94 */
+	assert(fps_rate_apply_policy(fps_rate_hz(2), 0, 1) == fps_rate_hz(2));  /* 25 без пары */
+	assert(fps_rate_apply_policy(fps_rate_hz(5), 0, 1) == fps_rate_hz(5));  /* 50 без пары */
+	assert(fps_rate_apply_policy(0, 0, 1) == 0);                            /* мусор */
+	assert(fps_rate_apply_policy(12345, 0, 1) == 12345);                    /* не из таблицы */
 
 	/* 2 — целые: всегда точный представитель группы */
 	assert(fps_rate_apply_policy(f23976, 0, 2) == f24);
@@ -567,6 +595,7 @@ int main(void)
 	t_classify_window();
 	t_refine_declared();
 	t_exact_member();
+	t_fract_member();
 	t_declared_exact();
 	t_policy();
 	t_sources_ratio();
