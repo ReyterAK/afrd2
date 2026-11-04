@@ -572,6 +572,43 @@ int fps_cadence_verdict (int median_ms, int period_ms, int expect_ms,
 	return FPS_CADENCE_OK;
 }
 
+/* Частота контента по подаче видео-слоя (см. fps_class.h, журнал §179).
+ * Порог «мало данных» — 100 меток: буфер SF хранит 128, при 24 к/с это ~4 с,
+ * за которые среднее уже устойчиво, а старые кадры прежнего ролика успевают
+ * вытесниться. */
+int fps_layer_rate_hz (int frames, double avg_ms, double period_ms,
+                       int gap_pct, int *hz_out)
+{
+	if (hz_out)
+		*hz_out = 0;
+
+	if ((frames < 100) || (avg_ms <= 0.0) || (period_ms <= 0.0))
+		return 0;
+
+	/* Слой обновляется с частотой дисплея — о частоте контента сказать
+	 * нечего (кадры идут «как есть», плеер дублирует). */
+	if (avg_ms <= period_ms * 1.05)
+		return 0;
+
+	/* Выброс в буфере — это пауза, смена ролика или переход: среднее уже
+	 * не про текущую подачу. Ждём, пока буфер заполнится заново. */
+	if (gap_pct > 0)
+		return 0;
+
+	unsigned long long n = (unsigned long long) (frames - 1);
+	unsigned long long dt_us =
+		(unsigned long long) (avg_ms * 1000.0 * (double) n + 0.5);
+	int hz = 0;
+
+	if (!fps_classify_window_corrected (n, dt_us, 2000, 1.0, 0.0, &hz))
+		return 0;
+
+	if (hz_out)
+		*hz_out = hz;
+
+	return 1;
+}
+
 int fps_fb_declared_hz (int measured_hz, int declared_hz)
 {
 	/* Окно 1.5..2.5 заявленной частоты: счётчик fb-декодера Amlogic считает

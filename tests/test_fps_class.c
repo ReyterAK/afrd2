@@ -527,6 +527,40 @@ static void t_fb_declared(void)
 	assert(fps_fb_declared_hz(0, 24 * 256) == 0);
 }
 
+/* Подача видео-слоя как независимый источник (журнал §179). Числа — живые
+ * замеры на `.50`: YouTube 24p 41.733 мс, 25p 39.946 мс, превью 30p 33.465 мс
+ * при периоде дисплея 16.667 мс. */
+static void t_layer_rate(void)
+{
+	int hz = -1;
+
+	/* 24 к/с на 60 Гц: 3:2, среднее 41.7 мс */
+	assert(fps_layer_rate_hz(127, 41.733, 16.667, 0, &hz) == 1);
+	assert(hz == fps_rate_hz(0));
+
+	/* 25 к/с: 2,2,3 — среднее 40.0 мс */
+	assert(fps_layer_rate_hz(127, 39.946, 16.667, 0, &hz) == 1);
+	assert(hz == fps_rate_hz(2));
+
+	/* 30 к/с (превью YouTube) */
+	assert(fps_layer_rate_hz(127, 33.465, 16.667, 0, &hz) == 1);
+	assert(hz == fps_rate_hz(3));
+
+	/* Слой обновляется на частоте дисплея — о контенте ничего не говорит */
+	assert(fps_layer_rate_hz(127, 16.700, 16.667, 0, &hz) == 0);
+	assert(hz == 0);
+
+	/* Пауза/переход: выброс в буфере — среднему не верим */
+	assert(fps_layer_rate_hz(127, 57.700, 16.667, 5, &hz) == 0);
+
+	/* Мало меток — буфер ещё не заполнился после смены ролика */
+	assert(fps_layer_rate_hz(60, 41.733, 16.667, 0, &hz) == 0);
+
+	/* Мусор на входе */
+	assert(fps_layer_rate_hz(127, 0.0, 16.667, 0, &hz) == 0);
+	assert(fps_layer_rate_hz(127, 41.733, 0.0, 0, &hz) == 0);
+}
+
 int main(void)
 {
 	t_classify();
@@ -546,6 +580,7 @@ int main(void)
 	t_correct_av1();
 	t_correct_av1_pct();
 	t_cadence_verdict();
+	t_layer_rate();
 	t_fb_declared();
 	printf("fps_class: OK\n");
 	return 0;

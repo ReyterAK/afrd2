@@ -2701,12 +2701,16 @@ static bool atv14_layer_stats (double *period_ms, double *avg_ms, double *median
 
 	layer_pick_cmd (cmd, sizeof (cmd));
 	used = strlen (cmd);
+	/* Переменную ожидаемого интервала зовём emp, а не exp: exp — встроенная
+	 * функция awk, и `-v exp=...` молча давала 0. Базой становился только
+	 * период дисплея, и 24p на 60 Гц давал «69 % выбросов» — верный замер
+	 * слоя отвергался (живая находка 04.11, журнал §179). */
 	snprintf (cmd + used, sizeof (cmd) - used,
-	          "dumpsys SurfaceFlinger --latency \"$L\" 2>/dev/null | awk -v exp=%d -v rt=%d '"
+	          "dumpsys SurfaceFlinger --latency \"$L\" 2>/dev/null | awk -v emp=%d -v rt=%d '"
 	          "NR==1 { p=$1/1e6; next } "
 	          "NF==3 && $2+0>0 && $2+0<1e17 { n++; t[n]=$2+0 } "
 	          "END { if (n<3) exit; m=0; s=0; lng=0; "
-	          "b=(exp>p)?exp:p; thr=b*rt/100; "
+	          "b=(emp>p)?emp:p; thr=b*rt/100; "
 	          "for (i=2;i<=n;i++) { iv=(t[i]-t[i-1])/1e6; "
 	          "if (iv>0) { m++; s+=iv; q[m]=iv; if (iv>thr) lng++ } } "
 	          "if (m>0) { for (i=2;i<=m;i++) { v=q[i]; for (j=i-1;(j>=1) && (q[j]>v);j--) q[j+1]=q[j]; "
@@ -2793,6 +2797,46 @@ static int atv14_layer_fps_hz (void)
 	int hz = 0;
 	if (!fps_classify_window_corrected (frames, dt_us, 2000, 1.0, 0.0, &hz))
 		return 0;			/* интервал не уложился в класс */
+
+	return hz;
+}
+
+/* Частота контента по подаче видео-слоя, устойчивая к паузам (журнал §179).
+ *
+ * В отличие от atv14_layer_fps_hz (быстрый источник сразу после bump), здесь
+ * ожидаемый интервал берётся из частоты счётчика: выброс паузы становится
+ * виден как gap и отвергает среднее целиком. Нужна только спорная зона
+ * 23..27 Гц, где счётчик AV1 завышает 24 к/с до ~25.2. */
+static int atv14_layer_content_hz (int expect_hz)
+{
+	double p = 0, a = 0, md = 0, p9 = 0, gap = 0;
+	int n = 0;
+	int expect_ms = (expect_hz > 0) ? (256000 + expect_hz / 2) / expect_hz : 0;
+
+	if (!atv14_layer_stats (&p, &a, &md, &p9, &gap, &n, expect_ms, 200))
+	{
+		trace (2, "слой: статистика не получена (expect %d мс)\n", expect_ms);
+		return 0;
+	}
+
+	int hz = 0;
+	if (!fps_layer_rate_hz (n, a, p, (int) gap, &hz))
+	{
+		trace (2, "слой: p=%.2f a=%.2f n=%d gap=%d — частота не принята\n",
+		       p, a, n, (int) gap);
+		return 0;
+	}
+
+	/* Различить 24 и 25 можно только на высокой частоте дисплея: при 50 Гц
+	 * 24 к/с тоже ложится по 40 мс (2 периода) и неотличим от 25. */
+	if (p >= 18.0)
+	{
+		trace (2, "слой: период дисплея %.2f мс — частота контента не видна\n", p);
+		return 0;
+	}
+
+	trace (2, "слой: p=%.2f a=%.2f n=%d gap=%d — " HZ_FMT " Гц\n",
+	       p, a, n, (int) gap, HZ_ARGS (hz));
 
 	return hz;
 }
@@ -3739,6 +3783,9 @@ static int run_atv14 (const platform_t *plat)
 	/* «mode.use.fract: целый режим вместо дробного» — раз на видео: строка
 	 * печаталась на каждой перепроверке (живой лог тестера: 107 раз, §175). */
 	bool fract_logged = false;
+	/* «Частота по подаче видео-слоя» — попытка на видео: слой независим от
+	 * счётчика, которым AV1 завышает 24 к/с до 25.2 (журнал §179). */
+	bool layer_rate_checked = false;
 
 	/* Поведенческие ключи профиля (R28). */
 	int prefer_api = cfg_get_int ("fps.prefer.api", 1);
@@ -4390,6 +4437,7 @@ static int run_atv14 (const platform_t *plat)
 				g_dec_logged_hz = -1;
 				fb_double_logged = false;
 				fract_logged = false;
+				layer_rate_checked = false;
 				counter_restart_log_us = 0;
 				/* Политика прошлого видео к новому не относится: пока замер
 				 * молчит, дробность не трогаем (желание выставит решение).
@@ -4633,6 +4681,7 @@ static int run_atv14 (const platform_t *plat)
 			av1_lock_logged = false;
 			fb_double_logged = false;
 			fract_logged = false;
+			layer_rate_checked = false;
 			fast_class = 0;
 			/* R56: перепроверка — тоже на текущее видео */
 			recheck_armed = false;
@@ -5572,6 +5621,28 @@ cadence_done: ;
 							refined_from = hz;
 						}
 						hz = refined;
+					}
+				}
+
+				/* Счётчик кадров AV1-тракта завышен на ~5 % (§14.2): 24 к/с
+				 * читается как 25.2 и без поправки уходит в 25 Гц. Подача
+				 * видео-слоя не зависит от счётчика — в спорной зоне
+				 * 23..27 Гц верим ей (живые замеры 04.11, журнал §179:
+				 * 24 к/с — 41.7 мс, 25 к/с — 40.0 мс при дисплее 60 Гц). */
+				if (!layer_rate_checked && (hz >= (23 << 8)) && (hz <= (27 << 8)))
+				{
+					int lhz = atv14_layer_content_hz (hz);
+
+					if (lhz)
+					{
+						layer_rate_checked = true;
+						if ((lhz != hz) && (lhz >= (23 << 8)) && (lhz <= (27 << 8)))
+						{
+							trace (0, "частота по подаче видео-слоя: " HZ_FMT
+							       " Гц вместо " HZ_FMT " Гц по счётчику — "
+							       "беру слой\n", HZ_ARGS (lhz), HZ_ARGS (hz));
+							hz = lhz;
+						}
 					}
 				}
 
