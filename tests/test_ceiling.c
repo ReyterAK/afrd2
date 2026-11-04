@@ -122,7 +122,7 @@ static void test_codec_pick (void)
 static void test_build_codec_restart (void)
 {
 	/* Команда с проверкой по ps длиннее прежней (563 знака) — буфер с запасом:
-	 * в демоне это EXEC_CMD_MAX (1024), и усечённая команда недопустима. */
+	 * в демоне это EXEC_CMD_MAX (2 КБ), и усечённая команда недопустима. */
 	char buf [1024];
 
 	CHECK (ceiling_build_codec_restart (buf, sizeof (buf), "vendor.media.omx") == 0);

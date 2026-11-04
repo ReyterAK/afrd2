@@ -2710,9 +2710,18 @@ static void layer_pick_cmd (char *dst, size_t size)
  * при 20 % интервалов по 80 мс медиана равна 40 мс, и проверка рапортовала
  * «подача в порядке» (журнал §110). Выброс — интервал больше ratio % от базы,
  * база — максимум из периода дисплея и ожидаемого интервала контента. */
+
+/* Половины буфера подачи слоя — по ним ловится переход контента (журнал §181). */
+typedef struct
+{
+	double md1_ms, md2_ms;	/* медианы первой и второй половины */
+	int n1, n2;		/* число интервалов в половинах */
+	double span_ms;		/* сколько времени покрывает буфер */
+} layer_halves_t;
+
 static bool atv14_layer_stats (double *period_ms, double *avg_ms, double *median_ms,
                                double *p90_ms, double *gap_pct, int *count,
-                               int expect_ms, int ratio_pct)
+                               int expect_ms, int ratio_pct, layer_halves_t *halves)
 {
 	*period_ms = *avg_ms = 0.0;
 	if (median_ms)
@@ -2723,6 +2732,12 @@ static bool atv14_layer_stats (double *period_ms, double *avg_ms, double *median
 		*gap_pct = 0.0;
 	if (count)
 		*count = 0;
+	if (halves)
+	{
+		halves->md1_ms = halves->md2_ms = 0.0;
+		halves->n1 = halves->n2 = 0;
+		halves->span_ms = 0.0;
+	}
 
 	if (ratio_pct <= 0)
 		ratio_pct = 150;
@@ -2736,28 +2751,48 @@ static bool atv14_layer_stats (double *period_ms, double *avg_ms, double *median
 	/* Переменную ожидаемого интервала зовём emp, а не exp: exp — встроенная
 	 * функция awk, и `-v exp=...` молча давала 0. Базой становился только
 	 * период дисплея, и 24p на 60 Гц давал «69 % выбросов» — верный замер
-	 * слоя отвергался (живая находка 04.11, журнал §179). */
-	snprintf (cmd + used, sizeof (cmd) - used,
+	 * слоя отвергался (живая находка 04.11, журнал §179).
+	 *
+	 * Половинные медианы (md1/md2) нужны для признака перехода контента:
+	 * медиана по всему буферу смешивает две каденции и потому переход не
+	 * видит (журнал §181). Интервалы хранятся в порядке времени, поэтому
+	 * половины режутся по времени, а сортируются уже по отдельности. */
+	int cap = snprintf (cmd + used, sizeof (cmd) - used,
 	          "dumpsys SurfaceFlinger --latency \"$L\" 2>/dev/null | awk -v emp=%d -v rt=%d '"
+	          "function med(a, k,   i, j, v) { for (i=2;i<=k;i++) { v=a[i]; "
+	          "for (j=i-1;(j>=1) && (a[j]>v);j--) a[j+1]=a[j]; a[j+1]=v } "
+	          "if (k %% 2) return a[(k+1)/2]; return (a[k/2]+a[k/2+1])/2 } "
 	          "NR==1 { p=$1/1e6; next } "
 	          "NF==3 && $2+0>0 && $2+0<1e17 { n++; t[n]=$2+0 } "
 	          "END { if (n<3) exit; m=0; s=0; lng=0; "
 	          "b=(emp>p)?emp:p; thr=b*rt/100; "
 	          "for (i=2;i<=n;i++) { iv=(t[i]-t[i-1])/1e6; "
 	          "if (iv>0) { m++; s+=iv; q[m]=iv; if (iv>thr) lng++ } } "
-	          "if (m>0) { for (i=2;i<=m;i++) { v=q[i]; for (j=i-1;(j>=1) && (q[j]>v);j--) q[j+1]=q[j]; "
-	          "q[j+1]=v } "
-	          "if (m %% 2) md=q[(m+1)/2]; else md=(q[m/2]+q[m/2+1])/2; "
-	          "k=int(m*9/10); if (k<1) k=1; p9=q[k]; "
-	          "printf \"%%.2f %%.2f %%.2f %%.2f %%d %%d\", p, s/m, md, p9, (lng*100)/m, m } }'",
+	          "if (m<=0) exit; span=(t[n]-t[1])/1e6; h=int(m/2); "
+	          "for (i=1;i<=m;i++) r[i]=q[i]; md=med(r,m); "
+	          "k9=int(m*9/10); if (k9<1) k9=1; p9=r[k9]; "
+	          "for (i=1;i<=h;i++) r[i]=q[i]; md1=med(r,h); "
+	          "k=0; for (i=h+1;i<=m;i++) { k++; r[k]=q[i] } md2=med(r,k); "
+	          "printf \"%%.2f %%.2f %%.2f %%.2f %%d %%d %%.2f %%d %%.2f %%d %%.2f\", "
+	          "p, s/m, md, p9, (lng*100)/m, m, md1, h, md2, k, span }'",
 	          (int) expect_ms, (int) ratio_pct);
+	/* Усечённая команда ломает awk молча: проба слоя просто «не получена»
+	 * (так и случилось, когда разбор вырос до половин — журнал §181).
+	 * Проверяем явно, чтобы такой отказ было видно в журнале. */
+	if ((cap < 0) || ((size_t) cap >= sizeof (cmd) - used))
+	{
+		trace (0, "слой: команда пробы не уложилась в буфер (%zu + %d при %zu) — проба невозможна\n",
+		       used, cap, sizeof (cmd));
+		return false;
+	}
 
 	if (exec_capture (cmd, out, sizeof (out)) != 0)
 		return false;
 
-	double p = 0, a = 0, md = 0, p9 = 0;
-	int gap = 0, n = 0;
-	if ((sscanf (out, "%lf %lf %lf %lf %d %d", &p, &a, &md, &p9, &gap, &n) != 6) ||
+	double p = 0, a = 0, md = 0, p9 = 0, md1 = 0, md2 = 0, span = 0;
+	int gap = 0, n = 0, n1 = 0, n2 = 0;
+	if ((sscanf (out, "%lf %lf %lf %lf %d %d %lf %d %lf %d %lf",
+	             &p, &a, &md, &p9, &gap, &n, &md1, &n1, &md2, &n2, &span) != 11) ||
 	    (a <= 0) || (md <= 0) || (p <= 0))
 		return false;
 
@@ -2771,6 +2806,14 @@ static bool atv14_layer_stats (double *period_ms, double *avg_ms, double *median
 		*gap_pct = (double) gap;
 	if (count)
 		*count = n;
+	if (halves)
+	{
+		halves->md1_ms = md1;
+		halves->md2_ms = md2;
+		halves->n1 = n1;
+		halves->n2 = n2;
+		halves->span_ms = span;
+	}
 
 	return true;
 }
@@ -2793,7 +2836,7 @@ static int atv14_cadence_verdict (int expect_ms, int *period_ms, int *median_ms,
 	int ratio = cfg_get_int ("fps.feed.ratio.pct", 150);
 	int gap_thr = cfg_get_int ("fps.feed.gap.pct", 10);
 
-	if (!atv14_layer_stats (&p, &a, &md, &p9, &gap, &n, expect_ms, ratio))
+	if (!atv14_layer_stats (&p, &a, &md, &p9, &gap, &n, expect_ms, ratio, NULL))
 		return FPS_CADENCE_OK;
 
 	*period_ms = (int) (p + 0.5);
@@ -2815,7 +2858,7 @@ static int atv14_layer_fps_hz (void)
 {
 	double p = 0, a = 0;
 	int n = 0;
-	if (!atv14_layer_stats (&p, &a, NULL, NULL, NULL, &n, 0, 150))
+	if (!atv14_layer_stats (&p, &a, NULL, NULL, NULL, &n, 0, 150, NULL))
 		return 0;
 
 	if ((n < 60) || (a <= 0.0))
@@ -2838,24 +2881,72 @@ static int atv14_layer_fps_hz (void)
  * В отличие от atv14_layer_fps_hz (быстрый источник сразу после bump), здесь
  * ожидаемый интервал берётся из частоты счётчика: выброс паузы становится
  * виден как gap и отвергает среднее целиком. Нужна только спорная зона
- * 23..27 Гц, где счётчик AV1 завышает 24 к/с до ~25.2. */
-static int atv14_layer_content_hz (int expect_hz)
+ * 23..27 Гц, где счётчик AV1 завышает 24 к/с до ~25.2.
+ *
+ * Заодно проверяется ПЕРЕХОД контента (журнал §181): если половины буфера
+ * разных классов частот, окно смешало два потока (реклама → ролик, смена
+ * канала) и решение по нему недостоверно. Тогда *transition = true, возврат 0.
+ * allow_transition=false — лимит сбросов на видео исчерпан: переход не
+ * сообщаем и работаем по прежним правилам, иначе поток с чередующейся
+ * каденцией не дал бы решения никогда.
+ *
+ * want_rate=false — частоту по слою не извлекаем, нужна только проверка
+ * перехода. Так проба вызывается на КАЖДОМ решении, даже когда частота уже
+ * закреплена: иначе закрепление переживает смену контента (живая находка
+ * 04.11: канал 25 к/с → 24 к/с, пин 25 держал 50 Гц, а огибающая уже видела
+ * 23.98). Извлекать частоту повторно незачем — её держит пин. */
+static int atv14_layer_content_hz (int expect_hz, bool allow_transition,
+                                   bool *transition, bool want_rate)
 {
 	double p = 0, a = 0, md = 0, p9 = 0, gap = 0;
 	int n = 0;
+	layer_halves_t hh;
 	int expect_ms = (expect_hz > 0) ? (256000 + expect_hz / 2) / expect_hz : 0;
 
-	if (!atv14_layer_stats (&p, &a, &md, &p9, &gap, &n, expect_ms, 200))
+	if (transition)
+		*transition = false;
+
+	if (!atv14_layer_stats (&p, &a, &md, &p9, &gap, &n, expect_ms, 200, &hh))
 	{
 		trace (2, "слой: статистика не получена (expect %d мс)\n", expect_ms);
+		return 0;
+	}
+
+	/* Наша смена режима меняет период подачи на глазах — половины разойдутся
+	 * и без смены контента; такие случаи отсекает span буфера. */
+	double since_ms = g_last_apply_us
+	                ? (double) (now_us () - g_last_apply_us) / 1000.0
+	                : -1.0;
+
+	if (transition && allow_transition &&
+	    fps_layer_transition (hh.md1_ms, hh.md2_ms, hh.n1, hh.n2,
+	                          hh.span_ms, since_ms))
+	{
+		*transition = true;
+		trace (0, "переход контента: половины окна слоя " HZ_FMT " и " HZ_FMT
+		       " Гц (%d и %d интервалов, буфер %.0f мс, смена режима %.0f мс "
+		       "назад) — замер заново\n",
+		       HZ_ARGS ((int) (256000.0 / hh.md1_ms + 0.5)),
+		       HZ_ARGS ((int) (256000.0 / hh.md2_ms + 0.5)),
+		       hh.n1, hh.n2, hh.span_ms, since_ms);
 		return 0;
 	}
 
 	int hz = 0;
 	if (!fps_layer_rate_hz (n, a, p, (int) gap, &hz))
 	{
-		trace (2, "слой: p=%.2f a=%.2f n=%d gap=%d — частота не принята\n",
-		       p, a, n, (int) gap);
+		trace (2, "слой: p=%.2f a=%.2f n=%d gap=%d — частота не принята (половины "
+		       "%.2f/%.2f мс, %d/%d интервалов)\n",
+		       p, a, n, (int) gap, hh.md1_ms, hh.md2_ms, hh.n1, hh.n2);
+		return 0;
+	}
+
+	/* Частоту не просили (она уже закреплена) — проба нужна была только для
+	 * проверки перехода, и он не обнаружен. */
+	if (!want_rate)
+	{
+		trace (2, "слой: p=%.2f a=%.2f n=%d gap=%d — перехода нет (половины "
+		       "%.2f/%.2f мс)\n", p, a, n, (int) gap, hh.md1_ms, hh.md2_ms);
 		return 0;
 	}
 
@@ -3273,6 +3364,11 @@ static void ceiling_forget (void)
  * начатый в эти 12 с, не поднимется — но режим и так был выставлен по контенту,
  * а следующий замер его поправит. */
 #define CEILING_RESTART_WINDOW_US	12000000ULL
+
+/* Предел сбросов замера по переходу контента на одно видео (журнал §181).
+ * Реклама в начале и смена канала — единичные события; поток с чередующейся
+ * каденцией (или ложные срабатывания) не должен лишать демон решения вовсе. */
+#define LAYER_TRANS_MAX		3
 
 static bool ceiling_recent_within (unsigned long long us)
 {
@@ -3849,6 +3945,10 @@ static int run_atv14 (const platform_t *plat)
 	 * отменяла верное решение (живой прогон `.42` 04.11: 24 → 50 через 16 с).
 	 * Пока новая частота в спорной зоне 23..27, закреплённое значение сильнее. */
 	int layer_rate_pin = 0;
+	/* Сколько раз на видео сбросили замер из-за перехода контента (реклама →
+	 * ролик, смена канала). Без предела поток с чередующейся каденцией не дал
+	 * бы решения никогда (журнал §181). */
+	int layer_transitions = 0;
 
 	/* Поведенческие ключи профиля (R28). */
 	int prefer_api = cfg_get_int ("fps.prefer.api", 1);
@@ -4524,6 +4624,7 @@ static int run_atv14 (const platform_t *plat)
 				fract_logged = false;
 				layer_rate_checked = false;
 				layer_rate_pin = 0;
+				layer_transitions = 0;
 				counter_restart_log_us = 0;
 				/* Политика прошлого видео к новому не относится: пока замер
 				 * молчит, дробность не трогаем (желание выставит решение).
@@ -4769,6 +4870,7 @@ static int run_atv14 (const platform_t *plat)
 			fract_logged = false;
 			layer_rate_checked = false;
 			layer_rate_pin = 0;
+			layer_transitions = 0;
 			fast_class = 0;
 			/* R56: перепроверка — тоже на текущее видео */
 			recheck_armed = false;
@@ -5729,12 +5831,35 @@ cadence_done: ;
 				 * (10/11). На вендорном применение сверяется по vinfo и
 				 * повторяется (см. atv14_apply_mode), а сам режим 24→60
 				 * проверен изолированно (§179.7). Если живой прогон покажет
-				 * потерю сигнала — снова ограничить backdoor-путём. */
-				if (!layer_rate_checked &&
-				    ((plat->sink == SINK_SF_BACKDOOR) ||
-				     (plat->sink == SINK_VENDOR_MODE)))
+				 * потерю сигнала — снова ограничить backdoor-путём.
+				 *
+				 * Проба идёт на КАЖДОМ решении, а не один раз на видео:
+				 * иначе закрепление переживает смену контента (живая находка
+				 * 04.11: канал 25 к/с → 24 к/с, пин 25 держал 50 Гц, хотя
+				 * огибающая уже видела 23.98). Частоту извлекаем только пока
+				 * она не закреплена; остальное время проба нужна ради
+				 * проверки перехода (журнал §181). */
+				if ((plat->sink == SINK_SF_BACKDOOR) ||
+				    (plat->sink == SINK_VENDOR_MODE))
 				{
-					int lhz = atv14_layer_content_hz (hz);
+					bool layer_trans = false;
+					int lhz = atv14_layer_content_hz (hz, layer_transitions < LAYER_TRANS_MAX,
+					                                  &layer_trans, !layer_rate_checked);
+
+					/* Переход контента (реклама → ролик, смена канала): окно
+					 * смешало две каденции, решение по нему недостоверно.
+					 * Сбрасываем наблюдение и закрепление — иначе частота
+					 * рекламы держала бы весь ролик — и не решаем в этот раз.
+					 * Новое решение придёт по чистому горизонту (журнал §181). */
+					if (layer_trans)
+					{
+						layer_transitions++;
+						layer_rate_checked = false;
+						layer_rate_pin = 0;
+						fps_env_reset (&env);
+						env_growing = false;
+						continue;
+					}
 
 					if (lhz)
 					{

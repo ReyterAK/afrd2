@@ -629,6 +629,26 @@ int fps_layer_rate_hz (int frames, double avg_ms, double period_ms,
 	return 1;
 }
 
+int fps_layer_transition (double a_ms, double b_ms, int na, int nb,
+                          double span_ms, double since_switch_ms)
+{
+	if ((na < 40) || (nb < 40) || (a_ms <= 0.0) || (b_ms <= 0.0))
+		return 0;
+
+	/* Наша смена режима меняет период подачи на глазах (60 -> 24 и т.п.):
+	 * если она попала в буфер, половины разных классов — ожидаемо, контент
+	 * при этом тот же. */
+	if ((since_switch_ms >= 0.0) && (since_switch_ms < span_ms + 1000.0))
+		return 0;
+
+	int hz1 = fps_classify (1000.0 / a_ms);
+	int hz2 = fps_classify (1000.0 / b_ms);
+	if ((hz1 <= 0) || (hz2 <= 0))
+		return 0;
+
+	return (fps_rate_group (hz1) != fps_rate_group (hz2)) ? 1 : 0;
+}
+
 int fps_fb_declared_hz (int measured_hz, int declared_hz)
 {
 	/* Окно 1.5..2.5 заявленной частоты: счётчик fb-декодера Amlogic считает
