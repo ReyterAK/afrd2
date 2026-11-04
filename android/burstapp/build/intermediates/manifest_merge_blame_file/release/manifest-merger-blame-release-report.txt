@@ -1,0 +1,46 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="ru.reyter.afrd2.burst"
+4    android:versionCode="1"
+5    android:versionName="1.0" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="23"
+9        android:targetSdkVersion="34" />
+10    <!--
+11     Отдельный пакет: tvQuickActions показывает одну запись на пакет,
+12         поэтому activity-alias внутри AFRd2 в его списке приложений не виден.
+13    -->
+14    <application
+14-->/home/reyter/AI/afrd2/android/burstapp/src/main/AndroidManifest.xml:5:5-17:19
+15        android:allowBackup="false"
+15-->/home/reyter/AI/afrd2/android/burstapp/src/main/AndroidManifest.xml:7:18-45
+16        android:extractNativeLibs="false"
+17        android:icon="@mipmap/ic_launcher"
+17-->/home/reyter/AI/afrd2/android/burstapp/src/main/AndroidManifest.xml:6:18-52
+18        android:label="@string/app_name"
+18-->/home/reyter/AI/afrd2/android/burstapp/src/main/AndroidManifest.xml:5:18-50
+19        android:theme="@android:style/Theme.NoDisplay" >
+19-->/home/reyter/AI/afrd2/android/burstapp/src/main/AndroidManifest.xml:8:18-64
+20        <activity
+20-->/home/reyter/AI/afrd2/android/burstapp/src/main/AndroidManifest.xml:9:9-16:20
+21            android:name="ru.reyter.afrd2.burst.BurstLaunchActivity"
+21-->/home/reyter/AI/afrd2/android/burstapp/src/main/AndroidManifest.xml:9:19-54
+22            android:exported="true"
+22-->/home/reyter/AI/afrd2/android/burstapp/src/main/AndroidManifest.xml:10:19-42
+23            android:theme="@android:style/Theme.NoDisplay" >
+23-->/home/reyter/AI/afrd2/android/burstapp/src/main/AndroidManifest.xml:11:19-65
+24            <intent-filter>
+24-->/home/reyter/AI/afrd2/android/burstapp/src/main/AndroidManifest.xml:12:13-15:29
+25                <action android:name="android.intent.action.MAIN" />
+25-->/home/reyter/AI/afrd2/android/burstapp/src/main/AndroidManifest.xml:13:17-68
+25-->/home/reyter/AI/afrd2/android/burstapp/src/main/AndroidManifest.xml:13:25-66
+26
+27                <category android:name="android.intent.category.LAUNCHER" />
+27-->/home/reyter/AI/afrd2/android/burstapp/src/main/AndroidManifest.xml:14:17-76
+27-->/home/reyter/AI/afrd2/android/burstapp/src/main/AndroidManifest.xml:14:27-74
+28            </intent-filter>
+29        </activity>
+30    </application>
+31
+32</manifest>

@@ -1,0 +1,7 @@
+ru.reyter.afrd2.burst.burstapp-pngs-0 /home/reyter/AI/afrd2/android/burstapp/build/generated/res/pngs/release
+ru.reyter.afrd2.burst.burstapp-resValues-1 /home/reyter/AI/afrd2/android/burstapp/build/generated/res/resValues/release
+ru.reyter.afrd2.burst.burstapp-packageReleaseResources-2 /home/reyter/AI/afrd2/android/burstapp/build/intermediates/incremental/release/packageReleaseResources/merged.dir
+ru.reyter.afrd2.burst.burstapp-packageReleaseResources-3 /home/reyter/AI/afrd2/android/burstapp/build/intermediates/incremental/release/packageReleaseResources/stripped.dir
+ru.reyter.afrd2.burst.burstapp-merged_res-4 /home/reyter/AI/afrd2/android/burstapp/build/intermediates/merged_res/release
+ru.reyter.afrd2.burst.burstapp-main-5 /home/reyter/AI/afrd2/android/burstapp/src/main/res
+ru.reyter.afrd2.burst.burstapp-release-6 /home/reyter/AI/afrd2/android/burstapp/src/release/res

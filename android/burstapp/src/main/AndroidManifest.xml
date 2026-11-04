@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Отдельный пакет: tvQuickActions показывает одну запись на пакет,
+         поэтому activity-alias внутри AFRd2 в его списке приложений не виден. -->
+    <application android:label="@string/app_name"
+                 android:icon="@mipmap/ic_launcher"
+                 android:allowBackup="false"
+                 android:theme="@android:style/Theme.NoDisplay">
+        <activity android:name=".BurstLaunchActivity"
+                  android:exported="true"
+                  android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

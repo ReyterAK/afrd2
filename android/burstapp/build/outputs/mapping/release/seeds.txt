@@ -1,0 +1,2 @@
+ru.reyter.afrd2.burst.BurstLaunchActivity
+ru.reyter.afrd2.burst.BurstLaunchActivity: BurstLaunchActivity()

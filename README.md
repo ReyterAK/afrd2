@@ -550,12 +550,21 @@ DASH/HLS-сегментов, AV1-тракт декодера добавляет 
 | Activity | `am start -n ru.reyter.afrd2/ru.cobra.zap.afrd.gui.BurstActivity --ei ms 40000` (или intent `ru.cobra.afrd.BURST`) | tvQuickActions: запуск activity |
 | Приложение «AFR burst» | в списке приложений выбрать **AFR burst** (activity-alias на BurstActivity); extras не нужны, длительность — `burst.ms` | tvQuickActions и подобным: одна кнопка, настраивать нечего |
 | Ярлык «Сеанс AFR» | статический shortcut приложения (`afr_burst`); tvQuickActions → Shortcut → AFRd2 → «Сеанс AFR» | tvQuickActions и системному лончеру; extras не нужны, длительность — `burst.ms` |
+| Мини-приложение «AFR burst» | отдельный пакет `ru.reyter.afrd2.burst`: tvQuickActions → Open app → **AFR burst** | мапперам, которые видят только приложения: одна запись в списке, без extras |
 | Shell | `afrd --burst 40 <ini>` | Magisk-модулю и прошивке, root нужен |
 
 **`afrd --burst <сек>`** сначала пробует отправить команду живущему демону. Если демона нет —
 проводит сеанс сам и **завершается** по его окончании (процесса нет, пока не нажали). Если демон
 жив, но не ответил, второй не поднимается: команда завершается с ошибкой — иначе на боксе
 оказались бы два демона, дерущиеся за режим и порт.
+
+**Мини-приложение «AFR burst».** Мапперы (tvQuickActions) показывают одну запись
+на пакет, поэтому activity-alias внутри AFRd2 в их списке приложений не виден.
+Отдельный пакет `ru.reyter.afrd2.burst` (модуль `android/burstapp`) — крошечное
+приложение без UI: отправляет адресный broadcast `ru.reyter.afrd2.action.BURST`
+и закрывается. Сборка: `cd android && ./gradlew :burstapp:assembleRelease`,
+APK — `burstapp/build/outputs/apk/release/burstapp-release.apk`. Требует
+установленного AFRd2; AFR должен быть выключен (`enable=0`) — burst для пассива.
 
 **«AFR burst» в списке приложений.** Это activity-alias на `BurstActivity`, поэтому
 мапперу не нужно знать имя класса или action: достаточно привязать кнопку к приложению

@@ -1,0 +1,45 @@
+apply plugin: 'com.android.application'
+
+// Мини-приложение «AFR burst»: одна кнопка в списке приложений tvQuickActions,
+// без extras и intent-настроек. Отправляет broadcast приёмнику AFRd2.
+def keystoreProps = new Properties ()
+def keystorePropsFile = file ('../app/keystore.properties')
+if (keystorePropsFile.exists ()) {
+    keystorePropsFile.withInputStream { keystoreProps.load (it) }
+}
+
+android {
+    namespace 'ru.reyter.afrd2.burst'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'ru.reyter.afrd2.burst'
+        minSdkVersion 23
+        targetSdkVersion 34
+        versionCode 1
+        versionName '1.0'
+        project.ext.set ('archivesBaseName', "${applicationId}-${versionName}".toString ())
+    }
+    signingConfigs {
+        zap {
+            storeFile file ('../app/' + keystoreProps.getProperty ('storeFile', 'zap.jks'))
+            keyAlias keystoreProps.getProperty ('keyAlias', 'key0')
+            storePassword keystoreProps.getProperty ('storePassword', '123456')
+            keyPassword keystoreProps.getProperty ('keyPassword', '654321')
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+            signingConfig signingConfigs.zap
+        }
+        debug {
+        }
+    }
+    buildToolsVersion '34.0.0'
+    lint { abortOnError false }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
