@@ -2557,6 +2557,38 @@ static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skip
 			trace (1, "вендорный SystemControl не применил режим %s\n", name);
 			return -2;
 		}
+
+		/* Помощник может отчитаться успехом, а режим не смениться: живой
+		 * случай `.42` 04.11 — демон напечатал переключение на 60, узел
+		 * остался 24, ТВ без сигнала. Сверяем фактическую частоту (по
+		 * группе, чтобы 23.976 и 24.00 не считались расхождением) и один
+		 * раз повторяем разовым вызовом, мимо постоянного помощника. */
+		msleep (400);
+		int actual_hz = vinfo_sync_hz (VINFO_PATH, NULL, NULL);
+		if ((actual_hz > 0) && (expect_hz > 0) &&
+		    fps_group_differs (expect_hz, actual_hz))
+		{
+			trace (0, "вендорный SystemControl: режим %s не сменился "
+			          "(vinfo " HZ_FMT " Гц вместо " HZ_FMT
+			          " Гц) — повторяю разовым вызовом\n",
+			          name, HZ_ARGS (actual_hz), HZ_ARGS (expect_hz));
+
+			char cmd [256], out [256];
+			if (sink_build_vendor_set (cmd, sizeof (cmd),
+			                           g_vendor_disp_cli, name) == 0)
+				exec_status (cmd, out, sizeof (out));
+
+			msleep (800);
+			actual_hz = vinfo_sync_hz (VINFO_PATH, NULL, NULL);
+			if ((actual_hz > 0) &&
+			    fps_group_differs (expect_hz, actual_hz))
+			{
+				trace (0, "вендорный SystemControl: режим %s так и не "
+				          "сменился (vinfo " HZ_FMT " Гц) — применение "
+				          "неудачно\n", name, HZ_ARGS (actual_hz));
+				return -2;
+			}
+		}
 	}
 	else
 	{
@@ -3786,6 +3818,11 @@ static int run_atv14 (const platform_t *plat)
 	/* «Частота по подаче видео-слоя» — попытка на видео: слой независим от
 	 * счётчика, которым AV1 завышает 24 к/с до 25.2 (журнал §179). */
 	bool layer_rate_checked = false;
+	/* Частота, принятая по слою для этого видео: после смены режима счётчик
+	 * показывает частоту экрана (24p на 24 Гц снова даёт ~25.0), и огибающая
+	 * отменяла верное решение (живой прогон `.42` 04.11: 24 → 50 через 16 с).
+	 * Пока новая частота в спорной зоне 23..27, закреплённое значение сильнее. */
+	int layer_rate_pin = 0;
 
 	/* Поведенческие ключи профиля (R28). */
 	int prefer_api = cfg_get_int ("fps.prefer.api", 1);
@@ -4438,6 +4475,7 @@ static int run_atv14 (const platform_t *plat)
 				fb_double_logged = false;
 				fract_logged = false;
 				layer_rate_checked = false;
+				layer_rate_pin = 0;
 				counter_restart_log_us = 0;
 				/* Политика прошлого видео к новому не относится: пока замер
 				 * молчит, дробность не трогаем (желание выставит решение).
@@ -4682,6 +4720,7 @@ static int run_atv14 (const platform_t *plat)
 			fb_double_logged = false;
 			fract_logged = false;
 			layer_rate_checked = false;
+			layer_rate_pin = 0;
 			fast_class = 0;
 			/* R56: перепроверка — тоже на текущее видео */
 			recheck_armed = false;
@@ -5630,12 +5669,14 @@ cadence_done: ;
 				 * 23..27 Гц верим ей (живые замеры 04.11, журнал §179:
 				 * 24 к/с — 41.7 мс, 25 к/с — 40.0 мс при дисплее 60 Гц).
 				 *
-				 * Только backdoor-путь (Android 12-14). На вендорном пути
-				 * (`.42`, ATV11) проба дала 24 вместо 25, и переключение
-				 * через SystemControl оставило ТВ без сигнала (04.11,
-				 * сброс по питанию, §179.7); там остаётся явная поправка
-				 * fps.correct.av1=5, пока путь не проверен отдельно. */
-				if (!layer_rate_checked && (plat->sink == SINK_SF_BACKDOOR) &&
+				 * Оба пути: backdoor (12-14) и вендорный SystemControl
+				 * (10/11). На вендорном применение сверяется по vinfo и
+				 * повторяется (см. atv14_apply_mode), а сам режим 24→60
+				 * проверен изолированно (§179.7). Если живой прогон покажет
+				 * потерю сигнала — снова ограничить backdoor-путём. */
+				if (!layer_rate_checked &&
+				    ((plat->sink == SINK_SF_BACKDOOR) ||
+				     (plat->sink == SINK_VENDOR_MODE)) &&
 				    (hz >= (23 << 8)) && (hz <= (27 << 8)))
 				{
 					int lhz = atv14_layer_content_hz (hz);
@@ -5643,6 +5684,7 @@ cadence_done: ;
 					if (lhz)
 					{
 						layer_rate_checked = true;
+						layer_rate_pin = lhz;
 						if ((lhz != hz) && (lhz >= (23 << 8)) && (lhz <= (27 << 8)))
 						{
 							trace (0, "частота по подаче видео-слоя: " HZ_FMT
@@ -5651,6 +5693,20 @@ cadence_done: ;
 							hz = lhz;
 						}
 					}
+				}
+
+				/* После собственной смены режима счётчик читает частоту экрана,
+				 * а не контента: 24 к/с на 24 Гц снова даёт ~25.0. Закреплённая
+				 * по слою частота не даёт огибающей отменить верное решение
+				 * (живой прогон `.42`: 24 → 50 через 16 с после переключения). */
+				if (layer_rate_pin &&
+				    (hz >= (23 << 8)) && (hz <= (27 << 8)) &&
+				    (hz != layer_rate_pin))
+				{
+					trace (2, "частота по слою закреплена на видео: " HZ_FMT
+					       " Гц вместо " HZ_FMT " Гц\n",
+					       HZ_ARGS (layer_rate_pin), HZ_ARGS (hz));
+					hz = layer_rate_pin;
 				}
 
 				/* Решение печатаем один раз: политика точности перещёлкивает
