@@ -60,6 +60,21 @@
             </intent-filter>
         </activity>
 
+        <!-- Пункт в списке приложений для мапперов кнопок: tvQuickActions и
+             подобные умеют запускать приложение, но не всегда — activity с
+             action/extras. Алиас даёт «AFR burst» как обычное приложение. -->
+        <activity-alias android:name="ru.cobra.zap.afrd.gui.BurstAlias"
+                        android:targetActivity="ru.cobra.zap.afrd.gui.BurstActivity"
+                        android:exported="true"
+                        android:label="@string/burst_alias_label"
+                        android:icon="@mipmap/ic_launcher"
+                        android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
+
         <!-- Команда сеанса broadcast-ом: для Button Mapper и shell. -->
         <receiver android:name="ru.cobra.zap.afrd.gui.BurstReceiver"
                   android:enabled="true" android:exported="true">

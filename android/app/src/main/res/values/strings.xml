@@ -228,6 +228,7 @@
     <string name="pause_mode_keep">Keep until the pause ends</string>
     <string name="pause_mode_timeout">Keep 20 s, then restore</string>
     <string name="pause_mode_off">Restore immediately</string>
+    <string name="burst_alias_label" translatable="false">AFR burst</string>
     <string name="burst_started">AFR session started</string>
     <string name="burst_too_soon">Too soon: the session can be started once per second</string>
     <string name="burst_cancelled">AFR session cancelled</string>

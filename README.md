@@ -548,12 +548,20 @@ DASH/HLS-сегментов, AV1-тракт декодера добавляет 
 | UDP API | `printf 'burst 40000\n' \| nc -u -w1 127.0.0.1 50505` | любому приложению и shell, root не нужен, приложение не нужно |
 | Broadcast | `am broadcast -p ru.reyter.afrd2 -a ru.reyter.afrd2.action.BURST --ei ms 40000` (отмена: `--ez cancel true`) | Button Mapper и подобным, root не нужен, нужно приложение |
 | Activity | `am start -n ru.reyter.afrd2/ru.cobra.zap.afrd.gui.BurstActivity --ei ms 40000` (или intent `ru.cobra.afrd.BURST`) | tvQuickActions: запуск activity |
+| Приложение «AFR burst» | в списке приложений выбрать **AFR burst** (activity-alias на BurstActivity); extras не нужны, длительность — `burst.ms` | tvQuickActions и подобным: одна кнопка, настраивать нечего |
 | Shell | `afrd --burst 40 <ini>` | Magisk-модулю и прошивке, root нужен |
 
 **`afrd --burst <сек>`** сначала пробует отправить команду живущему демону. Если демона нет —
 проводит сеанс сам и **завершается** по его окончании (процесса нет, пока не нажали). Если демон
 жив, но не ответил, второй не поднимается: команда завершается с ошибкой — иначе на боксе
 оказались бы два демона, дерущиеся за режим и порт.
+
+**«AFR burst» в списке приложений.** Это activity-alias на `BurstActivity`, поэтому
+мапперу не нужно знать имя класса или action: достаточно привязать кнопку к приложению
+«AFR burst». Запуск с лончера/маппера идёт с action `MAIN`, activity отправляет команду
+`burst` без аргумента (умолчание `burst.ms`) и сразу закрывается. Раньше приложение без
+extras отправляло `burst -1`, а демон такой аргумент отвергал (`bad args`) — кнопка
+молча не срабатывала; исправлено 04.11 (журнал §179.13).
 
 **Broadcast — только адресно.** Манифестный приёмник не получит неявный broadcast на
 Android 8+ (система отбрасывает его с причиной «Background execution not allowed»). Маппер должен

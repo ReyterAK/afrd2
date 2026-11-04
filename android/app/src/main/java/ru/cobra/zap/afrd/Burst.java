@@ -106,7 +106,12 @@ public class Burst
              * 700 мс давали ложное «daemon did not answer» при живой команде. */
             sock.setSoTimeout (4500);
 
-            byte[] cmd = ("burst " + ms + "\n").getBytes ("UTF-8");
+            /* ms < 0 — умолчание из burst.ms: демон ждёт `burst` без
+             * аргумента, а `burst -1` отвергает (parse_int не знает минуса).
+             * Из-за этого кнопка без extras (алиас/activity) молча не
+             * срабатывала — живая проверка 04.11. */
+            String line = (ms < 0) ? "burst\n" : ("burst " + ms + "\n");
+            byte[] cmd = line.getBytes ("UTF-8");
             InetAddress loopback = InetAddress.getByName ("127.0.0.1");
             sock.send (new DatagramPacket (cmd, cmd.length, loopback, API_PORT));
 
