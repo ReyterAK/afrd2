@@ -1,5 +1,9 @@
 [
     {
+        "merged": "ru.reyter.afrd2.burst.burstapp-merged_res-4:/drawable_ic_afrd_tv.xml.flat",
+        "source": "ru.reyter.afrd2.burst.burstapp-main-5:/drawable/ic_afrd_tv.xml"
+    },
+    {
         "merged": "/home/reyter/.gradle/daemon/8.2/ru.reyter.afrd2.burst.burstapp-merged_res-4:/mipmap-xhdpi_ic_launcher_round.png.flat",
         "source": "/home/reyter/.gradle/daemon/8.2/ru.reyter.afrd2.burst.burstapp-main-5:/mipmap-xhdpi/ic_launcher_round.png"
     },
