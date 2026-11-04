@@ -230,6 +230,8 @@
     <string name="pause_mode_timeout">Держать 20 с, потом вернуть</string>
     <string name="pause_mode_off">Возвращать сразу</string>
     <string name="burst_alias_label" translatable="false">AFR burst</string>
+    <string name="burst_shortcut_short">Сеанс AFR</string>
+    <string name="burst_shortcut_long">Запустить сеанс AFR</string>
     <string name="burst_started">Сеанс AFR запущен</string>
     <string name="burst_too_soon">Слишком часто: сеанс можно запускать раз в секунду</string>
     <string name="burst_cancelled">Сеанс AFR отменён</string>

@@ -549,6 +549,7 @@ DASH/HLS-сегментов, AV1-тракт декодера добавляет 
 | Broadcast | `am broadcast -p ru.reyter.afrd2 -a ru.reyter.afrd2.action.BURST --ei ms 40000` (отмена: `--ez cancel true`) | Button Mapper и подобным, root не нужен, нужно приложение |
 | Activity | `am start -n ru.reyter.afrd2/ru.cobra.zap.afrd.gui.BurstActivity --ei ms 40000` (или intent `ru.cobra.afrd.BURST`) | tvQuickActions: запуск activity |
 | Приложение «AFR burst» | в списке приложений выбрать **AFR burst** (activity-alias на BurstActivity); extras не нужны, длительность — `burst.ms` | tvQuickActions и подобным: одна кнопка, настраивать нечего |
+| Ярлык «Сеанс AFR» | статический shortcut приложения (`afr_burst`); tvQuickActions → Shortcut → AFRd2 → «Сеанс AFR» | tvQuickActions и системному лончеру; extras не нужны, длительность — `burst.ms` |
 | Shell | `afrd --burst 40 <ini>` | Magisk-модулю и прошивке, root нужен |
 
 **`afrd --burst <сек>`** сначала пробует отправить команду живущему демону. Если демона нет —

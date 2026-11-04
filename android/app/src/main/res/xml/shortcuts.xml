@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Статический ярлык «AFR burst»: его видят мапперы кнопок (tvQuickActions →
+     Shortcut) и системный лончер. Ведёт в BurstActivity с action BURST;
+     extras не нужны — длительность берётся из burst.ms. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="afr_burst"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/burst_shortcut_short"
+        android:shortcutLongLabel="@string/burst_shortcut_long">
+        <intent
+            android:action="ru.cobra.afrd.BURST"
+            android:targetPackage="ru.reyter.afrd2"
+            android:targetClass="ru.cobra.zap.afrd.gui.BurstActivity"/>
+    </shortcut>
+</shortcuts>
