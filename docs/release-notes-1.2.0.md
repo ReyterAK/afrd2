@@ -247,8 +247,8 @@
   `afrd2-magisk-arm64-v8a.zip` — Magisk → Модули → «Установить из памяти» →
   перезагрузка. Модуль ничего не пишет в системные разделы.
 * **Комплект для ROM-разработчика** (`afrd2-1.2.0-for-rom-dev.zip`): демоны под обе
-  ABI, профиль `afrd.ini`, APK и два документа — `afr-on-demand.md` и
-  `afr-on-demand-answer-to-rom.md`.
+  ABI, профиль `afrd.ini`, APK и три документа — `integration-rom.md` (встраивание в
+  прошивку), `afr-on-demand.md` и `afr-on-demand-answer-to-rom.md`.
 
 Подробности, ограничения и сборка из исходников — в
 [README](https://github.com/ReyterAK/afrd2/blob/master/README.md) и
@@ -262,7 +262,7 @@
 | `burstapp-release.apk` | 129 632 Б | `478143d5904eac26b33659689c801b97` | `a6d059985960cffccfef85d5f070dc6018a877af4d57626ce457dfbf7081106b` |
 | `afrd2-magisk-armeabi-v7a.zip` | 83 563 Б | `198dff8a21962fc7dfad9d24a1ce7fe7` | `b6a7ae13a4f88c159e60f7b010586480a31c86da388bef80052c3a9671f86104` |
 | `afrd2-magisk-arm64-v8a.zip` | 97 139 Б | `fbef4c6abd96349c9274668399c064d2` | `fc34caa08fc8c88fb9b821c9b46d1995cff271aba2c1c63fd8c70bd253ef74f6` |
-| `afrd2-1.2.0-for-rom-dev.zip` | 620 407 Б | `6a72caa144c4859e3e55fc79bff79582` | `91d9b8ac359818ddb848e24e5a1737fac76ce7ae7bda67a1e94da212cc258b3b` |
+| `afrd2-1.2.0-for-rom-dev.zip` | 634 324 Б | `18a55efe25f80f34ac07629e7e3d348d` | `a7014e6ab6fc6b1bdd8af331870086f71940f35073d84f4f90c5b4b0b74aeb87` |
 
 Демоны: `afrd-1.2.0-armeabi-v7a` 118 196 Б (`34749e03…`),
 `afrd-1.2.0-arm64-v8a` 167 520 Б (`352746e5…`). Строка «built at» может отставать
