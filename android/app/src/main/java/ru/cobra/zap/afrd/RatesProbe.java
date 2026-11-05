@@ -7,6 +7,7 @@
 
 package ru.cobra.zap.afrd;
 
+import android.os.Build;
 import android.util.Log;
 
 import java.io.File;
@@ -117,7 +118,14 @@ public class RatesProbe
         if (target == null)
             return FracProbe.UNKNOWN;
 
-        boolean viaHelper = new File (cacheDir, "afrd-disp.sh").exists ();
+        /* Способ применения — по платформе, а не по наличию файла: помощник
+         * лежит в кэше на любом боксе, но работает только на вендорном пути
+         * (Android 10/11). На legacy (6-9) режим задаётся записью в узел, и
+         * запуск помощника там бесполезен — он пытается поднять
+         * system_control, которого нет, и ждёт 10 с (журнал §209). */
+        boolean viaHelper = new File (cacheDir, "afrd-disp.sh").exists () &&
+                            (Build.VERSION.SDK_INT >= 29) &&
+                            (Build.VERSION.SDK_INT <= 30);
 
         List<String> apply = new ArrayList<> ();
         RootShell.run (new String [] {
