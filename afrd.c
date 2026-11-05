@@ -1740,6 +1740,11 @@ static int atv14_fastest_mode (int w, int h, int floor)
 			continue;
 		if (floor && (m->hz < floor))
 			continue;
+		/* Запрещённую частоту не берём и здесь: запасной путь не должен
+		 * обходить mode.blacklist.rates (подъём режима это уже соблюдает,
+		 * см. bump_target_mode). */
+		if (rate_is_blacklisted (m->hz))
+			continue;
 		if (m->hz > best_hz)
 		{
 			best_hz = m->hz;
@@ -1829,7 +1834,19 @@ static int atv14_select_mode (int hz, int w, int h, int floor)
 	if (sfmodes_select (g_sf_modes, g_sf_modes_n, hz, w, h,
 	                    g_mode_prefer_exact, atv14_rate_allowed,
 	                    fl ? &fl : NULL, &ch) != 0)
-		return -1;
+	{
+		/* Точного и кратного режима нет (ТВ не умеет частоту, или её запретил
+		 * пользователь) — самый быстрый режим этой геометрии: 24p на 60 Гц по
+		 * 3:2 понятнее, чем на 50 (2:2:2:3). */
+		int id = atv14_fastest_mode (w, h, floor);
+		if (id < 0)
+			return -1;
+
+		trace (1, "режима для " HZ_FMT " Гц нет — беру самый быстрый "
+		       HZ_FMT " Гц\n", HZ_ARGS (hz),
+		       HZ_ARGS (sfmodes_current_hz (g_sf_modes, g_sf_modes_n, id)));
+		return id;
+	}
 
 	if (ch.rate_n > 1)
 		trace (1, "режим " HZ_FMT " Гц выбран как кратный (x%d) для " HZ_FMT " Гц\n",
@@ -1930,7 +1947,21 @@ static int mode_resolve (const platform_t *plat, int hz, int w, int h, int floor
 	                        g_current_mode.interlaced, g_mode_prefer_exact,
 	                        floor, rate_allowed_cb, NULL,
 	                        &best, nm, sizeof (nm), &mhz) != 0)
-		return -1;
+	{
+		/* Точного и кратного режима нет: ТВ не умеет эту частоту, или её
+		 * запретил пользователь (mode.blacklist.rates). Тогда гнать контент
+		 * на самый быстрый режим этой геометрии: 24p на 60 Гц по 3:2
+		 * понятнее, чем на 50 (2:2:2:3), и лучше, чем остаться на частоте
+		 * предыдущего ролика. Раньше здесь был отказ, а «кратность» с
+		 * допуском 4.3 % уводила 24p на 50 Гц. */
+		int fastest = bump_target_mode (plat, w, h);
+		if ((fastest < 0) || (floor && (atv14_mode_hz (plat, fastest) < floor)))
+			return -1;
+
+		trace (1, "режима для " HZ_FMT " Гц нет — беру самый быстрый "
+		       HZ_FMT " Гц\n", HZ_ARGS (hz), HZ_ARGS (atv14_mode_hz (plat, fastest)));
+		return fastest;
+	}
 
 	/* Идентификатор для решений цикла — индекс в списке (см. atv_current_target) */
 	int idx = -1;

@@ -496,6 +496,13 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       path - a blacklist entry covers the whole group; on Android 12-14 both
       members come as separate modes and only 23.98 can be blocked alone.
 
+    * Multiples are exact now: mode selection allowed a 4.3 % error - exactly
+      the gap between 23.976 and 25. That made 50 Hz look like a "double" for
+      24p, so blocking 24 sent the content to 50. The error is 1.2 % now, and
+      when no suitable mode exists at all (the TV lacks the rate, or the user
+      blocked it) the fastest mode of that geometry is used: 24p goes to 60 Hz
+      (distributed 3:2), not to 50.
+
     * "HDMI format (color space)" (cs.select) is a choice of three items instead
       of a line with regular expressions; the 4K bandwidth rule is kept in each.
 

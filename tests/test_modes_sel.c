@@ -202,6 +202,36 @@ static void test_blacklist_group (void)
 	assert (!mode_rate_blacklisted (0, bl_24, 1, present_one24, NULL));
 }
 
+/* Кратность — это точное удвоение/утроение, а не соседний класс частот.
+ * 23.976 и 25 различаются на 4.3 %, и старый допуск (11/256) позволял 50 Гц
+ * «быть удвоением» для 24p: при запрете 1080p24hz демон уводил 23.98-контент
+ * на 50 Гц (живой прогон `.42`, 05.11). */
+static display_mode_t modes_no24 [] =
+{
+	{ "1080p50hz", 1920, 1080, 50, false, false },
+	{ "1080p60hz", 1920, 1080, 60, false, false },
+};
+#define N_MODES_NO24 ((int)(sizeof (modes_no24) / sizeof (modes_no24 [0])))
+
+static void test_no_fake_multiple (void)
+{
+	char name [32];
+	int hz = 0;
+
+	/* 24p без режима 24 — подходящего режима нет вовсе (60 Гц тоже не
+	 * кратна: 2.5x), демон оставит текущий режим. */
+	assert (modes_select_by_hz (modes_no24, N_MODES_NO24, 6138, 1920, 1080, false,
+	                            0, 0, allow_all, NULL, NULL, name, sizeof (name), &hz) == -1);
+
+	/* 25 -> 50 и 30 -> 60 остаются законным удвоением. */
+	assert (modes_select_by_hz (modes_no24, N_MODES_NO24, 25 * 256, 1920, 1080, false,
+	                            0, 0, allow_all, NULL, NULL, name, sizeof (name), &hz) == 0);
+	assert (strcmp (name, "1080p50hz") == 0);
+	assert (modes_select_by_hz (modes_no24, N_MODES_NO24, 30 * 256, 1920, 1080, false,
+	                            0, 0, allow_all, NULL, NULL, name, sizeof (name), &hz) == 0);
+	assert (strcmp (name, "1080p60hz") == 0);
+}
+
 /* Нет подходящего режима — честный отказ, а не «первый попавшийся». */
 static void test_no_match (void)
 {
@@ -264,6 +294,7 @@ int main (void)
 	test_floor ();
 	test_blacklist ();
 	test_blacklist_group ();
+	test_no_fake_multiple ();
 	test_no_match ();
 
 	printf ("modes_sel: OK\n");

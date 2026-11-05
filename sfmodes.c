@@ -9,8 +9,10 @@
 #define SF_HZ_TOL	32
 
 /* Правила выбора кратного режима (sfmodes_select): допуск ошибки частоты
- * 11/256 = 4.3 % и максимальная кратность 3 — как в legacy-рейтинге режимов. */
-#define SF_RATE_TOL	11
+ * 3/256 ≈ 1.2 % и максимальная кратность 3 — как в legacy-рейтинге режимов.
+ * Допуск 11/256 (4.3 %) убран: он мостил 23.976 и 25, и 50 Гц считалась
+ * «удвоением» для 24p-контента (живой прогон `.42`, 05.11). */
+#define SF_RATE_TOL	3
 #define SF_MULT_MAX	3
 
 static int parse_line (const char *line, sf_mode_t *out)
@@ -126,7 +128,7 @@ int sfmodes_select (const sf_mode_t *modes, int n, int hz, int width, int height
                     sf_choice_t *out)
 {
 	/* Те же правила, что в legacy-рейтинге (afrd.c): допуск ошибки частоты
-	 * 11/256 = 4.3 %, кратность не выше 3 (rate_n > 3 даёт тот же бонус). */
+	 * 3/256 ≈ 1.2 %, кратность не выше 3 (rate_n > 3 даёт тот же бонус). */
 	if (hz <= 0)
 		return -1;
 

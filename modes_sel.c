@@ -14,6 +14,15 @@
 #include "modes_sel.h"
 #include "fps_class.h"
 
+/* Допуск при подборе режима: 3/256 ≈ 1.2 % ошибки частоты (fixed-point, где
+ * 0x100 = ровно кратная). Раньше было 11/256 (4.3 %) — ровно столько, сколько
+ * между 23.976 и 25, и из-за этого 50 Гц считалась «удвоением» для 24p:
+ * при запрете 1080p24hz демон уводил 23.98-контент на 50 Гц (живой прогон
+ * `.42`, 05.11). Кратность — это точное x2/x3 (25→50, 30→60, 23.976→47.95),
+ * а не соседний класс частот; то же правило уже работало в
+ * atv14_multiple_mode (допуск 1 %). */
+#define MODES_RATE_TOL	3
+
 int display_mode_hz (display_mode_t *mode)
 {
 	if (mode->fractional)
@@ -129,8 +138,9 @@ int modes_select_by_hz (const display_mode_t *modes, int n, int hz,
 {
 	/* Те же правила, что были в afrd.c: select_mode (legacy-путь):
 	 * a) совпадают ширина, высота и чересстрочность;
-	 * b) частота режима делится на частоту контента с ошибкой < 4.3 %
-	 *    (разница 23.976 и 25 Гц);
+	 * b) частота режима — кратная частоте контента (x1/x2/x3) с ошибкой до
+	 *    3/256 ≈ 1.2 %; допуск 11/256 (4.3 %) убран: он ровно мостил
+	 *    23.976 и 25 и позволял 50 Гц «быть удвоением» для 24p-контента;
 	 * c) при prefer_exact=0 предпочитается высокая кратная частота
 	 *    (50 Гц лучше 25 Гц для 25-фпс видео), при 1 — ближайшая. */
 	unsigned best_rating = 0;
@@ -156,11 +166,11 @@ int modes_select_by_hz (const display_mode_t *modes, int n, int hz,
 		}
 
 		unsigned delta = (unsigned)abs ((int)(rate - 0x100));
-		if (delta > 11)
-			continue; // freq error > 4.3%
+		if (delta > MODES_RATE_TOL)
+			continue; /* частота не кратная контенту */
 
 		// rating is larger as delta is closer to 1.0 rate
-		int rating = (11 - delta) * 16;
+		int rating = (MODES_RATE_TOL - delta) * 16;
 
 		unsigned nn = (rate_n > 3) ? 3 : (rate_n - 1);
 		rating += 4 * (prefer_exact ? (3 - nn) : nn);
