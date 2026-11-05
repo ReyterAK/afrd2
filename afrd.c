@@ -2704,6 +2704,11 @@ static int atv14_restore_mode (const platform_t *plat, int sf_id, const char *sk
 {
 	int rc;
 
+	/* Причина возврата — в журнал: без неё такие смены выглядят «сами собой»
+	 * (живой разбор `.42`, 06.11: 50 -> 60 без единой строки о причине). */
+	if (skipped)
+		trace (1, "возврат режима: %s\n", skipped);
+
 	colorspace_hold (true);
 	rc = atv14_apply_mode (plat, sf_id, skipped);
 	colorspace_hold (false);
