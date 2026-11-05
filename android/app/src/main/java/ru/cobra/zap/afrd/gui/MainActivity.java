@@ -254,54 +254,47 @@ public class MainActivity extends Activity
         return updateConfig ();
     }
 
-    /* Умолчание switch.bump.pkg: демон применяет механики зажима только
-     * перечисленным плеерам. По умолчанию — штатный YouTube (зажим измерен,
-     * журнал §28.9, §47.2). OTT Navigator на Android 10+ сам управляет
-     * частотой (журнал §115) и по умолчанию исключён через switch.skip.pkg.
-     * Проставляем один раз, чтобы строка настроек показывала то же, что делает
-     * демон; очищенный пользователем список не возвращаем. */
+    /* Прежнее умолчание switch.bump.pkg — штатный YouTube. Решение владельца
+     * 06.11: по умолчанию механики зажима не применяются никому — на ATV11
+     * сброс потолка перезапускает сервис кодека, даёт паузу в начале ролика и
+     * сбивает замер, а зажима у YouTube там не наблюдалось (журнал §211).
+     * Установкам, где в настройках осталось ровно это старое умолчание, список
+     * очищаем один раз; добавленные пользователем плееры не трогаем. */
     private void bumpPkgSeed ()
     {
         if (!Control.isAtv14 ())
             return;
 
         SharedPreferences req = getSharedPreferences ("requisites", 0);
-        if (req.getBoolean ("bump_pkg_seed2", false))
+        if (req.getBoolean ("bump_pkg_clear1", false))
             return;
 
-        if (!mOptions.contains ("switch_bump_pkg"))
-            mOptions.edit ().putString ("switch_bump_pkg", kSkipYoutube).apply ();
+        if (kSkipYoutube.equals (mOptions.getString ("switch_bump_pkg", "").trim ()))
+            mOptions.edit ().putString ("switch_bump_pkg", "").apply ();
 
-        req.edit ().putBoolean ("bump_pkg_seed2", true).apply ();
+        req.edit ().putBoolean ("bump_pkg_clear1", true).apply ();
     }
 
-    /* Умолчание switch.ceiling.pkg: сброс «потолка» применяется только
-     * перечисленным плеерам. По умолчанию — штатный YouTube, как и у демона
-     * (afrd_init подставляет его при незаданном ключе). Проставляем один раз,
-     * чтобы список в настройках показывал то же, что делает демон; очищенный
-     * пользователем список не возвращаем (иначе пустое значение — «сброс
-     * никому» — молча вернулось бы к YouTube). На старом пути ключ не
-     * действует, там строки нет (SettingsFragment.kInactiveOnLegacy). */
+    /* То же для switch.ceiling.pkg: старое умолчание — штатный YouTube,
+     * теперь по умолчанию пусто. */
     private void ceilingPkgSeed ()
     {
         if (!Control.isAtv14 ())
             return;
 
         SharedPreferences req = getSharedPreferences ("requisites", 0);
-        if (req.getBoolean ("ceiling_pkg_seed1", false))
+        if (req.getBoolean ("ceiling_pkg_clear1", false))
             return;
 
-        if (!mOptions.contains ("switch_ceiling_pkg"))
-            mOptions.edit ().putString ("switch_ceiling_pkg", kSkipYoutube).apply ();
+        if (kSkipYoutube.equals (mOptions.getString ("switch_ceiling_pkg", "").trim ()))
+            mOptions.edit ().putString ("switch_ceiling_pkg", "").apply ();
 
-        req.edit ().putBoolean ("ceiling_pkg_seed1", true).apply ();
+        req.edit ().putBoolean ("ceiling_pkg_clear1", true).apply ();
     }
 
     /* Миграция устаревшей поправки AV1: у ранних сборок в настройках лежит
      * fps.correct.av1=auto, а демон с 05.11 считает это значение выключенным
-     * (§185). Без переноса поправка молча перестаёт работать, и 24p в Cobalt
-     * снова читается как 25 — режим уходит на 50 Гц. Правило и тест —
-     * Av1Migrate/tests/Av1MigrateTest.java. */
+     * (§185). Правило и тест — Av1Migrate/tests/Av1MigrateTest.java. */
     private void av1Migrate ()
     {
         String av1 = mOptions.getString ("fps_correct_av1", null);
