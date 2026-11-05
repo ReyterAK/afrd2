@@ -7,6 +7,8 @@
 
 package ru.cobra.zap.afrd;
 
+import android.util.Log;
+
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,6 +34,8 @@ import java.util.List;
  */
 public class RatesProbe
 {
+    private static final String TAG = "afrd2";
+
     public static final String FRAC_NODE = "/sys/class/amhdmitx/amhdmitx0/frac_rate_policy";
     public static final String MODE_NODE = "/sys/class/display/mode";
     public static final String VINFO_NODE = "/sys/class/display/vinfo";
@@ -53,58 +57,117 @@ public class RatesProbe
     public static int measure (File cacheDir)
     {
         if (!supported ())
+        {
+            Log.i (TAG, "проба: нет узлов " + FRAC_NODE + " / " + MODE_NODE);
             return FracProbe.UNKNOWN;
+        }
 
+        /* Шаги нарочно раздельными вызовами: су-сессия короткоживущая, а сон
+         * внутри неё увеличивает шанс, что читатель упрётся в срок. */
         List<String> out = new ArrayList<> ();
-        if (RootShell.run (new String [] {
+        int rc = RootShell.run (new String [] {
                 "echo M=$(cat " + MODE_NODE + ")",
                 "echo P=$(cat " + FRAC_NODE + ")",
-                "echo N=$(grep -c hz " + DISP_CAP + " 2>/dev/null)",
-            }, out) != 0)
-            return FracProbe.UNKNOWN;
+            }, out);
+        Log.i (TAG, "проба: чтение rc=" + rc + " out=" + out);
 
         String mode = FracProbe.tagValue (out, "M=");
         String policy = FracProbe.tagValue (out, "P=");
         if (mode.isEmpty () || policy.isEmpty ())
             return FracProbe.UNKNOWN;
 
-        String target = FracProbe.targetMode (modeNames (), mode);
+        List<String> names = new ArrayList<> ();
+        RootShell.run (new String [] { "cat " + DISP_CAP }, names);
+        List<String> modes = FracProbe.modeNamesFromLines (names);
+        String target = FracProbe.targetMode (modes, mode);
+        Log.i (TAG, "проба: режим=" + mode + " политика=" + policy + " режимов=" + modes.size ()
+                   + " цель=" + target + " cache=" + cacheDir.getAbsolutePath ()
+                   + " helper=" + new File (cacheDir, "afrd-disp.sh").exists ());
         if (target == null)
             return FracProbe.UNKNOWN;
 
         boolean viaHelper = new File (cacheDir, "afrd-disp.sh").exists ();
-        String applyTarget = applyCmd (viaHelper, cacheDir, target);
 
-        List<String> probe = new ArrayList<> ();
+        List<String> apply = new ArrayList<> ();
         RootShell.run (new String [] {
                 "echo 0 > " + FRAC_NODE,
-                applyTarget,
-                "sleep 3",
+                applyCmd (viaHelper, cacheDir, target) + "; echo RC=$?",
+            }, apply);
+        Log.i (TAG, "проба: применение " + target + " out=" + apply);
+
+        sleep (3000);
+
+        List<String> after = new ArrayList<> ();
+        RootShell.run (new String [] {
                 "echo P2=$(cat " + FRAC_NODE + ")",
                 "echo F2=$(grep -m1 'frac:' " + VINFO_NODE + ")",
                 "echo M2=$(cat " + MODE_NODE + ")",
-            }, probe);
+            }, after);
+        Log.i (TAG, "проба: после применения out=" + after);
 
-        String policyAfter = FracProbe.tagValue (probe, "P2=");
-        String fracAfter = FracProbe.tagValue (probe, "F2=");
-        String modeAfter = FracProbe.tagValue (probe, "M2=");
+        String policyAfter = FracProbe.tagValue (after, "P2=");
+        String fracAfter = FracProbe.tagValue (after, "F2=");
+        String modeAfter = FracProbe.tagValue (after, "M2=");
 
-        /* Возврат в исходное состояние — в любом случае, даже если проба
-         * не удалась: режим и политику пользователь не заказывал. */
+        /* Запасной путь: помощник не сменил режим (или его нет, а путь
+         * вендорный) — пробуем запись в узел режима. На Android 10/11 это
+         * обычно не работает, но проверить дешевле, чем вернуть «не удалось». */
+        if (!target.equals (modeAfter))
+        {
+            List<String> direct = new ArrayList<> ();
+            RootShell.run (new String [] {
+                    "echo " + target + " > " + MODE_NODE + "; echo RC=$?",
+                }, direct);
+            sleep (2500);
+
+            after = new ArrayList<> ();
+            RootShell.run (new String [] {
+                    "echo P3=$(cat " + FRAC_NODE + ")",
+                    "echo F3=$(grep -m1 'frac:' " + VINFO_NODE + ")",
+                    "echo M3=$(cat " + MODE_NODE + ")",
+                }, after);
+            Log.i (TAG, "проба: запись в узел out=" + direct + " after=" + after);
+
+            String m3 = FracProbe.tagValue (after, "M3=");
+            if (target.equals (m3))
+            {
+                policyAfter = FracProbe.tagValue (after, "P3=");
+                fracAfter = FracProbe.tagValue (after, "F3=");
+                modeAfter = m3;
+            }
+        }
+
+        /* Возврат в исходное состояние — в любом случае: режим и политику
+         * пользователь не заказывал. */
         RootShell.run (new String [] {
                 "echo " + policy + " > " + FRAC_NODE,
                 applyCmd (viaHelper, cacheDir, mode),
-                "sleep 2",
             }, new ArrayList<String> ());
 
-        /* Режим не сменился — значит и политика не применялась, мерить нечего. */
         if (!target.equals (modeAfter))
+        {
+            Log.i (TAG, "проба: режим не сменился (ждали " + target + ", получили " + modeAfter + ")");
             return FracProbe.UNKNOWN;
+        }
 
         boolean stuckZero = "0".equals (policyAfter.trim ());
         boolean fracZero = FracProbe.fracZero (fracAfter);
+        Log.i (TAG, "проба: узел=" + policyAfter + " frac=" + fracAfter
+                   + " -> " + (FracProbe.verdict (stuckZero, fracZero) == FracProbe.HELD
+                               ? "целые доступны" : "только дробные"));
 
         return FracProbe.verdict (stuckZero, fracZero);
+    }
+
+    private static void sleep (long ms)
+    {
+        try
+        {
+            Thread.sleep (ms);
+        }
+        catch (InterruptedException ignored)
+        {
+        }
     }
 
     /** Команда применения режима: вендорный помощник или запись в узел. */
