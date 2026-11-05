@@ -300,14 +300,15 @@
 
 | Файл | Размер | MD5 | SHA-256 |
 |---|---|---|---|
-| `ru.reyter.afrd2-1.2.0-release.apk` | 509 790 Б | `96cdfddabb103fdf3a32a643c643354e` | `103a4051193992e0cf23bdd8fbab30ec780c42e4cd5fea88d01c073df92572f2` |
-| `burstapp-release.apk` | 129 632 Б | `982cdf1ed19cb5d545ccb2f005eb2bea` | `736b9a24f98f1bbd6ce29450da1b09c69d2a2866eddb15f98350b5e2b945b6fc` |
-| `afrd2-magisk-armeabi-v7a.zip` | 83 781 Б | `084be3bc7957c65705c0bbe80d5a07da` | `4ca18cacdd43586d55c4110f15f4db3872c61e1fcc4146e1aafc33e32b945616` |
-| `afrd2-magisk-arm64-v8a.zip` | 97 155 Б | `23006b8ab6a09fb0d1f798ab77c56d36` | `19fc717a9e0673a44916f0aca35e685e36a6f49bc971a528880f6c65f1b34198` |
-| `afrd2-1.2.0-for-rom-dev.zip` | 635 582 Б | `736a3cdaf8eb931c37119d52eaaa10d9` | `361e0d8ef4451061774dadac12a4a9c3b063bbbad52e81f88fecc0dfb991e9c2` |
+| `ru.reyter.afrd2-1.2.0-release.apk` | 517 533 Б | `92c98a726aa3d3b8e87778e7c222bd04` | `1555509f4cef97d24f55cc310f6b9784b4b6efcbb50dc5e9cbc54856eac6ed74` |
+| `burstapp-release.apk` | 129 632 Б | `9dc5b22bad538b380211df7b54a84001` | `ee57f9b515f90e25ebc3dc8cf01466cf53eb87178609d672c321084dd71b6d58` |
+| `afrd2-magisk-armeabi-v7a.zip` | 84 190 Б | `16f89d82fcec04cb6e8d7516d08633de` | `e0e5254b8ed7ee25421f7a5c914e28a90a8f0de31d94f6c8330c2e32a69ef780` |
+| `afrd2-magisk-arm64-v8a.zip` | 97 858 Б | `eccf2f12ec0d0e00f84a1e8545a7b289` | `07497e6711151e865ea0829301c331bbdb5a1b151bf5ea3a303d664ecae6565c` |
+| `afrd2-1.2.0-for-rom-dev.zip` | 642 809 Б | `06e385958375ff350e7caae794660a07` | `62b0c52ff3838a754ff1af47fe3153951186a32a2caa0d064e79ef5afd3fe272` |
+| `README.md.zip` | 51 315 Б | `69476e653d2996faab918ce7ea9e5f36` | `710c3c8d3e37830b03f3af121db0f3adefff5f90ae014f137e004c8d8bb09145` |
 
-Демоны: `afrd-1.2.0-armeabi-v7a` 118 288 Б (`44f41b69…`),
-`afrd-1.2.0-arm64-v8a` 167 648 Б (`861caf87…`). Строка «built at» может отставать
+Демоны: `afrd-1.2.0-armeabi-v7a` 118 912 Б (`08220bd1…`),
+`afrd-1.2.0-arm64-v8a` 169 056 Б (`c8363526…`). Строка «built at» может отставать
 на одну сборку — сверяйтесь по размеру/md5.
 
 APK подписан релизным ключом; обновления ставятся поверх только той же подписью.
