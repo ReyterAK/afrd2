@@ -56,9 +56,10 @@ mkdir -p out/host-tests/java
 	android/app/src/main/java/ru/cobra/zap/afrd/IniMerge.java \
 	android/app/src/main/java/ru/cobra/zap/afrd/IniRewrite.java \
 	android/app/src/main/java/ru/cobra/zap/afrd/Av1Migrate.java \
+	android/app/src/main/java/ru/cobra/zap/afrd/FracProbe.java \
 	tests/PkgValuesTest.java tests/SeedTest.java \
 	tests/RateListTest.java tests/CsPolicyTest.java tests/IniValueTest.java \
-	tests/IniMergeTest.java tests/IniRewriteTest.java tests/Av1MigrateTest.java && {
+	tests/IniMergeTest.java tests/IniRewriteTest.java tests/Av1MigrateTest.java tests/FracProbeTest.java && {
 	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.PkgValuesTest &&
 	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.SeedTest &&
 	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.RateListTest &&
@@ -66,7 +67,8 @@ mkdir -p out/host-tests/java
 	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.IniValueTest &&
 	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.IniMergeTest &&
 	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.IniRewriteTest &&
-	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.Av1MigrateTest
+	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.Av1MigrateTest &&
+	"$JAVA" -cp out/host-tests/java ru.cobra.zap.afrd.FracProbeTest
 } || status=1
 
 exit $status

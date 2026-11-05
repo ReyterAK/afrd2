@@ -42,6 +42,16 @@
         соответственно
     </string>
     <string name="prefs_mode_blacklist_rates">Запрещённые частоты развёртки</string>
+    <string name="prefs_probe_rates">Измерить фактические частоты</string>
+    <string name="prefsum_probe_rates">Переключит режим дважды и покажет в списке выше частоту, с которой
+        режим работает на самом деле: прошивка может подменять 24,000 на 23,976, и тогда запрещать
+        нужно именно 23,976. Ролик лучше остановить — экран мигнёт</string>
+    <string name="probe_rates_result">Измерено %1$s: %2$s</string>
+    <string name="probe_verdict_fract">только дробные (23,976 / 29,97 / 59,94)</string>
+    <string name="probe_verdict_held">доступны и целые (24 / 30 / 60)</string>
+    <string name="probe_rates_failed">Не удалось измерить: нужен root и смена режима. Остановите ролик
+        и попробуйте снова</string>
+    <string name="probe_rates_done">Готово: подписи частот обновлены</string>
     <string name="prefsum_mode_blacklist_rates">Частоты, которые не следует использовать: выбираются
         из поддерживаемых Вашим ТВ. На Android 10/11 «24» и «23.976» — один режим, запрет отсекает
         оба; на Android 12–14 это разные режимы, отмечайте нужный

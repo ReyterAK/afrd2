@@ -501,6 +501,14 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       and 30 - the screen simply ran at 60 Hz); now it is used only when no
       mode names and no mode table were found.
 
+    * "Measure actual refresh rates" - a probe for Android 6-11: there is no
+      passive source (disp_cap lists mode names, vinfo knows only the current
+      timing), so the blacklist labels come from the probe. It switches the mode
+      twice (the screen blinks) and then shows what the mode really outputs:
+      23.976 / 29.97 / 59.94, or "23.976 / 24" when the driver keeps the integer
+      value. Before the probe the label is the nominal; the result is cached with
+      a date.
+
     * Multiples are exact now: mode selection allowed a 4.3 % error - exactly
       the gap between 23.976 and 25. That made 50 Hz look like a "double" for
       24p, so blocking 24 sent the content to 50. The error is 1.2 % now, and

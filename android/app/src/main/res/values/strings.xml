@@ -42,6 +42,16 @@
         always mean that
     </string>
     <string name="prefs_mode_blacklist_rates">Blacklisted refresh rates</string>
+    <string name="prefs_probe_rates">Measure actual refresh rates</string>
+    <string name="prefsum_probe_rates">Switches the mode twice and shows in the list above the rate the
+        mode really runs at: the firmware may substitute 23.976 for 24.000, and then 23.976 is what
+        to block. Stop the video first — the screen will blink</string>
+    <string name="probe_rates_result">Measured %1$s: %2$s</string>
+    <string name="probe_verdict_fract">fractional only (23.976 / 29.97 / 59.94)</string>
+    <string name="probe_verdict_held">integer rates also available (24 / 30 / 60)</string>
+    <string name="probe_rates_failed">Measurement failed: root and a mode switch are required. Stop the
+        video and try again</string>
+    <string name="probe_rates_done">Done: rate labels updated</string>
     <string name="prefsum_mode_blacklist_rates">Refresh rates not to be used; pick from the rates your
         TV supports. On Android 10/11 24 and 23.976 are one mode — blocking either hides both;
         on Android 12–14 they are separate modes, pick the one you need

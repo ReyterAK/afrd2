@@ -86,6 +86,10 @@
         <ru.cobra.zap.xprefs.XRatesPreference android:key="mode_blacklist_rates"
                             android:summary="@string/prefsum_mode_blacklist_rates"
                             android:title="@string/prefs_mode_blacklist_rates"/>
+        <!-- Подписи частот в списке выше — по результату этой пробы. -->
+        <Preference android:key="probe_rates"
+                    android:summary="@string/prefsum_probe_rates"
+                    android:title="@string/prefs_probe_rates"/>
     </PreferenceScreen>
 
     <PreferenceScreen android:fragment="ru.cobra.zap.afrd.gui.SettingsFragment"

@@ -27,10 +27,14 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Toast;
 
+import java.io.File;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Vector;
 
@@ -38,8 +42,10 @@ import ru.cobra.zap.afrd.Apps;
 import ru.cobra.zap.afrd.Control;
 import ru.cobra.zap.afrd.CsFormats;
 import ru.cobra.zap.afrd.CsPolicy;
+import ru.cobra.zap.afrd.FracProbe;
 import ru.cobra.zap.afrd.PkgValues;
 import ru.cobra.zap.afrd.RateList;
+import ru.cobra.zap.afrd.RatesProbe;
 import ru.cobra.zap.afrd.TvModes;
 import ru.cobra.zap.xprefs.XAppsPreference;
 import ru.cobra.zap.xprefs.XListPreference;
@@ -304,15 +310,118 @@ public class SettingsFragment extends PreferenceFragment
         setRatesSummary (pref);
     }
 
+    /* Проба фактических частот: подписи в списке запрещённых частот строятся по
+     * её результату (FracProbe/RatesProbe). Кнопка нужна потому, что пассивного
+     * источника нет: disp_cap отдаёт только имена режимов, vinfo — только
+     * текущий тайминг, а поведение frac_rate_policy — свойство прошивки. */
+    private void setupProbePref ()
+    {
+        Preference p = findPreference ("probe_rates");
+        if (p == null)
+            return;
+
+        if (!RatesProbe.supported ())
+        {
+            PreferenceScreen screen = getPreferenceScreen ();
+            if (screen != null)
+                screen.removePreference (p);
+            return;
+        }
+
+        p.setOnPreferenceClickListener (new Preference.OnPreferenceClickListener ()
+        {
+            @Override
+            public boolean onPreferenceClick (Preference preference)
+            {
+                runRatesProbe (preference);
+                return true;
+            }
+        });
+
+        setProbeSummary (p);
+    }
+
+    private void runRatesProbe (final Preference pref)
+    {
+        final Activity act = getActivity ();
+        if (act == null)
+            return;
+
+        pref.setEnabled (false);
+        new AsyncTask<Void, Void, Integer> ()
+        {
+            @Override
+            protected Integer doInBackground (Void... params)
+            {
+                return RatesProbe.measure (act.getCacheDir ());
+            }
+
+            @Override
+            protected void onPostExecute (Integer verdict)
+            {
+                if (!isAdded () || (getActivity () == null))
+                    return;
+
+                pref.setEnabled (true);
+                if ((verdict == null) || (verdict == FracProbe.UNKNOWN))
+                {
+                    Toast.makeText (getActivity (), R.string.probe_rates_failed,
+                                    Toast.LENGTH_LONG).show ();
+                    return;
+                }
+
+                getActivity ().getSharedPreferences ("requisites", 0).edit ()
+                    .putInt ("rates_verdict", verdict)
+                    .putString ("rates_verdict_at",
+                                new SimpleDateFormat ("dd.MM", Locale.US).format (new Date ()))
+                    .apply ();
+
+                setProbeSummary (pref);
+                Toast.makeText (getActivity (), R.string.probe_rates_done,
+                                Toast.LENGTH_LONG).show ();
+            }
+        }.execute ();
+    }
+
+    /** Результат пробы из настроек приложения (FracProbe.UNKNOWN — не мерили). */
+    private int ratesVerdict ()
+    {
+        Activity act = getActivity ();
+        if (act == null)
+            return FracProbe.UNKNOWN;
+
+        return act.getSharedPreferences ("requisites", 0)
+                  .getInt ("rates_verdict", FracProbe.UNKNOWN);
+    }
+
+    private void setProbeSummary (Preference pref)
+    {
+        Activity act = getActivity ();
+        int v = ratesVerdict ();
+        String at = (act == null) ? "" : act.getSharedPreferences ("requisites", 0)
+                                             .getString ("rates_verdict_at", "");
+
+        if ((v == FracProbe.UNKNOWN) || at.isEmpty ())
+        {
+            pref.setSummary (R.string.prefsum_probe_rates);
+            return;
+        }
+
+        pref.setSummary (getString (R.string.probe_rates_result, at,
+            getString (v == FracProbe.FRACT ? R.string.probe_verdict_fract
+                                            : R.string.probe_verdict_held)));
+    }
+
     private void setRatesSummary (XRatesPreference pref)
     {
         List<String> rates = RateList.parse (pref.getRates ());
+        int verdict = ratesVerdict ();
         StringBuilder sb = new StringBuilder ();
         for (String r : rates)
         {
             if (sb.length () > 0)
                 sb.append (", ");
-            sb.append (r);
+            sb.append (FracProbe.label (r, verdict));
         }
 
         CharSequence hint = mRatesHint.get (pref.getKey ());
@@ -359,9 +468,18 @@ public class SettingsFragment extends PreferenceFragment
         for (int i = 0; i < items.size (); i++)
             checked [i] = selected.contains (items.get (i));
 
+        /* Подписи — по результату пробы (FracProbe): на Android 6-11 имя режима
+         * одно на 24.000 и 23.976, и показывать номинал, когда экран работает
+         * на 23.976, значит дезинформировать. Значение настройки при этом
+         * остаётся прежним токеном — демон сравнивает частоты по группе. */
+        int verdict = ratesVerdict ();
+        CharSequence [] labels = new CharSequence [items.size ()];
+        for (int i = 0; i < items.size (); i++)
+            labels [i] = FracProbe.label (items.get (i), verdict);
+
         AlertDialog.Builder b = new AlertDialog.Builder (getActivity ())
             .setTitle (R.string.rates_title)
-            .setMultiChoiceItems (items.toArray (new CharSequence [0]), checked,
+            .setMultiChoiceItems (labels, checked,
                 new DialogInterface.OnMultiChoiceClickListener ()
                 {
                     @Override
@@ -546,6 +664,7 @@ public class SettingsFragment extends PreferenceFragment
                  * пометку о недействующей настройке. */
                 setupAppsPrefs ();
                 setupRatesPref ();
+                setupProbePref ();
                 setupCsPref ();
                 setupAv1Pref ();
                 removeInapplicable (getPreferenceScreen ());
