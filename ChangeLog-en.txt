@@ -507,7 +507,11 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       twice (the screen blinks) and then shows what the mode really outputs:
       23.976 / 29.97 / 59.94, or "23.976 / 24" when the driver keeps the integer
       value. Before the probe the label is the nominal; the result is cached with
-      a date.
+      a date. How the mode is applied depends on the platform: 6-9 writes
+      /sys/class/display/mode, 10-11 uses the vendor helper, 12-14 hides the
+      item (SurfaceFlinger owns the mode there and the list already holds the
+      real 23.98 and 24.00). Old kernels have no frac field in vinfo - the
+      integer/fractional check uses sync_duration_num/den.
 
     * Multiples are exact now: mode selection allowed a 4.3 % error - exactly
       the gap between 23.976 and 25. That made 50 Hz look like a "double" for
