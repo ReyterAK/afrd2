@@ -505,7 +505,7 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       and 30 - the screen simply ran at 60 Hz); now it is used only when no
       mode names and no mode table were found.
 
-    * "Measure actual refresh rates" - a probe for Android 6-11: there is no
+    * "Check fractional rates" - a probe for Android 6-11: there is no
       passive source (disp_cap lists mode names, vinfo knows only the current
       timing), so the blacklist labels come from the probe. It switches the mode
       twice (the screen blinks) and then shows what the mode really outputs:
