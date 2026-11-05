@@ -38,7 +38,7 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       on 1080i50 no longer flickers the mode.
 
     * "About": the "Testers" field is back (as in the original AFRd) —
-      Acorn@4PDA, SlimHouse@4PDA.
+      Acorn@4PDA, SlimHouse@4PDA, valerash88@4PDA.
 
     * "HDMI format" (cs.select) supports YUV 4:2:2 and 4:2:0 again: the list
       of items is built from what the TV reports (the dc_cap node) instead of

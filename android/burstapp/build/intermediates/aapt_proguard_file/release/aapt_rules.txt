@@ -1,1 +1,0 @@
--keep class ru.reyter.afrd2.burst.BurstLaunchActivity { <init>(); }
