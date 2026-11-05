@@ -495,6 +495,11 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       mode in the mode table - which is the case on Android 10/11 and the legacy
       path - a blacklist entry covers the whole group; on Android 12-14 both
       members come as separate modes and only 23.98 can be blocked alone.
+      The active-mode rate from the dump ("refresh-rate") is no longer added to
+      the list: it is one current rate, not a mode. It used to put a row into
+      the list that has no mode at all (live case: 59.94 next to the names 60
+      and 30 - the screen simply ran at 60 Hz); now it is used only when no
+      mode names and no mode table were found.
 
     * Multiples are exact now: mode selection allowed a 4.3 % error - exactly
       the gap between 23.976 and 25. That made 50 Hz look like a "double" for
