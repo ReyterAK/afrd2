@@ -37,7 +37,7 @@ run test_mstime mstime.c
 # Проверки по исходникам и данным, а не по коду на C: согласованность версии
 # во всех местах, где она записана, формат ЧАВО, контракт запуска Magisk-модуля,
 # выбор droidlogic-res.apk вендорной обёрткой.
-for sh_test in tests/test_versions.sh tests/test_faq.sh tests/test_magisk_module.sh tests/test_disp_helper.sh tests/test_integration_doc.sh; do
+for sh_test in tests/test_versions.sh tests/test_faq.sh tests/test_magisk_module.sh tests/test_disp_helper.sh tests/test_integration_doc.sh tests/test_strings.sh; do
 	sh "$sh_test" || status=1
 done
 
