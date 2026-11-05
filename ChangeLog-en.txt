@@ -3,10 +3,12 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
 1.2.0 Sun Nov 1 2026
     Release after 1.1.0: AFR on demand (a session triggered by a button), a real
-    "auto" fractional rate policy, a check of the actual display rate; settings
-    without duplicates (AV1 correction and pause behaviour are one item each,
-    items that do not apply on the current path are hidden); mode restoration on
-    stop no longer leaves the launcher at the video rate.
+    "auto" fractional rate policy, a check of the actual display rate, the rate
+    taken from the video layer feed (24p no longer drifts to 25/50), content
+    transitions (an ad in front of a video does not spoil the measurement);
+    settings without duplicates (AV1 correction and pause behaviour are one item
+    each, items that do not apply on the current path are hidden); mode
+    restoration on stop no longer leaves the launcher at the video rate.
 
     * Clamp fixes: OTT Navigator is excluded from AFRd by default on
       Android 10+ (switch.skip.pkg) — it manages the rate itself through
@@ -289,6 +291,82 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       player listed under "AFR interferes" still got switched. Now neither the
       measurement, nor the fast decision, nor the recheck, nor the reapply runs
       for such a player.
+
+    * Layer feed rate as an independent source in ambiguous cases. On Android
+      10-14 players (stock YouTube, TizenTube/Cobalt) the layer's
+      actualPresentTime marks tell 23.976 from 25.000 fps where the decoder
+      frame counter is inflated: on 24p it read 25.00 and the mode went to
+      25/50 Hz. In the 23-27 Hz band the daemon compares the layer window with
+      the counter and takes the layer when they disagree:
+        частота по подаче видео-слоя: 23.98 Гц вместо 25.00 Гц по счётчику
+        — беру слой
+      Live measurements (.50, ATV14, 60 Hz display): 24p — layer 23.98 Hz,
+      mode 24 Hz (was 25/50); 25p — 40.08 ms interval, stays at 50 Hz. The
+      probe runs on every decision (two dumpsys calls, 48 + 54 ms) and the
+      daemon uses 0.1 % CPU; the rate is taken from the layer once per content,
+      after that the probe only watches for content transitions. Players
+      without layer marks (VLC, Just Player) are served as before — by the AV1
+      correction and the package list. The probe is disabled on the vendor path
+      (Android 10/11, vendor.disp.persist): the automatic check there is
+      unfinished (after switching to 24 Hz the TV lost the signal and the cause
+      was not established), the rate comes from the explicit AV1 correction.
+
+    * Fixed the layer feed parsing: the expected interval was passed to awk as
+      -v exp=…, and exp is a built-in awk function, so the variable was never
+      set. The outlier threshold was computed from the display period: a
+      steady 24p got gap=69 %, a correct layer measurement was rejected, and
+      the cadence check printed "неровная: 84-96 %" on healthy video. It did
+      not affect decisions, but the diagnostics lied. After the fix the same
+      measurement gives gap=0 and "подача в порядке: 42 мс при периоде 42 мс,
+      выбросов 2-9 %".
+
+    * Content transition: an ad at the start of a video no longer spoils the
+      measurement. The layer window is split in halves by time and rate classes
+      are compared (30 vs 24), not values; on a class change the measurement,
+      the rate pin and the flags are reset and the decision waits for a clean
+      horizon, at most three resets per video. Our own mode switch is not
+      counted as a transition (it is compared with the buffer length). Log
+      line:
+        переход контента: половины окна слоя 30.00 и 23.98 Гц (63 и 64
+        интервалов, буфер 5213 мс, смена режима 30000 мс назад) — замер заново
+      The layer probe now runs on every decision rather than once per video:
+      otherwise a content change under the pin stays invisible (live case:
+      channel 25 -> 24 fps, the pin held 50 Hz while the envelope already saw
+      23.98).
+
+    * Fixed: an AFR on-demand session returned the mode to the original one
+      when its time ran out — three switches in a row in the middle of a film
+      (60 -> 24 -> 60 -> 24). Now on timeout, with video playing and the mode
+      held, the session simply ends ("срок истёк — режим оставляю до конца
+      видео"), the measurement recheck comes back and the normal loop goes on.
+      Restoring the mode stays with cancel (burst 0), a video change and a real
+      stop; with enable=0 the daemon goes passive after restoring on a stop
+      instead of staying enabled for the next videos.
+
+    * Fixed: the fractional rate policy was not applied to sources that name
+      the rate exactly — the fast decision from the frame rate field and the
+      player hint (frame_rate_hint). With "prefer fractional" on 23.976 fps
+      video the daemon first set integer 24.00 and about 15 s later, after the
+      measurement, 23.98: two switches on one video. The policy now maps any
+      decision to the fractional member (24.00 -> 23.976, 30 -> 29.97,
+      60 -> 59.94; 25/50 have no pair). With "prefer integer" the behaviour is
+      unchanged — there was no second switch before either.
+
+    * Fixed: the layer probe command was truncated by a 1 KB buffer (it grew to
+      ~1.24 KB), awk silently failed, and the probe did not work for any
+      player, Cobalt included: the log carried a false "слой: статистика не
+      получена". The buffer is 2 KB now, and truncation is logged as its own
+      line instead of looking like missing marks.
+
+    * New: the "AFR burst" mini-app (package ru.reyter.afrd2.burst) for button
+      mappers. A separate package is needed because tvQuickActions and TV
+      launchers show one entry per package, while the activity-alias and the
+      shortcut inside AFRd2 are invisible in their lists. It has no UI: it
+      sends the addressed broadcast and closes, no extras needed, the duration
+      is burst.ms. The LEANBACK_LAUNCHER category and a banner were added —
+      without them TV mappers do not list the package. Its own icon is a warm
+      mustard #C9A128 instead of the blue #1B3A6B, so it is not confused with
+      AFRd2 in a list.
 
 1.1.0 Tue Oct 27 2026
 
