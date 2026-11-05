@@ -1168,11 +1168,18 @@ static void handle_uevent (char *msg, ssize_t size)
 	uevent_filter_reset (&g_filter_hdcp);
 
 	for (const char *end = msg + size; msg < end; msg += strlen (msg) + 1) {
+		/* Уровень 3, а не 2: в файл журнала пишутся уровни 0-2 (main.c), и
+		 * раньше сюда попадал КАЖДЫЙ uevent системы. Живой лог тестера
+		 * (X96Max, 4 минуты): 2038 строк, из них 248 «Parsing uevent», 213
+		 * «Unrecognized» и 1319 строк параметров — 87 % мусора, при 50
+		 * содержательных. Тепловой узел присылает событие чаще раза в секунду.
+		 * Теперь разбор виден только в форграунде с -vvv (`afrd -v -v -v`),
+		 * а полезные строки (переключения, отказы, сеанс) остаются в файле. */
 		if (msg == msg_orig) {
-			trace (2, "Parsing uevent %s\n", msg);
+			trace (3, "Parsing uevent %s\n", msg);
 			continue;
 		} else
-			trace (2, "\t> %s\n", msg);
+			trace (3, "\t> %s\n", msg);
 
 		char *val = strchr (msg, '=');
 		if (val)
@@ -1243,7 +1250,7 @@ static void handle_uevent (char *msg, ssize_t size)
 		}
 
 	} else
-		trace (2, "\tUnrecognized uevent\n");
+		trace (3, "\tUnrecognized uevent\n");
 }
 
 static void handle_uevents ()

@@ -503,6 +503,12 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       blocked it) the fastest mode of that geometry is used: 24p goes to 60 Hz
       (distributed 3:2), not to 50.
 
+    * The log is readable now: the uevent dump (and "Unrecognized uevent") moved
+      to the debug level. Every system uevent used to be written to the file -
+      the thermal node sends one more than once per second: in a live Android 9
+      log 1780 of 2038 lines were that noise. Now the file holds switches,
+      measurements and refusals; the dump is visible in foreground with -vvv.
+
     * "HDMI format (color space)" (cs.select) is a choice of three items instead
       of a line with regular expressions; the 4K bandwidth rule is kept in each.
 
