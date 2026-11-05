@@ -29,6 +29,7 @@ import android.preference.PreferenceFragment;
 import android.preference.PreferenceManager;
 import android.preference.PreferenceScreen;
 import android.util.ArrayMap;
+import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ListView;
@@ -42,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Vector;
 
+import ru.cobra.zap.afrd.Av1Migrate;
 import ru.cobra.zap.afrd.RootShell;
 import ru.cobra.zap.afrd.Config;
 import ru.cobra.zap.afrd.Control;
@@ -295,8 +297,32 @@ public class MainActivity extends Activity
         req.edit ().putBoolean ("ceiling_pkg_seed1", true).apply ();
     }
 
+    /* Миграция устаревшей поправки AV1: у ранних сборок в настройках лежит
+     * fps.correct.av1=auto, а демон с 05.11 считает это значение выключенным
+     * (§185). Без переноса поправка молча перестаёт работать, и 24p в Cobalt
+     * снова читается как 25 — режим уходит на 50 Гц. Правило и тест —
+     * Av1Migrate/tests/Av1MigrateTest.java. */
+    private void av1Migrate ()
+    {
+        String av1 = mOptions.getString ("fps_correct_av1", null);
+        String pct = Av1Migrate.percentFor (av1);
+        if (pct == null)
+            return;
+
+        SharedPreferences.Editor edit = mOptions.edit ();
+        edit.putString ("fps_correct_av1", pct);
+
+        String pkgs = Av1Migrate.pkgsFor (av1, mOptions.getString ("fps_correct_av1_pkg", ""));
+        if (pkgs != null)
+            edit.putString ("fps_correct_av1_pkg", pkgs);
+
+        edit.apply ();
+        Log.i ("afrd2", "настройка fps.correct.av1=auto перенесена в " + pct + " %");
+    }
+
     private boolean updateConfig ()
     {
+        av1Migrate ();
         bumpPkgSeed ();
         ceilingPkgSeed ();
 

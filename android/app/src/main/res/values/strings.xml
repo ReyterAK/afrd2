@@ -222,8 +222,9 @@
     <string name="mode_use_fract_use">Only fractional</string>
     <string name="mode_use_fract_int">Only integer</string>
     <string name="prefs_fps_correct_av1">AV1 counter correction</string>
-    <string name="prefsum_fps_correct_av1">On some boxes the AV1 decoder counts frames faster than the video runs, and AFR may pick a step higher (23.976 → 25 Hz). The correction applies only to players from the "AV1 correction: players" list. "Off" leaves the measurement as is. A custom percentage is set in the ini (fps.correct.av1=5.7).</string>
+    <string name="prefsum_fps_correct_av1">On some boxes the AV1 decoder counts frames faster than the video runs, and AFR may pick a step higher (23.976 → 25 Hz). The correction applies only to players from the "AV1 correction: players" list. "Off" leaves the measurement as is; 5.7 % is what the Cobalt/YouTube decoder over-reads by (measured 04.11). Another percentage is set in the ini (fps.correct.av1=…).</string>
     <string name="av1_fix_off">Off</string>
+    <string name="av1_fix_57">5.7 % (counter over-read fix)</string>
     <string name="prefs_pause_mode">On pause</string>
     <string name="prefsum_pause_mode">Keep the mode while paused. "Keep 20 s" - a longer pause counts as the end of the video: the mode is restored, and on resume it is restored without a new measurement. "Restore immediately" - show the original rate on any pause (more flashes, but the desktop always keeps its own mode). The limit is set by switch.delay.off in the ini.</string>
     <string name="pause_mode_legacy">As before (use the switch below)</string>

@@ -14,9 +14,11 @@
     </string-array>
     <string-array name="av1_fix">
         <item>@string/av1_fix_off</item>
+        <item>@string/av1_fix_57</item>
     </string-array>
     <string-array name="av1_fix_value">
         <item>off</item>
+        <item>5.7</item>
     </string-array>
     <string-array name="mode_use_fract">
         <item>@string/mode_use_fract_auto</item>

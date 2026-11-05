@@ -226,9 +226,11 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       automatic value: the overcount was measured on some players (Cobalt and
       stock YouTube - yes; VLC and Just Player on the same box measure exactly),
       and the built-in package list required a rebuild for every new player
-      (owner's decision, 05.11). In the app: "AV1 counter correction" ("Off"
-      only; a custom value is set in the ini) and "AV1 correction: players"
-      (several check marks). The old keys are read only when the new one is
+      (owner's decision, 05.11). In the app: "AV1 counter correction" ("Off" or
+      the ready 5.7 %; a custom value is set in the ini) and "AV1 correction:
+      players" (several check marks). The outdated "auto" in the app settings is
+      migrated on update to 5.7 % plus the players list of the former built-in
+      set; in the ini "auto" is still treated as off. The old keys are read only when the new one is
       absent, are mutually exclusive, and require the list as well.
 
     * Ceiling reset and the mode restored after the bump - two refinements from
