@@ -167,6 +167,14 @@
         <ru.cobra.zap.xprefs.XAppsPreference android:key="switch_bump_pkg"
                           android:summary="@string/prefsum_switch_bump_pkg"
                           android:title="@string/prefs_switch_bump_pkg"/>
+        <!-- Кому применяется сброс «потолка» (switch.ceiling.pkg): подъём
+             режима одним плеерам помогает, а перезапуск кодека им рвёт сессию
+             (живой случай — OTT Navigator). Умолчание — штатный YouTube,
+             проставляет приложение (MainActivity.ceilingPkgSeed); пусто —
+             сброс не применяется. -->
+        <ru.cobra.zap.xprefs.XAppsPreference android:key="switch_ceiling_pkg"
+                          android:summary="@string/prefsum_switch_ceiling_pkg"
+                          android:title="@string/prefs_switch_ceiling_pkg"/>
         <!-- Огибающая: в интерфейсе два осмысленных значения — сколько
              наблюдать и сколько прогреваться. Подокно, раннее решение и предел
              расширения остались в ini (fps.measure.envelope.{sub,early,max}.ms):

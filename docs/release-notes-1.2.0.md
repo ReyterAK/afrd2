@@ -35,8 +35,10 @@
 * **`switch.revert`**: если подача после переключения осталась зажатой и лечение
   «туда-обратно» не помогло, режим возвращается к прежнему (22 % → 0 % выбросов,
   ценой потери части кадров контента).
-* **Сброс «потолка» — отдельный список** `switch.ceiling.pkg` (по умолчанию только
-  YouTube): перезапуск кодека рвёт сессию OTT Navigator.
+* **Сброс «потолка» — отдельный список** `switch.ceiling.pkg` (в приложении —
+  «Плееры, которым сбрасывать потолок», по умолчанию только YouTube):
+  перезапуск кодека рвёт сессию OTT Navigator, а подъём режима ему полезен —
+  поэтому списки разные.
 * **Вердикт подачи по доле выбросов** (`fps.feed.ratio.pct` / `fps.feed.gap.pct`),
   а не только по медиане: рваная подача больше не проходит как «подача в порядке».
 * **OTT Navigator на Android 10+ исключён по умолчанию** (`switch.skip.pkg`): он сам
@@ -256,14 +258,14 @@
 
 | Файл | Размер | MD5 | SHA-256 |
 |---|---|---|---|
-| `ru.reyter.afrd2-1.2.0-release.apk` | 507 141 Б | `6825ede000a341aeef791baec1e5ad7c` | `95227852ae04c9e830394f7dbd408dbedadbdba22b387b641d97c772e31972bc` |
-| `burstapp-release.apk` | 129 632 Б | `c96852fc8da4bac26b7a0adff29aab05` | `6ee0e6b11b66fee8ffdc25101ca465af469c1aa57ac2f38c8d2d166469bc26fe` |
-| `afrd2-magisk-armeabi-v7a.zip` | 83 561 Б | `abf06ab6970a3fc72718918d2fc52b5a` | `fba909bdc5f482271a2755e64bd56d0f157bcd35fb3dfe0ea216fc0079b536b0` |
-| `afrd2-magisk-arm64-v8a.zip` | 97 132 Б | `7d805346c6fc6ad6caea67cd20f64019` | `c15fc679a9df640584e068798f34164bd7f728c3da91ba6643e3d17fc041556b` |
-| `afrd2-1.2.0-for-rom-dev.zip` | 619 902 Б | `a2a0fd12775343f52dc64c2ffbec15f5` | `d5aa47f79b0019f329e2ffb49eb4cbc2f258e2910aee55d39fc3b65ca0009880` |
+| `ru.reyter.afrd2-1.2.0-release.apk` | 508 847 Б | `f19fbd523413622e2483d469276afbea` | `07505a414a69e6b1409ada05ac20ce19afd082d552c299871f8ca19704673cde` |
+| `burstapp-release.apk` | 129 632 Б | `478143d5904eac26b33659689c801b97` | `a6d059985960cffccfef85d5f070dc6018a877af4d57626ce457dfbf7081106b` |
+| `afrd2-magisk-armeabi-v7a.zip` | 83 563 Б | `198dff8a21962fc7dfad9d24a1ce7fe7` | `b6a7ae13a4f88c159e60f7b010586480a31c86da388bef80052c3a9671f86104` |
+| `afrd2-magisk-arm64-v8a.zip` | 97 139 Б | `fbef4c6abd96349c9274668399c064d2` | `fc34caa08fc8c88fb9b821c9b46d1995cff271aba2c1c63fd8c70bd253ef74f6` |
+| `afrd2-1.2.0-for-rom-dev.zip` | 620 407 Б | `6a72caa144c4859e3e55fc79bff79582` | `91d9b8ac359818ddb848e24e5a1737fac76ce7ae7bda67a1e94da212cc258b3b` |
 
-Демоны: `afrd-1.2.0-armeabi-v7a` 118 196 Б (`6f668b90…`),
-`afrd-1.2.0-arm64-v8a` 167 520 Б (`6a6b0188…`). Строка «built at» может отставать
+Демоны: `afrd-1.2.0-armeabi-v7a` 118 196 Б (`34749e03…`),
+`afrd-1.2.0-arm64-v8a` 167 520 Б (`352746e5…`). Строка «built at» может отставать
 на одну сборку — сверяйтесь по размеру/md5.
 
 APK подписан релизным ключом; обновления ставятся поверх только той же подписью.

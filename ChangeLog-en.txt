@@ -17,7 +17,8 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       AFRd2 works as usual: the player has its own AFR there, but the default
       exclusion applies to the new path only.
       The default switch.bump.pkg is the stock YouTube; the ceiling reset
-      (switch.ceiling.reset) has its own switch.ceiling.pkg list, YouTube only.
+      (switch.ceiling.reset) has its own switch.ceiling.pkg list (in the app:
+      "Players to reset the rate ceiling for"), stock YouTube only.
       New key switch.revert: if the feed stays clamped after a switch and the
       "there and back" treatment does not help, the mode is returned to the
       previous one (22 % -> 0 % outliers, at the cost of dropping part of the

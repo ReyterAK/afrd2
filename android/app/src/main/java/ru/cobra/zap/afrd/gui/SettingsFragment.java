@@ -100,6 +100,7 @@ public class SettingsFragment extends PreferenceFragment
         "pause_mode",
         "switch_restore_on_stop",
         "switch_bump_pkg",
+        "switch_ceiling_pkg",
         /* калибровка по плееру */
         "fps_correct_list",
         "fps_correct_av1",
@@ -182,6 +183,7 @@ public class SettingsFragment extends PreferenceFragment
     {
         { "switch_skip_pkg", AppsPickerActivity.MODE_MULTI },
         { "switch_bump_pkg", AppsPickerActivity.MODE_MULTI },
+        { "switch_ceiling_pkg", AppsPickerActivity.MODE_MULTI },
         { "fps_correct_av1_pkg", AppsPickerActivity.MODE_MULTI },
         { "mode_min_hz_list", AppsPickerActivity.MODE_PKG_VALUE },
         { "fps_correct_list", AppsPickerActivity.MODE_PKG_PERCENT },

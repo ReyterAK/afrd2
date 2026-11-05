@@ -273,9 +273,32 @@ public class MainActivity extends Activity
         req.edit ().putBoolean ("bump_pkg_seed2", true).apply ();
     }
 
+    /* Умолчание switch.ceiling.pkg: сброс «потолка» применяется только
+     * перечисленным плеерам. По умолчанию — штатный YouTube, как и у демона
+     * (afrd_init подставляет его при незаданном ключе). Проставляем один раз,
+     * чтобы список в настройках показывал то же, что делает демон; очищенный
+     * пользователем список не возвращаем (иначе пустое значение — «сброс
+     * никому» — молча вернулось бы к YouTube). На старом пути ключ не
+     * действует, там строки нет (SettingsFragment.kInactiveOnLegacy). */
+    private void ceilingPkgSeed ()
+    {
+        if (!Control.isAtv14 ())
+            return;
+
+        SharedPreferences req = getSharedPreferences ("requisites", 0);
+        if (req.getBoolean ("ceiling_pkg_seed1", false))
+            return;
+
+        if (!mOptions.contains ("switch_ceiling_pkg"))
+            mOptions.edit ().putString ("switch_ceiling_pkg", kSkipYoutube).apply ();
+
+        req.edit ().putBoolean ("ceiling_pkg_seed1", true).apply ();
+    }
+
     private boolean updateConfig ()
     {
         bumpPkgSeed ();
+        ceilingPkgSeed ();
 
         // load config options from ini file
         Config conf = new Config ();

@@ -95,6 +95,9 @@ public class Config
          * fps.cadence.fix.ms — см. tests/test_inactive.c). */
         itemType.put ("switch.bump", TYPE_BOOL);
         itemType.put ("switch.ceiling.reset", TYPE_BOOL);
+        /* Список плееров, которым применяется сброс «потолка»: без записи в
+         * таблице правка списка в настройках не доехала бы до afrd.ini. */
+        itemType.put ("switch.ceiling.pkg", TYPE_STR);
     }
 
     public boolean getBoolean (String key, boolean defval)
