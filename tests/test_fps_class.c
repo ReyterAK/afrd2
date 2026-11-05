@@ -309,58 +309,52 @@ static void t_sources_ratio(void)
 }
 
 /* Одна настройка на поправку AV1 (fps.correct.av1): модель выбирает демон,
- * двойной коррекции быть не может (журнал §99.5). */
+ * двойной коррекции быть не может (журнал §99.5). Автопоправка убрана 05.11 —
+ * «auto» считается устаревшим и выключенным. */
 static void t_av1_resolve(void)
 {
 	fps_av1_t a;
 
 	/* ключа нет, старых значений нет -> выключено */
-	fps_av1_resolve (NULL, 0.0, 0.0, 0.1, 0.0, &a);
+	fps_av1_resolve (NULL, 0.0, 0.0, &a);
 	assert (a.src == FPS_AV1_OFF && a.factor == 1.0 && a.offset == 0.0);
 
 	/* ключа нет, задана только аддитивная -> она */
-	fps_av1_resolve (NULL, 0.1, 0.0, 0.1, 0.0, &a);
+	fps_av1_resolve (NULL, 0.1, 0.0, &a);
 	assert (a.src == FPS_AV1_LEGACY_ADD && a.offset == 0.1 && a.factor == 1.0);
 	assert (!a.legacy_conflict);
 
 	/* ключа нет, задана только относительная -> она */
-	fps_av1_resolve (NULL, 0.0, 5.7, 0.1, 0.0, &a);
+	fps_av1_resolve (NULL, 0.0, 5.7, &a);
 	assert (a.src == FPS_AV1_LEGACY_PCT && a.offset == 0.0);
 	assert (fabs (a.factor - 1.057) < 1e-9);
 
 	/* ключа нет, заданы ОБЕ -> только относительная, конфликт помечен */
-	fps_av1_resolve (NULL, 0.1, 5.7, 0.1, 0.0, &a);
+	fps_av1_resolve (NULL, 0.1, 5.7, &a);
 	assert (a.src == FPS_AV1_LEGACY_PCT && a.offset == 0.0 && a.legacy_conflict);
 
 	/* off / 0 — выключено, даже если старые значения заданы */
-	fps_av1_resolve ("off", 0.1, 5.7, 0.1, 0.0, &a);
+	fps_av1_resolve ("off", 0.1, 5.7, &a);
 	assert (a.src == FPS_AV1_OFF && a.factor == 1.0 && a.offset == 0.0);
-	fps_av1_resolve ("0", 0.1, 5.7, 0.1, 0.0, &a);
+	fps_av1_resolve ("0", 0.1, 5.7, &a);
 	assert (a.src == FPS_AV1_OFF);
 
-	/* auto на ATV14: аддитивная 0.1, относительной нет */
-	fps_av1_resolve ("auto", 0.0, 0.0, 0.1, 0.0, &a);
-	assert (a.src == FPS_AV1_AUTO && a.offset == 0.1 && a.factor == 1.0);
-
-	/* auto на некалиброванной платформе: ничего не делает */
-	fps_av1_resolve ("auto", 0.0, 0.0, 0.0, 0.0, &a);
-	assert (a.src == FPS_AV1_OFF);
-
-	/* auto перекрывает старые ключи: задан offset=0.5, но auto -> 0.1 */
-	fps_av1_resolve ("auto", 0.5, 5.7, 0.1, 0.0, &a);
-	assert (a.src == FPS_AV1_AUTO && a.offset == 0.1 && a.factor == 1.0);
-	assert (!a.legacy_conflict);
+	/* «auto» убран: значение не даёт поправки и помечается устаревшим, даже
+	 * если в ini остались старые ключи (их надо задавать явно) */
+	fps_av1_resolve ("auto", 0.0, 0.0, &a);
+	assert (a.src == FPS_AV1_LEGACY_AUTO && a.factor == 1.0 && a.offset == 0.0);
+	fps_av1_resolve ("AUTO", 0.5, 5.7, &a);
+	assert (a.src == FPS_AV1_LEGACY_AUTO && a.factor == 1.0 && a.offset == 0.0);
 
 	/* число — только относительная, аддитивной нет (двойной коррекции нет) */
-	fps_av1_resolve ("5.7", 0.1, 0.0, 0.1, 0.0, &a);
+	fps_av1_resolve ("5.7", 0.1, 0.0, &a);
 	assert (a.src == FPS_AV1_PCT && a.offset == 0.0);
 	assert (fabs (a.factor - 1.057) < 1e-9);
 
-	/* «570» вместо «5.7» — опечатка: значение вне разумного, но формула та же;
-	 * проверяем, что отрицательное и мусорное не включают поправку */
-	fps_av1_resolve ("-3", 0.0, 0.0, 0.0, 0.0, &a);
+	/* отрицательное и мусорное не включают поправку */
+	fps_av1_resolve ("-3", 0.0, 0.0, &a);
 	assert (a.src == FPS_AV1_OFF);
-	fps_av1_resolve ("abc", 0.0, 0.0, 0.0, 0.0, &a);
+	fps_av1_resolve ("abc", 0.0, 0.0, &a);
 	assert (a.src == FPS_AV1_OFF);
 }
 
@@ -410,45 +404,57 @@ static void t_correct_av1(void)
 	/* поправка не задана — ноль для любого устройства */
 	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "com.google.android.youtube.tv") == 0.0);
 
-	/* поправка без пакета действует для любого плеера, но только на AV1 */
+	/* пустой список — поправка НЕ применяется ни к кому: список обязателен,
+	 * автопоправки и встроенного списка пакетов больше нет (05.11) */
 	fps_correct_set_av1 (0.5, NULL);
-	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "org.videolan.vlc") == 0.5);
-	assert(fps_correct_av1_offset ("AMVDEC_AV1_V4L", NULL) == 0.5);	/* без учёта регистра, без пакета */
-	assert(fps_correct_av1_offset (NULL, NULL) == 0.0);		/* нет устройства — нет поправки */
-	assert(fps_correct_av1_offset ("ammvdec_h264_v4", "org.videolan.vlc") == 0.0);
-	assert(fps_correct_av1_offset ("", "org.videolan.vlc") == 0.0);
-
-	/* с пакетом — только для него (пакет в конфиге бывает с пробелами) */
-	fps_correct_set_av1 (1.05, " com.google.android.youtube.tv ");
-	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "com.google.android.youtube.tv") == 1.05);
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "org.videolan.vlc") == 0.0);
+	fps_correct_set_av1 (0.5, " \t, ");
 	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "org.videolan.vlc") == 0.0);
 
-	/* Имя пакета длиннее поля (PKG_NAME_LEN): поправка отбрасывается целиком,
-	 * иначе пустой пакет расширил бы её на все плееры. Предел — общий для
-	 * демона (pkgdet.h): 63 байт не хватало, система принимает имена заметно
-	 * длиннее, поэтому слишком длинным считается только то, что не влезает
-	 * в PKG_NAME_LEN. */
-	fps_correct_set_av1 (0.5, "com.google.android.youtube.tv.some.really.long.package.name.over.64.chars");
-	assert (strlen ("com.google.android.youtube.tv.some.really.long.package.name.over.64.chars")
-	        < PKG_NAME_LEN);
-	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "com.google.android.youtube.tv.some.really.long.package.name.over.64.chars") == 0.5);
-	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "короткий") == 0.0);
+	/* список через пробел: поправку получают оба плеера, чужой — нет */
+	fps_correct_set_av1 (0.5, " com.google.android.youtube.tv   org.videolan.vlc ");
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "com.google.android.youtube.tv") == 0.5);
+	assert(fps_correct_av1_offset ("AMVDEC_AV1_V4L", "org.videolan.vlc") == 0.5);	/* регистр устройства не важен */
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "com.brouken.player") == 0.0);
+	assert(fps_correct_av1_offset (NULL, "org.videolan.vlc") == 0.0);	/* нет устройства */
+	assert(fps_correct_av1_offset ("ammvdec_h264_v4", "org.videolan.vlc") == 0.0);
+	assert(fps_correct_av1_offset ("", "org.videolan.vlc") == 0.0);
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", NULL) == 0.0);
 
-	char too_long [PKG_NAME_LEN + 16];
-	memset (too_long, 'x', sizeof (too_long) - 1);
-	too_long [sizeof (too_long) - 1] = 0;
-	fps_correct_set_av1 (0.5, too_long);
-	assert(fps_correct_av1_offset ("amvdec_av1_v4l", too_long) == 0.0);
+	/* список через запятую (так пишут в ini) — тот же результат */
+	fps_correct_set_av1_pct (5.0, "io.gh.reisxd.tizentube.cobalt,com.google.android.youtube.tv");
+	assert(fabs (fps_correct_av1_factor ("amvdec_av1_v4l", "com.google.android.youtube.tv") - 1.05) < 1e-9);
+	assert(fps_correct_av1_factor ("amvdec_av1_v4l", "org.videolan.vlc") == 1.0);
+
+	/* аддитивная и относительная независимы: вторая не стирает первую
+	 * (живая находка 18.10 — pct не применялась) */
+	fps_correct_set_av1 (0.1, "com.google.android.youtube.tv");
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "com.google.android.youtube.tv") == 0.1);
+	assert(fabs (fps_correct_av1_factor ("amvdec_av1_v4l", "com.google.android.youtube.tv") - 1.05) < 1e-9);
+
+	/* список длиннее поля отбрасывается целиком: обрезанный молча сузил бы
+	 * поправку на часть плееров, и это выглядело бы как «не работает» */
+	char big [512];
+	int n = 0;
+	for (int i = 0; i < 13; i++)
+		n += snprintf (big + n, sizeof (big) - n, "com.example.player%02d ", i);
+	assert (n > 256);
+	fps_correct_set_av1 (0.5, big);
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "com.example.player00") == 0.0);
 	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "org.videolan.vlc") == 0.0);
 
 	/* fps_correct_clear сбрасывает и её */
-	fps_correct_set_av1 (0.5, NULL);
+	fps_correct_set_av1 (0.5, "org.videolan.vlc");
 	fps_correct_clear ();
-	assert(fps_correct_av1_offset ("amvdec_av1_v4l", NULL) == 0.0);
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "org.videolan.vlc") == 0.0);
 
 	/* выключенная поправка (0) — не действует */
-	fps_correct_set_av1 (0.0, NULL);
-	assert(fps_correct_av1_offset ("amvdec_av1_v4l", NULL) == 0.0);
+	fps_correct_set_av1 (0.0, "org.videolan.vlc");
+	assert(fps_correct_av1_offset ("amvdec_av1_v4l", "org.videolan.vlc") == 0.0);
+
+	/* относительная: пустой список тоже не действует */
+	fps_correct_set_av1_pct (5.0, "");
+	assert(fps_correct_av1_factor ("amvdec_av1_v4l", "org.videolan.vlc") == 1.0);
 }
 
 /* Относительная поправка AV1 (fps.correct.av1.pct): пропорциональное завышение,
@@ -458,24 +464,28 @@ static void t_correct_av1_pct(void)
 {
 	fps_correct_clear();
 
-	/* по умолчанию выключена */
+	/* по умолчанию выключена; пустой список — тоже (список обязателен) */
 	assert(fps_correct_av1_factor("amvdec_av1_v4l", NULL) == 1.0);
 
 	fps_correct_set_av1_pct(5.7, NULL);
-	assert(fabs(fps_correct_av1_factor("amvdec_av1_v4l", NULL) - 1.057) < 1e-9);
+	assert(fps_correct_av1_factor("amvdec_av1_v4l", NULL) == 1.0);
+
+	const char *yt = "com.google.android.youtube.tv";
+	fps_correct_set_av1_pct(5.7, yt);
+	assert(fabs(fps_correct_av1_factor("amvdec_av1_v4l", yt) - 1.057) < 1e-9);
 
 	/* 24 -> 24, 60 -> 60 после деления (сравниваем ГРУППЫ: 23.976 и 24.000 —
 	 * одна группа режимов, различие задаёт mode.use.fract) */
-	assert(fps_rate_group(fps_classify(25.40 / fps_correct_av1_factor("amvdec_av1_v4l", NULL))) ==
+	assert(fps_rate_group(fps_classify(25.40 / fps_correct_av1_factor("amvdec_av1_v4l", yt))) ==
 	       fps_rate_group(fps_classify(23.976)));
-	assert(fps_rate_group(fps_classify(63.30 / fps_correct_av1_factor("amvdec_av1_v4l", NULL))) ==
+	assert(fps_rate_group(fps_classify(63.30 / fps_correct_av1_factor("amvdec_av1_v4l", yt))) ==
 	       fps_rate_group(fps_classify(59.94)));
 
 	/* только AV1-декодер */
-	assert(fps_correct_av1_factor("amvdec_h264_v4l", NULL) == 1.0);
+	assert(fps_correct_av1_factor("amvdec_h264_v4l", yt) == 1.0);
 
-	/* ограничение по пакету */
-	fps_correct_set_av1_pct(5.7, "com.google.android.youtube.tv");
+	/* ограничение по списку */
+	fps_correct_set_av1_pct(5.7, yt);
 	assert(fps_correct_av1_factor("amvdec_av1_v4l", "com.google.android.youtube.tv") > 1.0);
 	assert(fps_correct_av1_factor("amvdec_av1_v4l", "org.videolan.vlc") == 1.0);
 	assert(fps_correct_av1_factor("amvdec_av1_v4l", NULL) == 1.0);
@@ -491,22 +501,22 @@ static void t_correct_av1_pct(void)
 	assert(fps_correct_av1_factor("amvdec_av1_v4l", "io.gh.reisxd.tizentube.cobalt.extra") == 1.0);
 
 	/* аддитивная и относительная сосуществуют: вызов одной не затирает другую.
-	 * clear() нужен, потому что выше поправка была ограничена пакетом. */
+	 * Список тот же, иначе одна из них не действовала бы. */
 	fps_correct_clear();
-	fps_correct_set_av1(0.5, NULL);
-	fps_correct_set_av1_pct(5.7, NULL);
-	assert(fabs(fps_correct_av1_offset("amvdec_av1_v4l", NULL) - 0.5) < 1e-9);
-	assert(fabs(fps_correct_av1_factor("amvdec_av1_v4l", NULL) - 1.057) < 1e-9);
+	fps_correct_set_av1(0.5, yt);
+	fps_correct_set_av1_pct(5.7, yt);
+	assert(fabs(fps_correct_av1_offset("amvdec_av1_v4l", yt) - 0.5) < 1e-9);
+	assert(fabs(fps_correct_av1_factor("amvdec_av1_v4l", yt) - 1.057) < 1e-9);
 
 	/* опечатка «570» вместо «5.7» не принимается */
 	fps_correct_clear();
-	fps_correct_set_av1_pct(570.0, NULL);
-	assert(fps_correct_av1_factor("amvdec_av1_v4l", NULL) == 1.0);
+	fps_correct_set_av1_pct(570.0, yt);
+	assert(fps_correct_av1_factor("amvdec_av1_v4l", yt) == 1.0);
 
 	/* clear сбрасывает обе */
-	fps_correct_set_av1_pct(5.7, NULL);
+	fps_correct_set_av1_pct(5.7, yt);
 	fps_correct_clear();
-	assert(fps_correct_av1_factor("amvdec_av1_v4l", NULL) == 1.0);
+	assert(fps_correct_av1_factor("amvdec_av1_v4l", yt) == 1.0);
 }
 
 

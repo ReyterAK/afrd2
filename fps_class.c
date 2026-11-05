@@ -185,7 +185,7 @@ int fps_sources_ratio_pct (int a_hz, int b_hz)
 }
 
 void fps_av1_resolve (const char *value, double legacy_add, double legacy_pct,
-                      double auto_add, double auto_pct, fps_av1_t *out)
+                      fps_av1_t *out)
 {
 	if (!out)
 		return;
@@ -197,16 +197,15 @@ void fps_av1_resolve (const char *value, double legacy_add, double legacy_pct,
 
 	if (value && value [0])
 	{
-		/* Имена проверяются ДО atof: "auto" даёт atof = 0 и был бы принят
-		 * за «выключено» (нашло host-тестом). */
+		/* Имена проверяются ДО atof: "off" и "auto" дают atof = 0 и были бы
+		 * приняты за число (нашло host-тестом). */
 		if (!strcasecmp (value, "auto"))
 		{
-			/* Значение платформы: на ATV14 оно аддитивное, на ATV11 —
-			 * относительное; некалиброванная платформа не даёт ничего. */
-			out->offset = (auto_add > 0.0) ? auto_add : 0.0;
-			out->factor = (auto_pct > 0.0) ? (1.0 + auto_pct / 100.0) : 1.0;
-			if ((out->offset > 0.0) || (out->factor != 1.0))
-				out->src = FPS_AV1_AUTO;
+			/* Автопоправка убрана 05.11: встроенный список пакетов — не
+			 * рабочее решение (плееров много, каждый выбирает свои, любое
+			 * добавление требует пересборки). Значение считается
+			 * выключенным, демон пишет причину в журнал. */
+			out->src = FPS_AV1_LEGACY_AUTO;
 			return;
 		}
 
@@ -302,11 +301,16 @@ double fps_correct_factor (const char *package)
 
 /* ---- Поправка на завышение счётчика AV1-трактом: см. fps_class.h ---- */
 
+/* Список пакетов, к которым применяется поправка AV1, хранится строкой:
+ * разделители — пробел, табуляция и запятая (GUI пишет через пробел, ini может
+ * через запятую). Практический предел — два-три длинных имени пакета. */
+#define AV1_PKG_LIST_LEN 256
+
 static struct
 {
 	double	offset;
 	double	pct;		/* относительная поправка, % (fps.correct.av1.pct) */
-	char	pkg [PKG_NAME_LEN];
+	char	pkg [AV1_PKG_LIST_LEN];
 } k_av1;
 
 void fps_correct_clear_av1 (void)
@@ -314,6 +318,32 @@ void fps_correct_clear_av1 (void)
 	k_av1.offset = 0.0;
 	k_av1.pct = 0.0;
 	k_av1.pkg [0] = 0;
+}
+
+/* Скопировать список пакетов без крайних разделителей. Слишком длинный список
+ * отбрасывает поправку целиком: обрезанный список молча сузил бы её действие
+ * на часть плееров (и это выглядело бы как «поправка не работает»). */
+static void av1_set_pkg (const char *package)
+{
+	if (!package)
+		return;
+
+	while ((*package == ' ') || (*package == '\t') || (*package == ','))
+		package++;
+
+	size_t len = strlen (package);
+	while (len && ((package [len - 1] == ' ') || (package [len - 1] == '\t') ||
+	               (package [len - 1] == ',')))
+		len--;
+
+	if (len >= sizeof (k_av1.pkg))
+	{
+		fps_correct_clear_av1 ();
+		return;
+	}
+
+	memcpy (k_av1.pkg, package, len);
+	k_av1.pkg [len] = 0;
 }
 
 void fps_correct_set_av1 (double offset_fps, const char *package)
@@ -325,27 +355,7 @@ void fps_correct_set_av1 (double offset_fps, const char *package)
 		return;
 
 	k_av1.offset = offset_fps;
-	if (package)
-	{
-		while ((*package == ' ') || (*package == '\t'))
-			package++;
-
-		size_t len = strcspn (package, " \t");
-		if (len >= sizeof (k_av1.pkg))
-		{
-			/* Имя пакета не влезает: скопировать его нельзя, а оставить
-			 * пакет пустым — ещё хуже: пустой пакет означает «любой
-			 * плеер», и поправка расширилась бы на всех. Отбрасываем
-			 * поправку целиком, как fps_correct_load (). */
-			fps_correct_clear_av1 ();
-			return;
-		}
-		if (len)
-		{
-			memcpy (k_av1.pkg, package, len);
-			k_av1.pkg [len] = 0;
-		}
-	}
+	av1_set_pkg (package);
 }
 
 /* Регистронезависимый поиск подстроки: strcasestr есть не во всех libc
@@ -381,46 +391,33 @@ void fps_correct_set_av1_pct (double pct, const char *package)
 		return;
 
 	k_av1.pct = pct;
-	if (package)
-	{
-		while ((*package == ' ') || (*package == '\t'))
-			package++;
-
-		size_t len = strcspn (package, " \t");
-		if (len >= sizeof (k_av1.pkg))
-		{
-			fps_correct_clear_av1 ();
-			return;
-		}
-		if (len)
-		{
-			memcpy (k_av1.pkg, package, len);
-			k_av1.pkg [len] = 0;
-		}
-	}
+	av1_set_pkg (package);
 }
 
-/* Фильтр пакетов для поправки AV1: список через запятую
- * (fps.correct.av1.pkg). Пустой фильтр — поправка для всех; имена
- * пакетов регистрозависимы, поэтому сравнение точное. */
+/* Фильтр пакетов для поправки AV1 (fps.correct.av1.pkg): список через пробел,
+ * табуляцию или запятую. Пустой фильтр — поправка НЕ применяется: список
+ * обязателен, потому что автопоправки и встроенного списка пакетов больше нет
+ * (решение владельца 05.11). Имена пакетов регистрозависимы, сравнение точное. */
 static bool pkg_filter_match (const char *list, const char *package)
 {
 	if (!list || !*list)
-		return true;
+		return false;
 	if (!package || !*package)
 		return false;
 
 	const char *p = list;
 	while (*p)
 	{
-		const char *comma = strchr (p, ',');
-		size_t len = comma ? (size_t)(comma - p) : strlen (p);
-
-		if (len && (strlen (package) == len) && (strncmp (p, package, len) == 0))
-			return true;
-		if (!comma)
+		while ((*p == ' ') || (*p == '\t') || (*p == ','))
+			p++;
+		if (!*p)
 			break;
-		p = comma + 1;
+
+		size_t len = strcspn (p, " \t,");
+
+		if ((strlen (package) == len) && (strncmp (p, package, len) == 0))
+			return true;
+		p += len;
 	}
 
 	return false;

@@ -60,11 +60,11 @@
         <ru.cobra.zap.xprefs.XAppsPreference android:key="fps_correct_list"
                           android:summary="@string/prefsum_fps_correct_list"
                           android:title="@string/prefs_fps_correct_list"/>
-        <!-- Поправка AV1 — один пункт: модель завышения зависит от платформы,
-             поэтому «Авто» подставляет калиброванное значение, а не заставляет
-             пользователя выбирать между аддитивной и относительной (раньше это
-             были два ключа, применявшиеся одновременно). -->
-        <ru.cobra.zap.xprefs.XListPreference android:defaultValue="auto"
+        <!-- Поправка AV1 — один пункт с процентом (в ini) и список плееров,
+             к которым она применяется. Автопоправки нет: завышение измерено
+             у части плееров, и встроенный список требовал пересборки на
+             каждого нового плеера (решение владельца 05.11). -->
+        <ru.cobra.zap.xprefs.XListPreference android:defaultValue="off"
                         android:entries="@array/av1_fix"
                         android:entryValues="@array/av1_fix_value" android:key="fps_correct_av1"
                         android:summary="@string/prefsum_fps_correct_av1"

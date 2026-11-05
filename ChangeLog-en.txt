@@ -215,15 +215,20 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       "Android 11+ fine tuning" group and fps.correct.*. Before, they were grey
       rows with a "does not apply" note - a quarter of the screen.
 
-    * AV1 correction is one setting instead of two keys. The additive
-      (fps.correct.av1.offset) and relative (fps.correct.av1.pct) corrections
-      describe the same effect and were applied together: with pct=5.7 and
-      offset=0.1 a 25.000 fps clip measured 24.90, i.e. the correction worked
-      twice. Now the daemon picks the model by platform: fps.correct.av1=auto
-      applies the calibrated value (ATV14 - 0.1 frame/s), off disables it, and a
-      number sets a percentage. In the app: "AV1 counter correction" -
-      Auto / Off. The old keys are read only when the new one is absent, and
-      are mutually exclusive.
+    * AV1 correction is one setting instead of two keys, and it works only for
+      a list of players. The additive (fps.correct.av1.offset) and relative
+      (fps.correct.av1.pct) corrections describe the same effect and were
+      applied together: with pct=5.7 and offset=0.1 a 25.000 fps clip measured
+      24.90, i.e. the correction worked twice. Now there is one key:
+      fps.correct.av1=off | percentage, and it applies only to players listed in
+      fps.correct.av1.pkg (empty list - no correction). There is no per-platform
+      automatic value: the overcount was measured on some players (Cobalt and
+      stock YouTube - yes; VLC and Just Player on the same box measure exactly),
+      and the built-in package list required a rebuild for every new player
+      (owner's decision, 05.11). In the app: "AV1 counter correction" ("Off"
+      only; a custom value is set in the ini) and "AV1 correction: players"
+      (several check marks). The old keys are read only when the new one is
+      absent, are mutually exclusive, and require the list as well.
 
     * Pause behaviour is one item "On pause" (pause.mode): keep the mode,
       keep 20 s and then restore, or restore immediately. Before it was a toggle

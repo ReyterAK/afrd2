@@ -50,8 +50,9 @@ int fps_classify_window_corrected (unsigned long long frames_delta, unsigned lon
  * 24.000 fps): H.264 — 24.002 fps, AV1 — 24.520 fps (+0.52 кадра/с, n=3/2).
  * Штатный клиент YouTube добавляет к этому своё (границы DASH-сегментов).
  *
- * offset_fps <= 0 — поправка выключена. package == NULL или "" — поправка для
- * любого плеера; иначе — только для указанного. */
+ * offset_fps <= 0 — поправка выключена. package — список пакетов через пробел
+ * или запятую; пустой список означает «не применять» (поправка AV1 без списка
+ * плееров не действует, см. fps.correct.av1). */
 void fps_correct_set_av1 (double offset_fps, const char *package);
 
 /* Сбросить поправку (используется fps_correct_clear и при enable=0). */
@@ -69,7 +70,7 @@ double fps_correct_av1_offset (const char *device, const char *package);
  * поправка одна на все частоты.
  *
  * pct <= 0 — выключена. Применяется только к AV1-декодеру (по имени устройства)
- * и, если задан пакет, только к нему. */
+ * и только к плеерам из списка пакетов (пустой список — не применять). */
 void fps_correct_set_av1_pct (double pct, const char *package);
 
 /* Множитель (1.0 — поправки нет): измеренную частоту надо РАЗДЕЛИТЬ на него. */
@@ -86,15 +87,18 @@ double fps_correct_av1_factor (const char *device, const char *package);
  * пользователя, поэтому модель выбирает демон.
  *
  * Ключ fps.correct.av1:
- *   "auto"  — значение платформы (калиброванное; 0 — не калибровано);
  *   "off"/"0" — выключено;
  *   число   — относительная поправка в процентах (только она).
+ * Поправка применяется ТОЛЬКО к плеерам из списка fps.correct.av1.pkg: пустой
+ * список означает «не применять» (решение владельца 05.11 — никакой
+ * автопоправки и встроенного списка пакетов: плееров много, каждый выбирает
+ * свои, а добавление в встроенный список требует пересборки).
  * Если ключа нет — старое поведение (fps.correct.av1.offset / .pct), но
  * взаимоисключающе: при pct > 0 аддитивная игнорируется (и это видно в логе). */
 typedef enum
 {
 	FPS_AV1_OFF = 0,	/* выключено */
-	FPS_AV1_AUTO,		/* значение платформы */
+	FPS_AV1_LEGACY_AUTO,	/* устаревшее «auto»: выключено, причина в логе */
 	FPS_AV1_PCT,		/* задано числом, относительная */
 	FPS_AV1_LEGACY_ADD,	/* старый ключ .offset */
 	FPS_AV1_LEGACY_PCT,	/* старый ключ .pct */
@@ -111,10 +115,9 @@ typedef struct
 /* Разрешить настройку в пару (factor, offset).
  *   value       — значение fps.correct.av1 или NULL, если ключа нет;
  *   legacy_add  — fps.correct.av1.offset;
- *   legacy_pct  — fps.correct.av1.pct;
- *   auto_add / auto_pct — значения платформы для "auto" (0 — не калибровано). */
+ *   legacy_pct  — fps.correct.av1.pct. */
 void fps_av1_resolve (const char *value, double legacy_add, double legacy_pct,
-                      double auto_add, double auto_pct, fps_av1_t *out);
+                      fps_av1_t *out);
 
 /* ---- Поправка частоты для конкретного плеера (fps.correct.*) ----
  *

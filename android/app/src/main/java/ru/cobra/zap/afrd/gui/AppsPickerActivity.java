@@ -48,7 +48,8 @@ import ru.cobra.zap.afrd.jfun;
  * Экран ничего не пишет в конфиг: он возвращает новое значение хост-фрагменту
  * (SettingsFragment), а тот применяет его обычным путём (applyPrefs). Поэтому
  * экран переиспользуется любым числом настроек — сейчас это switch.skip.pkg
- * (режим multi), fps.correct.av1.pkg (режим single) и mode.min.hz.list
+ * (режим multi), fps.correct.av1.pkg (тоже multi: поправка AV1 действует на
+ * список плееров) и mode.min.hz.list
  * (режим pkg_value: у каждого выбранного плеера — своя частота-порог).
  */
 public class AppsPickerActivity extends Activity

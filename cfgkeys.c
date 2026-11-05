@@ -133,7 +133,9 @@ static const struct
 	{ "switch.restore.on.stop",	CFGKEY_NEWPATH, NULL },
 	{ "fps.correct.enable",		CFGKEY_NEWPATH, NULL },
 	{ "fps.correct.list",		CFGKEY_NEWPATH, NULL },
-	/* Одна настройка на поправку AV1: auto | off | проценты. Старые ключи
+	/* Одна настройка на поправку AV1: off | проценты; применяется только к
+	 * плеерам из fps.correct.av1.pkg (пустой список — выключено; автопоправки
+	 * и встроенного списка пакетов нет, решение 05.11). Старые ключи
 	 * .offset и .pct остаются известными (старые конфиги) и читаются, только
 	 * если нового ключа нет, — взаимоисключающе (журнал §99.5). */
 	{ "fps.correct.av1",		CFGKEY_NEWPATH, NULL },

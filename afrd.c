@@ -4205,10 +4205,13 @@ static int run_atv14 (const platform_t *plat)
 		trace (1, "поправка частоты по плеерам: %s\n",
 		       (clist && *clist) ? clist : "(список пуст)");
 
-		/* Поправка AV1 — ОДНА настройка (fps.correct.av1), модель выбирает
-		 * демон: аддитивная и относительная описывают одно явление, и раньше
-		 * они применялись обе сразу (см. fps_class.h). Старые ключи .offset и
-		 * .pct читаются, только если нового ключа нет, и взаимоисключающе. */
+		/* Поправка AV1 — ОДНА настройка (fps.correct.av1) в процентах, и
+		 * применяется она только к плеерам из списка fps.correct.av1.pkg.
+		 * Автопоправки и встроенного списка пакетов больше нет (решение
+		 * владельца 05.11): плееров много, каждый выбирает свои, и любое
+		 * добавление в встроенный список требовало пересборки. Старые ключи
+		 * .offset и .pct читаются, только если нового ключа нет, и
+		 * взаимоисключающе. */
 		const char *av1_pkg = cfg_get_str ("fps.correct.av1.pkg", NULL);
 		double av1_legacy_add = 0.0, av1_legacy_pct = 0.0;
 		{
@@ -4220,38 +4223,19 @@ static int run_atv14 (const platform_t *plat)
 				av1_legacy_pct = atof (v);
 		}
 
-		/* Значения платформы для «auto». Живые замеры 03.11: на `.50` (ATV14)
-		 * счётчик AV1 при дисплее 60 Гц даёт 63.1, у тестера TizenTube при
-		 * 24 к/с — 25.0, то есть завышение пропорциональное ~5 %, а не
-		 * аддитивное. Прежняя аддитивная 0.1 кадра/с на 24 к/с не покрывала
-		 * завышение и уводила 24 в класс 25 (журнал §100, §165).
-		 * Вендорный путь (Android 10/11) по-прежнему без «auto»: там модель
-		 * та же (§49.18: +5.9 % на 24, +5.6 % на 60), но контрольного A/B на
-		 * стенде не было. */
-		double auto_add = 0.0;
-		double auto_pct = (plat->kind == PLAT_ATV14) ? 5.0 : 0.0;
-
 		fps_av1_t av1;
 		fps_av1_resolve (cfg_get_str ("fps.correct.av1", NULL),
-		                 av1_legacy_add, av1_legacy_pct, auto_add, auto_pct, &av1);
+		                 av1_legacy_add, av1_legacy_pct, &av1);
 
-		/* Auto-поправка на ATV14 привязана к Cobalt-плеерам: только там
-		 * счётчик AV1 завышает 24p до ~25.2–25.5 (живой замер §174).
-		 * Just Player/VLC на том же боксе считают точно (24p → 23.98,
-		 * 25p → 25.00), и глобальные 5 % ломали честный 25p — он уходил
-		 * в 24. Явный fps.correct.av1.pkg перекрывает список; явные
-		 * 5 % (не auto) применяются ко всем, как раньше. */
-		static const char *av1_cobalt_pkgs =
-			"io.gh.reisxd.tizentube.cobalt,com.google.android.youtube.tv,"
-			"com.google.android.youtube";
-		bool av1_auto_scoped = (av1.src == FPS_AV1_AUTO) &&
-		                       (plat->kind == PLAT_ATV14) &&
-		                       (av1.factor > 1.0) && !(av1_pkg && *av1_pkg);
-		const char *av1_filter_pkg = av1_auto_scoped ? av1_cobalt_pkgs : av1_pkg;
-
-		fps_correct_set_av1 (av1.offset, av1_filter_pkg);
+		/* Пакетов в списке нет — поправка не применяется ни к кому: список
+		 * обязателен (см. выше). Это же значение проверяет fps_class. */
+		fps_correct_set_av1 (av1.offset, av1_pkg);
 		fps_correct_set_av1_pct ((av1.factor > 1.0) ? (av1.factor - 1.0) * 100.0 : 0.0,
-		                         av1_filter_pkg);
+		                         av1_pkg);
+
+		if (((av1.offset > 0.0) || (av1.factor > 1.0)) && !(av1_pkg && *av1_pkg))
+			trace (0, "поправка AV1: список плееров пуст "
+			       "(fps.correct.av1.pkg) — поправка не применяется\n");
 
 		switch (av1.src)
 		{
@@ -4259,21 +4243,16 @@ static int run_atv14 (const platform_t *plat)
 			trace (1, "поправка AV1: выключена\n");
 			break;
 
-		case FPS_AV1_AUTO:
-			trace (1, "поправка AV1: авто для платформы — %s%s\n",
-			       (av1.offset > 0.0)
-			       ? "аддитивная"
-			       : (av1.factor > 1.0) ? "относительная" : "выключена",
-			       (av1_pkg && *av1_pkg) ? ", только для одного плеера"
-			       : av1_auto_scoped ? ", только Cobalt-плееры" : "");
-			if ((av1.offset <= 0.0) && (av1.factor > 1.0))
-				trace (1, "поправка AV1: минус %.2f %%\n",
-				       (av1.factor - 1.0) * 100.0);
+		case FPS_AV1_LEGACY_AUTO:
+			trace (0, "fps.correct.av1=auto устарел: автопоправка убрана, "
+			       "задайте процент и список плееров "
+			       "(fps.correct.av1=5.7, fps.correct.av1.pkg=…)\n");
 			break;
 
 		case FPS_AV1_PCT:
-			trace (1, "поправка AV1: %.2f %% (fps.correct.av1)\n",
-			       (av1.factor - 1.0) * 100.0);
+			trace (1, "поправка AV1: %.2f %%%s\n",
+			       (av1.factor - 1.0) * 100.0,
+			       (av1_pkg && *av1_pkg) ? ", только для списка плееров" : "");
 			break;
 
 		case FPS_AV1_LEGACY_PCT:
@@ -4286,7 +4265,8 @@ static int run_atv14 (const platform_t *plat)
 		if (av1.legacy_conflict)
 			trace (0, "fps.correct.av1.offset и fps.correct.av1.pct заданы "
 			       "одновременно — применяю только относительную (обе описывают "
-			       "одно явление); задайте fps.correct.av1=auto вместо обеих\n");
+			       "одно явление); задайте fps.correct.av1=<проценты> и "
+			       "fps.correct.av1.pkg=<список> вместо обеих\n");
 
 		if (av1.offset > 0.0)
 		{

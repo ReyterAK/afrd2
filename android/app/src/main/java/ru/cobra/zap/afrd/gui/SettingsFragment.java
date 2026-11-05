@@ -182,7 +182,7 @@ public class SettingsFragment extends PreferenceFragment
     {
         { "switch_skip_pkg", AppsPickerActivity.MODE_MULTI },
         { "switch_bump_pkg", AppsPickerActivity.MODE_MULTI },
-        { "fps_correct_av1_pkg", AppsPickerActivity.MODE_SINGLE },
+        { "fps_correct_av1_pkg", AppsPickerActivity.MODE_MULTI },
         { "mode_min_hz_list", AppsPickerActivity.MODE_PKG_VALUE },
         { "fps_correct_list", AppsPickerActivity.MODE_PKG_PERCENT },
     };
@@ -464,7 +464,7 @@ public class SettingsFragment extends PreferenceFragment
     }
 
     /* «Поправка счётчика AV1»: в ini может стоять число (проценты), которого нет
-     * в списке «Авто / Выключено». Показываем его отдельным пунктом — иначе
+     * в списке «Выключено». Показываем его отдельным пунктом — иначе
      * строка выглядит пустой, а первая же правка молча затирает значение
      * (P2-13; у «Формата HDMI» так сделано с самого начала). */
     private void setupAv1Pref ()
