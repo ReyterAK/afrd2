@@ -423,13 +423,16 @@
 ! disturbs" list is not needed any more.
 
 ! Next to it there is the "Players to fix clamping for" list - the applications
-! the mechanisms apply to (both the mode bump and the ceiling reset). By default
-! it holds only the stock YouTube, the only player where clamping was measured;
-! for some players the ceiling reset (a codec restart or a density change)
-! breaks playback - e.g. OTT Navigator showed errors and a frozen picture when
-! switching channels. Add a player to this list if you see clamping there and
-! want AFRd2 to fight it. An empty list disables the mechanisms for everyone and
-! leaves plain measurement. A player listed under "Players that AFR disturbs"
+! the mode bump and the revert are applied to. The ceiling reset (a codec
+! restart) is configured by a separate list, "Players to reset the rate ceiling
+! for": the bump helps some players while the codec restart breaks their
+! session. By default both lists hold only the stock YouTube, the only player
+! where clamping was measured; for some players the ceiling reset (a codec
+! restart or a density change) breaks playback - e.g. OTT Navigator showed
+! errors and a frozen picture when switching channels. Add a player to both
+! lists if you see clamping there and want AFRd2 to fight it. An empty list
+! disables the corresponding mechanism for everyone and leaves plain
+! measurement. A player listed under "Players that AFR disturbs"
 ! never gets the mechanisms: that list promises to leave the mode alone.
 
 ! If some player is wrongly detected as 25 instead of 24 fps (or vice versa),

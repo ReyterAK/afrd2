@@ -258,14 +258,14 @@
 
 | Файл | Размер | MD5 | SHA-256 |
 |---|---|---|---|
-| `ru.reyter.afrd2-1.2.0-release.apk` | 508 847 Б | `f19fbd523413622e2483d469276afbea` | `07505a414a69e6b1409ada05ac20ce19afd082d552c299871f8ca19704673cde` |
-| `burstapp-release.apk` | 129 632 Б | `478143d5904eac26b33659689c801b97` | `a6d059985960cffccfef85d5f070dc6018a877af4d57626ce457dfbf7081106b` |
-| `afrd2-magisk-armeabi-v7a.zip` | 83 563 Б | `198dff8a21962fc7dfad9d24a1ce7fe7` | `b6a7ae13a4f88c159e60f7b010586480a31c86da388bef80052c3a9671f86104` |
-| `afrd2-magisk-arm64-v8a.zip` | 97 139 Б | `fbef4c6abd96349c9274668399c064d2` | `fc34caa08fc8c88fb9b821c9b46d1995cff271aba2c1c63fd8c70bd253ef74f6` |
-| `afrd2-1.2.0-for-rom-dev.zip` | 634 324 Б | `18a55efe25f80f34ac07629e7e3d348d` | `a7014e6ab6fc6b1bdd8af331870086f71940f35073d84f4f90c5b4b0b74aeb87` |
+| `ru.reyter.afrd2-1.2.0-release.apk` | 509 019 Б | `d52a4a707a7b7a66f36d3489222b200b` | `cb1b872b1f91280dcdb5973ac8556bb61bceb6c8cfaab28a250b9fbbdfbdabc3` |
+| `burstapp-release.apk` | 129 632 Б | `8a5d8ad316f87f6c33c5627d71096d9c` | `7ad9c80eef89add5715a8d58edf86976370e92f54c8ca239172a84acc9530f12` |
+| `afrd2-magisk-armeabi-v7a.zip` | 83 555 Б | `27a2791ef175f7c375e7cb297aa89283` | `959d8bfb1ee08fe8b7cf705f9feefffd71dfddd44a074d905be8c22a46c77204` |
+| `afrd2-magisk-arm64-v8a.zip` | 97 145 Б | `78ff577840c99bed4fb59eddf301fe02` | `28c442844affc7d01bbc41aa3ba2060b048e04bd393ad0b4007e65eaaf8bbadd` |
+| `afrd2-1.2.0-for-rom-dev.zip` | 634 675 Б | `015e853e1c10e3b9a0eb4acc5e3fb207` | `c3c020fe5ece8180d22294ba13e3c281b1c7f273c62695b02c2f2cbd75c072a5` |
 
-Демоны: `afrd-1.2.0-armeabi-v7a` 118 196 Б (`34749e03…`),
-`afrd-1.2.0-arm64-v8a` 167 520 Б (`352746e5…`). Строка «built at» может отставать
+Демоны: `afrd-1.2.0-armeabi-v7a` 118 196 Б (`dc1daf94…`),
+`afrd-1.2.0-arm64-v8a` 167 520 Б (`f3745f19…`). Строка «built at» может отставать
 на одну сборку — сверяйтесь по размеру/md5.
 
 APK подписан релизным ключом; обновления ставятся поверх только той же подписью.
