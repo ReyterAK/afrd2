@@ -5923,13 +5923,37 @@ cadence_done: ;
 					if (lhz)
 					{
 						layer_rate_checked = true;
-						layer_rate_pin = lhz;
-						if (lhz != hz)
+
+						/* Счётчик, подтверждённый заявленной длительностью
+						 * кадра того же класса, — это контент. Проба слоя
+						 * может мерить каденцию рендера плеера: живой OTT на
+						 * `.50` давал ровно 40.00 мс (25.00 Гц) при счётчике
+						 * 23.98 и заявке frame dur 4004 (23.98) — демон
+						 * уходил на 50 вместо 24 (журнал §207). В спорной
+						 * зоне 23–27 верим счётчику, если заявка его
+						 * подтверждает; иначе — слою, как раньше (случай
+						 * AV1-тракта, где счётчик завышает, а заявка мусорная). */
+						int decl_now = decl_hz_from_dur (v0.decl_dur);
+						bool counter_ok = (decl_now > 0) && (hz > 0) &&
+						                  !fps_group_differs (decl_now, hz);
+
+						if (counter_ok && (lhz != hz))
 						{
-							trace (0, "частота по подаче видео-слоя: " HZ_FMT
-							       " Гц вместо " HZ_FMT " Гц по счётчику — "
-							       "беру слой\n", HZ_ARGS (lhz), HZ_ARGS (hz));
-							hz = lhz;
+							trace (0, "слой " HZ_FMT " Гц, счётчик " HZ_FMT
+							       " Гц (заявка " HZ_FMT " Гц) — беру счётчик\n",
+							       HZ_ARGS (lhz), HZ_ARGS (hz), HZ_ARGS (decl_now));
+							layer_rate_pin = hz;
+						}
+						else
+						{
+							layer_rate_pin = lhz;
+							if (lhz != hz)
+							{
+								trace (0, "частота по подаче видео-слоя: " HZ_FMT
+								       " Гц вместо " HZ_FMT " Гц по счётчику — "
+								       "беру слой\n", HZ_ARGS (lhz), HZ_ARGS (hz));
+								hz = lhz;
+							}
 						}
 					}
 				}
