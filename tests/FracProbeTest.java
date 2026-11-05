@@ -58,9 +58,16 @@ public class FracProbeTest
         eq ("тег не найден", FracProbe.tagValue (out, "X="), "");
         eq ("P2 не путается с P", FracProbe.tagValue (Arrays.asList ("P2=0"), "P="), "");
 
-        eq ("frac 0", FracProbe.fracZero ("    frac:                  0"), true);
-        eq ("frac 1", FracProbe.fracZero ("    frac:                  1"), false);
-        eq ("пусто", FracProbe.fracZero (""), false);
+        eq ("frac 0", FracProbe.vinfoInteger ("    frac:                  0", "", ""), true);
+        eq ("frac 1", FracProbe.vinfoInteger ("    frac:                  1", "", ""), false);
+        /* старые ядра (`.48`, ATV9) поля frac не имеют — решает тайминг */
+        eq ("24/1 целая", FracProbe.vinfoInteger ("", "  sync_duration_num: 24",
+                                                  "  sync_duration_den: 1"), true);
+        eq ("2997/125 дробная", FracProbe.vinfoInteger ("", "  sync_duration_num: 2997",
+                                                        "  sync_duration_den: 125"), false);
+        eq ("50/1 целая", FracProbe.vinfoInteger ("", "  sync_duration_num: 50",
+                                                  "  sync_duration_den: 1"), true);
+        eq ("пусто", FracProbe.vinfoInteger ("", "", ""), false);
 
         eq ("имена режимов", String.join (",", FracProbe.modeNamesFromLines (Arrays.asList (
                 "480p60hz", "1080p60hz*", "640x480p60hz", "", "1080p24hz"))),

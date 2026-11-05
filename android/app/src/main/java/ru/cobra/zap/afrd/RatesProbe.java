@@ -140,12 +140,16 @@ public class RatesProbe
         RootShell.run (new String [] {
                 "echo P2=$(cat " + FRAC_NODE + ")",
                 "echo F2=$(grep -m1 'frac:' " + VINFO_NODE + ")",
+                "echo N2=$(grep -m1 'sync_duration_num' " + VINFO_NODE + ")",
+                "echo D2=$(grep -m1 'sync_duration_den' " + VINFO_NODE + ")",
                 "echo M2=$(cat " + MODE_NODE + ")",
             }, after);
         Log.i (TAG, "проба: после применения out=" + after);
 
         String policyAfter = FracProbe.tagValue (after, "P2=");
         String fracAfter = FracProbe.tagValue (after, "F2=");
+        String numAfter = FracProbe.tagValue (after, "N2=");
+        String denAfter = FracProbe.tagValue (after, "D2=");
         String modeAfter = FracProbe.tagValue (after, "M2=");
 
         /* Запасной путь: помощник не сменил режим (или его нет, а путь
@@ -163,6 +167,8 @@ public class RatesProbe
             RootShell.run (new String [] {
                     "echo P3=$(cat " + FRAC_NODE + ")",
                     "echo F3=$(grep -m1 'frac:' " + VINFO_NODE + ")",
+                    "echo N3=$(grep -m1 'sync_duration_num' " + VINFO_NODE + ")",
+                    "echo D3=$(grep -m1 'sync_duration_den' " + VINFO_NODE + ")",
                     "echo M3=$(cat " + MODE_NODE + ")",
                 }, after);
             Log.i (TAG, "проба: запись в узел out=" + direct + " after=" + after);
@@ -172,6 +178,8 @@ public class RatesProbe
             {
                 policyAfter = FracProbe.tagValue (after, "P3=");
                 fracAfter = FracProbe.tagValue (after, "F3=");
+                numAfter = FracProbe.tagValue (after, "N3=");
+                denAfter = FracProbe.tagValue (after, "D3=");
                 modeAfter = m3;
             }
         }
@@ -190,7 +198,7 @@ public class RatesProbe
         }
 
         boolean stuckZero = "0".equals (policyAfter.trim ());
-        boolean fracZero = FracProbe.fracZero (fracAfter);
+        boolean fracZero = FracProbe.vinfoInteger (fracAfter, numAfter, denAfter);
         Log.i (TAG, "проба: узел=" + policyAfter + " frac=" + fracAfter
                    + " -> " + (FracProbe.verdict (stuckZero, fracZero) == FracProbe.HELD
                                ? "целые доступны" : "только дробные"));

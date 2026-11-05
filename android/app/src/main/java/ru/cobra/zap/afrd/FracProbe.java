@@ -169,10 +169,43 @@ public class FracProbe
         return "";
     }
 
-    /** `vinfo` сообщает целую частоту: строка вида `    frac:                  0`. */
-    public static boolean fracZero (String vinfoLine)
+    /**
+     * Фактическая частота целая.
+     *
+     * Свежие ядра отдают в `vinfo` поле `frac:` (0 — целая, 1 — дробная);
+     * на старых (живой `.48`, Android 9, ядро 4.9) этого поля нет — тогда
+     * смотрим тайминг: `sync_duration_num / den`, где целая частота кратна
+     * единице (24/1 = 24.000), а дробная — нет (2997/125 = 23.976).
+     */
+    public static boolean vinfoInteger (String fracLine, String numLine, String denLine)
     {
-        return (vinfoLine != null) && vinfoLine.matches (".*frac:\\s*0\\b.*");
+        if ((fracLine != null) && fracLine.matches (".*frac:\\s*\\d+.*"))
+            return fracLine.matches (".*frac:\\s*0\\b.*");
+
+        int num = intValue (numLine);
+        int den = intValue (denLine);
+
+        return (den > 0) && ((num % den) == 0);
+    }
+
+    /** Число в конце строки (`    sync_duration_num:     50` → 50); -1 — нет. */
+    private static int intValue (String line)
+    {
+        if (line == null)
+            return -1;
+
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile ("(-?\\d+)\\s*$").matcher (line);
+        if (!m.find ())
+            return -1;
+
+        try
+        {
+            return Integer.parseInt (m.group (1));
+        }
+        catch (NumberFormatException e)
+        {
+            return -1;
+        }
     }
 
     /** Имена режимов из вывода `cat disp_cap` (звёздочка — «поддерживается ТВ»). */
