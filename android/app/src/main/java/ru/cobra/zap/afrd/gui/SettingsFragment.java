@@ -339,6 +339,30 @@ public class SettingsFragment extends PreferenceFragment
         });
 
         setProbeSummary (p);
+
+        /* На Android 12-14 (backdoor) проба не работает и не нужна: список
+         * частот уже строится из таблицы SurfaceFlinger, а режим задаёт она,
+         * не узел/помощник. Убираем пункт в фоне — dumpsys не для UI-потока. */
+        final Preference probe = p;
+        new AsyncTask<Void, Void, Boolean> ()
+        {
+            @Override
+            protected Boolean doInBackground (Void... params)
+            {
+                return RatesProbe.backdoorPath ();
+            }
+
+            @Override
+            protected void onPostExecute (Boolean backdoor)
+            {
+                if ((backdoor != null) && backdoor && isAdded ())
+                {
+                    PreferenceScreen screen = getPreferenceScreen ();
+                    if (screen != null)
+                        screen.removePreference (probe);
+                }
+            }
+        }.execute ();
     }
 
     private void runRatesProbe (final Preference pref)

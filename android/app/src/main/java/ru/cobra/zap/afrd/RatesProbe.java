@@ -48,6 +48,37 @@ public class RatesProbe
     }
 
     /**
+     * Режим задаётся таблицей SurfaceFlinger (Android 12-14), а не вендорным
+     * SystemControl: проба там не нужна и не работает — список частот уже
+     * строится из настоящих режимов таблицы (23.98 и 24.00 приходят
+     * отдельными строками), а `afrd-disp.sh` на этом пути режим не меняет.
+     * Живой случай `.50`: проба билась в «не удалось», потому что запись в
+     * узел режима/помощник на backdoor-пути ничего не делает (журнал §208).
+     */
+    public static boolean backdoorPath ()
+    {
+        List<String> out = new ArrayList<> ();
+        if (RootShell.run (new String [] {
+                "dumpsys SurfaceFlinger | grep -c 'refreshRate='",
+            }, out) != 0 && out.isEmpty ())
+            return false;
+
+        for (String line : out)
+        {
+            try
+            {
+                if (Integer.parseInt (line.trim ()) >= 2)
+                    return true;
+            }
+            catch (NumberFormatException ignored)
+            {
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Проба. Возврат: FracProbe.UNKNOWN — не получилось (нет root, узлы не
      * читаются, режим не сменился); иначе HELD или FRACT.
      *
