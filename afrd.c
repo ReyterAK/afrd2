@@ -416,12 +416,14 @@ static void update_stats ()
 	shmem_update ();
 }
 
+/* Есть ли в таблице режимов режим ровно с этой частотой (см. определение ниже). */
+static bool mode_rate_present_cb (int hz, void *ctx);
+
 static bool rate_is_blacklisted (int rate)
 {
-	for (int i = 0; i < g_mode_blacklist_rates_count; i++)
-		if (abs (g_mode_blacklist_rates [i] - rate) <= 1)
-			return true;
-	return false;
+	return mode_rate_blacklisted (rate, g_mode_blacklist_rates,
+	                              g_mode_blacklist_rates_count,
+	                              mode_rate_present_cb, NULL);
 }
 
 // note! this function considers fractional rate "equal" to integer rate!
@@ -1367,6 +1369,25 @@ static bool g_reconf_requested;
 /* Таблица режимов, полученная от SurfaceFlinger (заполняется sf_modes_refresh). */
 static sf_mode_t g_sf_modes [SF_MODE_MAX];
 static int g_sf_modes_n = 0;
+
+/* Есть ли режим ровно с этой частотой — в любой из таблиц (вендорная/legacy
+ * g_modes и таблица SurfaceFlinger). Нужно групповому запрету частот: если
+ * второго члена пары (24.000/23.976) в таблице нет, имя режима одно и запрет
+ * любого из двух отсекает этот режим (modes_sel.h, mode_rate_blacklisted). */
+static bool mode_rate_present_cb (int hz, void *ctx)
+{
+	(void) ctx;
+
+	for (int i = 0; i < g_modes_n; i++)
+		if (display_mode_hz (&g_modes [i]) == hz)
+			return true;
+
+	for (int i = 0; i < g_sf_modes_n; i++)
+		if (g_sf_modes [i].hz == hz)
+			return true;
+
+	return false;
+}
 
 /* Фильтр частот для sfmodes_select: на ATV14-пути действует тот же
  * mode.blacklist.rates, что и в legacy-ветке (раньше ключ молча игнорировался). */

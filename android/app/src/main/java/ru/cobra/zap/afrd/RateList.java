@@ -55,23 +55,6 @@ public class RateList
     private static final Pattern MODE_NAME =
         Pattern.compile ("(?im)^[ \\t]*[0-9]+[pi]([0-9]+(?:\\.[0-9]+)?)hz");
 
-    /**
-     * Пары «целая частота в имени режима — её дробный вариант». Имя режима на
-     * старом и вендорном путях одно на оба варианта («1080p24hz» — это и 24.000,
-     * и 23.976): дробность задаётся узлом frac_rate_policy (modes.c:
-     * display_mode_add оставляет недробные, display_mode_get_current выставляет
-     * fractional по этому узлу). Демон сравнивает частоту запрета с частотой
-     * режима численно с допуском ±1 в 1/256 Гц, поэтому 23.976 (6138) и 24 (6144)
-     * — РАЗНЫЕ записи: без дробного варианта в списке запрет «24» не отсекал
-     * режим 23.976, а выбрать 23.976 из списка было нельзя (живая приёмка
-     * 2026-10-15 на стенде Android 9: при mode.blacklist.rates=24 демон всё равно
-     * встал на 1080p24hz как 23.98 Гц).
-     */
-    private static final String [][] FRACT_TWINS =
-    {
-        { "24", "23.976" }, { "30", "29.97" }, { "60", "59.94" },
-    };
-
     /** Частота режима в дампе SurfaceFlinger: «refreshRate=23.98 Hz» (Android 12-14). */
     private static final Pattern SF_MODE =
         Pattern.compile ("refreshRate=([0-9]+(?:\\.[0-9]+)?)");
@@ -136,19 +119,14 @@ public class RateList
 
         if (text != null)
         {
-            /* Частоты из имён режимов (disp_cap) дополняются дробными вариантами:
-             * имя одно на 24.000 и 23.976 (см. FRACT_TWINS), а записи настройки
-             * разные. В дампе SurfaceFlinger нового пути оба варианта приходят
-             * отдельными строками, поэтому там ничего не досочиняем. */
-            LinkedHashSet<String> byName = new LinkedHashSet<> ();
-            addMatches (byName, MODE_NAME, text);
-            out.addAll (byName);
-
-            for (String name : byName)
-                for (String [] pair : FRACT_TWINS)
-                    if (pair [0].equals (name))
-                        out.add (pair [1]);
-
+            /* Только то, что реально есть в источнике. Дробные варианты имён
+             * режимов не досочиняем: демон сам сравнивает частоты по группе,
+             * когда второго члена пары нет в таблице режимов (modes_sel.h:
+             * mode_rate_blacklisted) — на Android 10/11 и legacy имя режима
+             * одно на 24.000 и 23.976. В дампе SurfaceFlinger нового пути оба
+             * варианта приходят отдельными строками и попадают в список как
+             * есть: там записи действительно различимы. */
+            addMatches (out, MODE_NAME, text);
             addMatches (out, SF_MODE, text);
             addMatches (out, SF_ACTIVE, text);
         }

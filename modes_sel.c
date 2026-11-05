@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include "afrd.h"
 #include "modes_sel.h"
+#include "fps_class.h"
 
 int display_mode_hz (display_mode_t *mode)
 {
@@ -193,4 +194,38 @@ int modes_select_by_hz (const display_mode_t *modes, int n, int hz,
 		*hz_out = display_mode_hz (&best);
 
 	return 0;
+}
+
+/* Запрет частоты по группе, когда таблица режимов не различает пару
+ * 24.000/23.976 (подробности — modes_sel.h). */
+bool mode_rate_blacklisted (int rate, const int *blacklist, int count,
+                            modes_hz_filter_t has_rate, void *ctx)
+{
+	if (!blacklist || (count <= 0) || (rate <= 0))
+		return false;
+
+	/* Допуск сравнения — 1 в 1/256 Гц, как было у rate_is_blacklisted:
+	 * 23.976 (6138) и 24.000 (6144) так не совпадут. */
+	for (int i = 0; i < count; i++)
+		if (abs (blacklist [i] - rate) <= 1)
+			return true;
+
+	int grp = fps_rate_group (rate);
+	if (grp <= 0)
+		return false;
+
+	for (int i = 0; i < count; i++)
+	{
+		if (fps_rate_group (blacklist [i]) != grp)
+			continue;
+
+		/* Второй член пары есть в таблице отдельным режимом — записи
+		 * различимы, запрет действует только по своей частоте. */
+		if (has_rate && has_rate (blacklist [i], ctx))
+			continue;
+
+		return true;
+	}
+
+	return false;
 }

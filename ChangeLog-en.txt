@@ -489,11 +489,12 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       uid=0 is accepted.
 
     * "Blacklisted refresh rates" (mode.blacklist.rates) are picked from the
-      rates the TV supports instead of typed as numbers: 23.976 and 24 are
-      different entries, and guessing the right one from a hint was impossible.
-      The list also contains fractional variants (23.976, 29.97, 59.94): on the
-      legacy path a mode name covers both variants, so a blacklist of "24" did
-      not filter out 23.976.
+      rates the TV supports instead of typed as numbers. The list holds only the
+      rates the sources really have: fractional variants of mode names are no
+      longer invented. When a pair (24.000/23.976, 30/29.97, 60/59.94) is one
+      mode in the mode table - which is the case on Android 10/11 and the legacy
+      path - a blacklist entry covers the whole group; on Android 12-14 both
+      members come as separate modes and only 23.98 can be blocked alone.
 
     * "HDMI format (color space)" (cs.select) is a choice of three items instead
       of a line with regular expressions; the 4K bandwidth rule is kept in each.

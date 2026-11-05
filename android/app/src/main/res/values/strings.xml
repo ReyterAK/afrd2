@@ -43,7 +43,8 @@
     </string>
     <string name="prefs_mode_blacklist_rates">Blacklisted refresh rates</string>
     <string name="prefsum_mode_blacklist_rates">Refresh rates not to be used; pick from the rates your
-        TV supports. 23.976 and 24 are different rates — pick the one you need
+        TV supports. On Android 10/11 24 and 23.976 are one mode — blocking either hides both;
+        on Android 12–14 they are separate modes, pick the one you need
     </string>
     <string name="prefs_mode_extra">Extra supported video modes</string>
     <string name="prefsum_mode_extra">Additional video modes if your TV provides incomplete EDID

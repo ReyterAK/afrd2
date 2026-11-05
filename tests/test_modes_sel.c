@@ -151,6 +151,57 @@ static void test_blacklist (void)
 	assert (strcmp (name, "1080p25hz") == 0);
 }
 
+/* Запрет по группе частот: на вендорном и legacy-путях имя режима одно на
+ * 24.000 и 23.976, поэтому запрет любого из двух должен отсекать этот режим.
+ * На backdoor-пути оба члена приходят отдельными режимами — там сравнение
+ * остаётся точным (иначе пользователь не смог бы запретить только 23.98). */
+static bool present_one24 (int hz, void *ctx)
+{
+	(void) ctx;
+	return hz == (24 * 256);
+}
+
+static bool present_two24 (int hz, void *ctx)
+{
+	(void) ctx;
+	return (hz == (24 * 256)) || (hz == 6138);
+}
+
+static bool present_one30 (int hz, void *ctx)
+{
+	(void) ctx;
+	return hz == (30 * 256);
+}
+
+static void test_blacklist_group (void)
+{
+	const int bl_23976 [] = { 6138 };
+	const int bl_24 [] = { 24 * 256 };
+	const int bl_2997 [] = { 7672 };
+	const int bl_25 [] = { 25 * 256 };
+
+	/* Таблица с одним режимом 24 (disp_cap ATV11): запрет любой из пары
+	 * отсекает режим, иначе половина записей в настройке не действует. */
+	assert (mode_rate_blacklisted (24 * 256, bl_23976, 1, present_one24, NULL));
+	assert (mode_rate_blacklisted (24 * 256, bl_24, 1, present_one24, NULL));
+	assert (!mode_rate_blacklisted (24 * 256, bl_25, 1, present_one24, NULL));
+
+	/* Таблица с двумя режимами (SurfaceFlinger ATV14): записи различимы,
+	 * запрет 23.98 не трогает 24.00 и наоборот. */
+	assert (!mode_rate_blacklisted (24 * 256, bl_23976, 1, present_two24, NULL));
+	assert (!mode_rate_blacklisted (6138, bl_24, 1, present_two24, NULL));
+	assert (mode_rate_blacklisted (6138, bl_23976, 1, present_two24, NULL));
+	assert (mode_rate_blacklisted (24 * 256, bl_24, 1, present_two24, NULL));
+
+	/* Класс 30 — та же пара: 29.97 и 30. */
+	assert (mode_rate_blacklisted (30 * 256, bl_2997, 1, present_one30, NULL));
+	assert (!mode_rate_blacklisted (30 * 256, bl_25, 1, present_one30, NULL));
+
+	/* Пустой список и нечисловая частота — не запрещено. */
+	assert (!mode_rate_blacklisted (24 * 256, NULL, 0, present_one24, NULL));
+	assert (!mode_rate_blacklisted (0, bl_24, 1, present_one24, NULL));
+}
+
 /* Нет подходящего режима — честный отказ, а не «первый попавшийся». */
 static void test_no_match (void)
 {
@@ -212,6 +263,7 @@ int main (void)
 	test_geometry ();
 	test_floor ();
 	test_blacklist ();
+	test_blacklist_group ();
 	test_no_match ();
 
 	printf ("modes_sel: OK\n");
