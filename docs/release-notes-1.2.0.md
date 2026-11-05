@@ -177,6 +177,12 @@
   Там же исправлен разбор `awk -v exp=…` (порог выбросов считался по периоду
   дисплея): ровный 24p больше не получает «неровная: 84–96 %».
 
+* **Сброс «потолка» приходит по таймеру**, а не на следующем решении: при
+  зажатом плеере он задерживался до 16 с (живой замер `.50`: 16 328 мс; после
+  правки — 4 879 мс). Куда возвращать режим после подъёма, задаёт новый
+  экспертный ключ `switch.restore.bump`: `1` (умолчание) — на максимум, `0` — на
+  режим до подъёма (поведение 1.1.0).
+
 ### Проверено вживую
 
 * Android 14 (Amlogic S905X5M, ядро 5.15): «AFR в OTT включён + OTT в
@@ -258,14 +264,14 @@
 
 | Файл | Размер | MD5 | SHA-256 |
 |---|---|---|---|
-| `ru.reyter.afrd2-1.2.0-release.apk` | 509 019 Б | `d52a4a707a7b7a66f36d3489222b200b` | `cb1b872b1f91280dcdb5973ac8556bb61bceb6c8cfaab28a250b9fbbdfbdabc3` |
-| `burstapp-release.apk` | 129 632 Б | `8a5d8ad316f87f6c33c5627d71096d9c` | `7ad9c80eef89add5715a8d58edf86976370e92f54c8ca239172a84acc9530f12` |
-| `afrd2-magisk-armeabi-v7a.zip` | 83 555 Б | `27a2791ef175f7c375e7cb297aa89283` | `959d8bfb1ee08fe8b7cf705f9feefffd71dfddd44a074d905be8c22a46c77204` |
-| `afrd2-magisk-arm64-v8a.zip` | 97 145 Б | `78ff577840c99bed4fb59eddf301fe02` | `28c442844affc7d01bbc41aa3ba2060b048e04bd393ad0b4007e65eaaf8bbadd` |
-| `afrd2-1.2.0-for-rom-dev.zip` | 634 675 Б | `015e853e1c10e3b9a0eb4acc5e3fb207` | `c3c020fe5ece8180d22294ba13e3c281b1c7f273c62695b02c2f2cbd75c072a5` |
+| `ru.reyter.afrd2-1.2.0-release.apk` | 509 750 Б | `29bcfae4ca8274271bb7e1cb13c782e1` | `44a2954b553e954dd229b3a671a36676d643a230b2374fb0cf4930fd0856ea63` |
+| `burstapp-release.apk` | 129 632 Б | `982cdf1ed19cb5d545ccb2f005eb2bea` | `736b9a24f98f1bbd6ce29450da1b09c69d2a2866eddb15f98350b5e2b945b6fc` |
+| `afrd2-magisk-armeabi-v7a.zip` | 83 781 Б | `084be3bc7957c65705c0bbe80d5a07da` | `4ca18cacdd43586d55c4110f15f4db3872c61e1fcc4146e1aafc33e32b945616` |
+| `afrd2-magisk-arm64-v8a.zip` | 97 155 Б | `23006b8ab6a09fb0d1f798ab77c56d36` | `19fc717a9e0673a44916f0aca35e685e36a6f49bc971a528880f6c65f1b34198` |
+| `afrd2-1.2.0-for-rom-dev.zip` | 635 528 Б | `bb9dfc28aaec96a50f048828933b1df7` | `a8f139686ffce58c07e92c984aad734c184cfbdb982b1ded90518f61293614d8` |
 
-Демоны: `afrd-1.2.0-armeabi-v7a` 118 196 Б (`dc1daf94…`),
-`afrd-1.2.0-arm64-v8a` 167 520 Б (`f3745f19…`). Строка «built at» может отставать
+Демоны: `afrd-1.2.0-armeabi-v7a` 118 288 Б (`44f41b69…`),
+`afrd-1.2.0-arm64-v8a` 167 648 Б (`861caf87…`). Строка «built at» может отставать
 на одну сборку — сверяйтесь по размеру/md5.
 
 APK подписан релизным ключом; обновления ставятся поверх только той же подписью.

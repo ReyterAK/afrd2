@@ -231,6 +231,15 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       (several check marks). The old keys are read only when the new one is
       absent, are mutually exclusive, and require the list as well.
 
+    * Ceiling reset and the mode restored after the bump - two refinements from
+      live runs on 05.11. The deferred ceiling reset now fires by its own timer
+      (checked every loop iteration) instead of on the next decision: with a
+      clamped player it used to arrive after 16 s instead of 4 (live .50:
+      16328 ms, 4879 ms after the fix). Where the mode returns after the bump is
+      set by the new expert key switch.restore.bump: 1 (default) - to the
+      maximum, so the next clip does not start from a low ceiling; 0 - to the
+      mode before the bump, as in 1.1.0 (verified on .50: 60 and 24 Hz).
+
     * Pause behaviour is one item "On pause" (pause.mode): keep the mode,
       keep 20 s and then restore, or restore immediately. Before it was a toggle
       "Keep the mode while paused" and a number "STOP delay" in different

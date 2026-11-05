@@ -402,6 +402,7 @@ AFRd2 — форк AFRd (Andrey Zabolotnyi) под **GPL-3**. Размещени
 | `burst.ms` | Android 10–14 | умолчание для команды `burst` без аргумента (0 — 40 000 мс, допуск 15 000…120 000) |
 | `burst.broadcast` | Android 10–14 | сообщать о сеансе broadcast-ом `ru.reyter.afrd2.action.BURST_STATE` |
 | `switch.restore.on.stop` | Android 10–14 | — |
+| `switch.restore.bump` | Android 10–14 | куда возвращать режим после подъёма: `1` (умолчание) — на максимум, чтобы следующий ролик не начался с низкого «потолка»; `0` — на режим до подъёма (поведение 1.1.0). Экспертный ключ, в интерфейсе его нет |
 | `fps.correct.enable` | Android 10–14 | — |
 | `fps.correct.list` | Android 10–14 | — |
 | `fps.correct.av1.offset` | Android 10–14 | — |

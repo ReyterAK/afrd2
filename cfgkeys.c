@@ -131,6 +131,10 @@ static const struct
 	{ "burst.ms",			CFGKEY_NEWPATH, NULL },
 	{ "burst.broadcast",		CFGKEY_NEWPATH, NULL },
 	{ "switch.restore.on.stop",	CFGKEY_NEWPATH, NULL },
+	/* Куда возвращать режим после подъёма: 1 — на максимум (умолчание,
+	 * защита следующего ролика), 0 — на режим до подъёма (как в 1.1.0).
+	 * Экспертный ключ, в GUI его нет. */
+	{ "switch.restore.bump",	CFGKEY_NEWPATH, NULL },
 	{ "fps.correct.enable",		CFGKEY_NEWPATH, NULL },
 	{ "fps.correct.list",		CFGKEY_NEWPATH, NULL },
 	/* Одна настройка на поправку AV1: off | проценты; применяется только к
