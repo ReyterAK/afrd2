@@ -458,6 +458,11 @@
 ! Android 11-14 that key is pause patience: 0 keeps the mode until the pause
 ! ends; it is not the return delay).
 
+! On Android 6-9 the same item means something else: 0 never restores the mode
+! after a video (the launcher stays at the clip's rate). If you want the mode
+! back, set 10000-12000 ms - it returns after that time, and a new clip inside
+! the window does not cancel it.
+
 ! If no blinking matters more than the exact rate, add the player to "Players
 ! that AFR disturbs" (group "Players"): AFRd2 will not touch the mode in that
 ! player at all.
