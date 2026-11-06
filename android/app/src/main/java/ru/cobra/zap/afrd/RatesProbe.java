@@ -49,34 +49,26 @@ public class RatesProbe
     }
 
     /**
-     * Режим задаётся таблицей SurfaceFlinger (Android 12-14), а не вендорным
-     * SystemControl: проба там не нужна и не работает — список частот уже
-     * строится из настоящих режимов таблицы (23.98 и 24.00 приходят
-     * отдельными строками), а `afrd-disp.sh` на этом пути режим не меняет.
-     * Живой случай `.50`: проба билась в «не удалось», потому что запись в
-     * узел режима/помощник на backdoor-пути ничего не делает (журнал §208).
+     * Режим задаётся транзакцией SurfaceFlinger (Android 12-14), а не узлом
+     * `display/mode` и не вендорным SystemControl: проба там не нужна и не
+     * работает — список частот уже строится из настоящих режимов таблицы
+     * (23.98 и 24.00 приходят отдельными строками), а `afrd-disp.sh` на этом
+     * пути режим не меняет. Живой случай `.50`: проба билась в «не удалось»,
+     * потому что запись в узел/помощник на backdoor-пути ничего не делает
+     * (журнал §208).
+     *
+     * Путь определяется так же, как в демоне (`platform_detect`): новый путь
+     * Amlogic (`Control.isAtv14`) плюс Android 12+. На Android 10/11 режим
+     * задаёт вендорный SystemControl, и проба работает.
+     *
+     * Раньше признаком служило число строк `refreshRate=` в
+     * `dumpsys SurfaceFlinger` (>= 2). На живых ATV14 (`.50`, `.77`) в дампе
+     * ровно одна такая строка — активный режим, — условие не выполнялось, и
+     * пункт оставался на экране (находка владельца 06.11).
      */
     public static boolean backdoorPath ()
     {
-        List<String> out = new ArrayList<> ();
-        if (RootShell.run (new String [] {
-                "dumpsys SurfaceFlinger | grep -c 'refreshRate='",
-            }, out) != 0 && out.isEmpty ())
-            return false;
-
-        for (String line : out)
-        {
-            try
-            {
-                if (Integer.parseInt (line.trim ()) >= 2)
-                    return true;
-            }
-            catch (NumberFormatException ignored)
-            {
-            }
-        }
-
-        return false;
+        return (Build.VERSION.SDK_INT >= 31) && Control.isAtv14 ();
     }
 
     /**

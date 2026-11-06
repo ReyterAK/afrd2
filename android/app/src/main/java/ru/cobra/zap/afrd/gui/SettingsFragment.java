@@ -322,9 +322,7 @@ public class SettingsFragment extends PreferenceFragment
 
         if (!RatesProbe.supported ())
         {
-            PreferenceScreen screen = getPreferenceScreen ();
-            if (screen != null)
-                screen.removePreference (p);
+            removePref (p);
             return;
         }
 
@@ -342,27 +340,25 @@ public class SettingsFragment extends PreferenceFragment
 
         /* На Android 12-14 (backdoor) проба не работает и не нужна: список
          * частот уже строится из таблицы SurfaceFlinger, а режим задаёт она,
-         * не узел/помощник. Убираем пункт в фоне — dumpsys не для UI-потока. */
-        final Preference probe = p;
-        new AsyncTask<Void, Void, Boolean> ()
-        {
-            @Override
-            protected Boolean doInBackground (Void... params)
-            {
-                return RatesProbe.backdoorPath ();
-            }
+         * не узел/помощник. Признак пути — тот же, что у демона
+         * (RatesProbe.backdoorPath): проверка только по файлам и SDK, поэтому
+         * можно решать прямо здесь, без dumpsys и фонового потока. */
+        if (RatesProbe.backdoorPath ())
+            removePref (p);
+    }
 
-            @Override
-            protected void onPostExecute (Boolean backdoor)
-            {
-                if ((backdoor != null) && backdoor && isAdded ())
-                {
-                    PreferenceScreen screen = getPreferenceScreen ();
-                    if (screen != null)
-                        screen.removePreference (probe);
-                }
-            }
-        }.execute ();
+    /* Убрать пункт из его фактической группы.
+     *
+     * PreferenceScreen.removePreference() удаляет только прямых детей: пункт
+     * пробы живёт во вложенном экране «Режимы», и вызов на корневом экране его
+     * не трогал — ни в ветке «бокс не поддерживает», ни в ветке backdoor.
+     * На ATV14 пункт поэтому оставался видимым и падал в «не удалось измерить»
+     * (находка владельца 06.11). */
+    private static void removePref (Preference p)
+    {
+        PreferenceGroup parent = (PreferenceGroup)p.getParent ();
+        if (parent != null)
+            parent.removePreference (p);
     }
 
     private void runRatesProbe (final Preference pref)
