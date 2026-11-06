@@ -69,6 +69,28 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       (1.5x or more), the fast decision is not applied and the mode changes
       once, by measurement.
 
+    * Legacy path (Android 6-9): the mode no longer "jumps" 50 <-> 60 after a
+      seek. Right after the decoder is recreated, vdec_status reports a stale
+      "frame rate 30" while the cache dumps are empty in the same window (no
+      frames yet): that source reached the threshold in 0.8 s, the mode went to
+      60 Hz and came back to 50 a second later. Now vdec_status is the source
+      of last resort: it never decides alone while the cache dumps work, and
+      where the dumps are unavailable its verdict is only taken after
+      switch.timeout. A paused clip right after the start no longer sticks at
+      60 Hz. Live ATV9 log (25 fps film in Vimu) and a stand check: six seeks
+      in a row - the mode stays at 50.
+
+    * Android 12-14: the "Check fractional rates" item is really hidden. It was
+      not supposed to appear before either (on the backdoor path SurfaceFlinger
+      sets the mode, the probe does not work there, and the rate list is built
+      from the mode table), but hiding failed: the path was detected by the
+      number of refreshRate= lines in the SurfaceFlinger dump (a live box has
+      one), and the item was removed from the wrong preference group.
+
+    * FAQ and publication: the "STOP delay" entry now says that on Android 6-9
+      zero means "do not restore the mode after a video" (the launcher stays at
+      the clip rate); set 10000-12000 ms to get the mode back.
+
     * "Restore the color profile" (cs.restore, default 1): when the daemon
       returns the mode (video ended, player left the foreground) it writes back
       the format that was in effect before the switch. Otherwise a broad rule
