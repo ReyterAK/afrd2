@@ -1345,6 +1345,15 @@ The following parameters are recognized by AFRD:
     If movie frame rate cannot be safely determined for this period
     of time, afrd will give up trying.
 
+    AFRd2 (Android 6-9): источники частоты опрашиваются вместе — подсказка
+    плеера, `dump_vdec_chunks`, `dump_vdec_blocks` и `vdec_status`, у каждого
+    свой вес. `vdec_status` — источник последней надежды: сразу после
+    появления декодера он отдаёт устаревшее `frame rate 30` (живой лог ATV9:
+    фильм 25 к/с после каждой перемотки уходил 50 → 60 → 50), поэтому его
+    показания не решают в одиночку, если дампы кэша на боксе работают. Там,
+    где дампы не работают никогда, решение по `vdec_status` принимается не
+    раньше `switch.timeout`, а не через 0.8 с.
+
 * *switch.blackout*
     When movie starts after this period of time the screen will be
     disabled to minimize flicker. Don't set it too low as in some

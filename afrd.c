@@ -289,6 +289,15 @@ static const uint8_t src_weight [SRC_COUNT] =
 	25,	// VDEC
 };
 
+/* Дампы кэша декодера (dump_vdec_chunks/dump_vdec_blocks) уже отдавали
+ * данные за этот запуск демона. Если да — на боксе они работают, и vdec_status
+ * не решает в одиночку: сразу после add декодера он отдаёт устаревшее
+ * «frame rate 30» (живой лог ATV9: фильм 25 к/с, после каждой перемотки
+ * 50 -> 60 -> 50), а дампы в это же окно пусты, потому что кадры ещё не пошли.
+ * На боксах, где дампы не работают никогда, флаг остаётся false и vdec_status
+ * работает как раньше, только решение откладывается до switch.timeout. */
+static bool g_vdec_dumps_seen;
+
 // accept hz when weight sum up to this
 #define ACCEPT_HZ_WEIGHT        100
 
@@ -501,6 +510,14 @@ static int best_fps (bool last_chance)
 	for (int i = 0; i < SRC_COUNT; i++) {
 		hz_stat_t *stat = &g_state.hz_stat [i];
 
+		/* vdec_status — источник последней надежды: он единственный отдаёт
+		 * устаревшее значение сразу после add декодера. В обычном проходе
+		 * ждём точные источники (FRH, дампы кэша), а если дампы на боксе
+		 * вообще не работают — решаем по vdec_status, но только по
+		 * switch.timeout, а не через 0.8 с. */
+		if ((i == SRC_VDEC) && (!last_chance || g_vdec_dumps_seen))
+			continue;
+
 		if (last_chance) {
 			// if last chance, use any detection that we're at least half sure
 			if (stat->weight < ACCEPT_HZ_WEIGHT/2)
@@ -567,6 +584,7 @@ static bool query_vdec_blocks ()
 
 	trace (2, "\t> %d frames played over last %dms at "HZ_FMT"fps\n",
 		nframes, timeint, HZ_ARGS (hz));
+	g_vdec_dumps_seen = true;
 	accumulate_fps (hz, SRC_BLOCKS);
 	return true;
 }
@@ -662,6 +680,7 @@ static bool query_vdec_chunks ()
 		return false;
 
 	// this gives fps with very high precision
+	g_vdec_dumps_seen = true;
 	accumulate_fps (hz, SRC_CHUNKS);
 	return true;
 }
@@ -7270,6 +7289,7 @@ int afrd_init ()
 		g_switch_timeout, g_switch_blackout, g_switch_ignore);
 
 	g_vdec_sysfs = cfg_get_str ("vdec.sysfs", DEFAULT_VDEC_SYSFS);
+	g_vdec_dumps_seen = false;
 	strlist_load (&g_vdec_blacklist, "vdec.blacklist", "vdec blacklist");
 	strlist_load (&g_frhint_vdec_blacklist, "frhint.vdec.blacklist", "frhint vdec blacklist");
 	uevent_filter_load (&g_filter_frhint, "uevent.filter.frhint");
