@@ -2396,14 +2396,6 @@ static int vendor_frac_ensure (const platform_t *plat, int want)
 	if ((plat->sink != SINK_VENDOR_MODE) || (want < 0))
 		return 0;
 
-	/* Вендор переписывает узел при применении режима — дальнейшие записи
-	 * только зря дёргают HAL (см. комментарий к g_vendor_frac_vendor_wins).
-	 * Отказ, замеченный хоть раз за запуск демона, — тоже повод не трогать
-	 * узел: иначе одно и то же переприменение повторяется на каждом ролике
-	 * (журнал §224). */
-	if (g_vendor_frac_vendor_wins || g_vendor_frac_hal_stubborn)
-		return 0;
-
 	int cur = sysfs_get_int (g_hdmi_dev, "frac_rate_policy");
 	if (cur < 0)
 	{
@@ -2423,6 +2415,15 @@ static int vendor_frac_ensure (const platform_t *plat, int want)
 	}
 
 	if (equal)
+		return 0;
+
+	/* Вендор переписывает узел при применении режима — дальнейшие записи
+	 * только зря дёргают HAL (см. комментарий к g_vendor_frac_vendor_wins).
+	 * Отказ, замеченный хоть раз за запуск демона, — тоже повод не трогать
+	 * узел: иначе одно и то же переприменение повторяется на каждом ролике
+	 * (журнал §224). Строку «нужна X, в узле Y» выше всё равно печатаем:
+	 * она один раз на видео и объясняет состояние узла. */
+	if (g_vendor_frac_vendor_wins || g_vendor_frac_hal_stubborn)
 		return 0;
 
 	if (g_vendor_frac_orig < 0)
@@ -2448,6 +2449,11 @@ static int vendor_frac_ensure (const platform_t *plat, int want)
 static void vendor_frac_check_after_apply (void)
 {
 	if (g_vendor_frac_wanted < 0)
+		return;
+
+	/* Отказ уже известен — узел не тревожим и строку не повторяем на каждом
+	 * ролике (журнал §224). */
+	if (g_vendor_frac_hal_stubborn)
 		return;
 
 	int after = sysfs_get_int (g_hdmi_dev, "frac_rate_policy");
