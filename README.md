@@ -894,7 +894,7 @@ Android 11 отдавала 0 Гц; ключ `vendor.disp.cap` был мёртв
 (в логе «кратный (x2)»), 50 → `1080p50hz`, 30 → `1080p60hz`, 60 → `1080p60hz` (`activeMode=59.94`).
 
 Ещё **не прогонялось**: не-регресс по `dump_vdec_*`, живой вариант ветки «нет backdoor» (пассивный режим).
-arm64 проверен у тестера: **Vontar X5, 64-битная AOSP** (07.11) — до этого стенды были 32-битные.
+arm64 проверен у тестера: **Vontar X5, 64-бит, AOSP, Android 14** (07.11) — до этого стенды были 32-битные.
 `pause.keep=0` (`PAUSE_TEST=1 PAUSE_EXPECT=restore`) прогонялся 29.09 после фикса R50 —
 `OK=7 FAIL=0 SKIP=0`. Предел паузы (`switch.delay.off`) проверен при `pause.keep=1` и
 `switch.restore.on.stop=1`; сочетание с `pause.keep=0`/`switch.restore.on.stop=0` живьём не
