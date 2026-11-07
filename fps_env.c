@@ -38,16 +38,29 @@ bool fps_env_push (fps_env_t *e, unsigned long long t_us,
 
 int fps_env_span_hz (const fps_env_t *e, unsigned long long need_us)
 {
-	if ((e->n < 2) || (e->s [e->n - 1].t_us <= e->s [0].t_us))
+	return fps_env_span_hz_since (e, 0, need_us);
+}
+
+int fps_env_span_hz_since (const fps_env_t *e, unsigned long long since_us,
+                           unsigned long long need_us)
+{
+	/* Первая выборка окна — не раньше since_us: прогрев после старта
+	 * декодера (разгон, добор буфера) частоту завышает, и по нему нельзя ни
+	 * решать, ни ветоить. */
+	int i = 0;
+	while ((i < e->n) && (e->s [i].t_us < since_us))
+		i++;
+
+	if ((e->n - i) < 2)
 		return 0;
 
-	unsigned long long span = e->s [e->n - 1].t_us - e->s [0].t_us;
-	if (span < need_us)
+	unsigned long long span = e->s [e->n - 1].t_us - e->s [i].t_us;
+	if ((e->s [e->n - 1].t_us <= e->s [i].t_us) || (span < need_us))
 		return 0;
-	if (e->s [e->n - 1].frames <= e->s [0].frames)
+	if (e->s [e->n - 1].frames <= e->s [i].frames)
 		return 0;
 
-	double fps = (double) (e->s [e->n - 1].frames - e->s [0].frames) * 1e6
+	double fps = (double) (e->s [e->n - 1].frames - e->s [i].frames) * 1e6
 	           / (double) span;
 
 	return (int) (fps * 256.0 + 0.5);

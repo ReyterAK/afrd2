@@ -60,6 +60,14 @@ bool fps_env_push (fps_env_t *e, unsigned long long t_us,
  */
 int fps_env_span_hz (const fps_env_t *e, unsigned long long need_us);
 
+/*
+ * То же, но окно начинается не раньше since_us: выборки до него (разгон
+ * декодера и добор буфера после старта ролика) в расчёт не входят.
+ * since_us = 0 — поведение fps_env_span_hz.
+ */
+int fps_env_span_hz_since (const fps_env_t *e, unsigned long long since_us,
+                           unsigned long long need_us);
+
 /* Прошёл ли горизонт наблюдения с первой выборки. */
 bool fps_env_ready (const fps_env_t *e, unsigned long long horizon_us);
 

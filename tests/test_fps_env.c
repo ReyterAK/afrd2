@@ -339,6 +339,39 @@ static void t_span_hz (void)
 	assert (fps_env_span_hz (&env, 700000) == 25 * 256);
 }
 
+/* Окно от заданного момента: прогрев после старта декодера в расчёт не
+ * входит. Живой замер `.42` 07.11 — первые 0.9 с счётчик даёт 25.9 Гц при
+ * контенте 23.976; без прогрева нижняя граница вето срабатывала бы и на
+ * честном 24p (журнал §222). */
+static void t_span_hz_since (void)
+{
+	fps_env_t env;
+	fps_env_reset (&env);
+
+	/* старт: 40 кадров за первую секунду (разгон), дальше ровный 25 fps */
+	fps_env_push (&env, 0, 0, 2000);
+	fps_env_push (&env, 1000000, 40, 2000);
+	for (int i = 1; i <= 4; i++)
+		fps_env_push (&env, 1000000ULL + (unsigned long long) i * 400000ULL,
+		              40 + 10 * i, 2000);
+
+	/* без прогрева разгон тянет частоту вверх (30.8 вместо 25) */
+	assert (fps_env_span_hz_since (&env, 0, 700000) > 25 * 256);
+	/* окно от первого прироста даёт честные 25 fps */
+	assert (fps_env_span_hz_since (&env, 1000000, 700000) == 25 * 256);
+	/* и то же самое через обычную функцию (since = 0) отличается */
+	assert (fps_env_span_hz (&env, 700000) ==
+	        fps_env_span_hz_since (&env, 0, 700000));
+	/* окно короче need_us — данных нет */
+	assert (fps_env_span_hz_since (&env, 2400000, 700000) == 0);
+	/* since за последней выборкой — данных нет */
+	assert (fps_env_span_hz_since (&env, 5000000, 700000) == 0);
+
+	/* пауза: счётчик не растёт — кольцо сброшено, окно пустое */
+	assert (fps_env_push (&env, 3000000, 80, 2000) == false);
+	assert (fps_env_span_hz_since (&env, 0, 700000) == 0);
+}
+
 int main (void)
 {
 	t_fixtures ();
@@ -353,6 +386,7 @@ int main (void)
 	t_ring_overflow ();
 	t_horizon_min ();
 	t_span_hz ();
+	t_span_hz_since ();
 	printf ("fps_env: OK\n");
 	return 0;
 }
