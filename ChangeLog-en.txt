@@ -31,7 +31,7 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       alone, so a ragged feed no longer reports "feed is fine".
 
     * New option "System mode on the home screen"
-      (`switch.restore.preferred`, enabled by default): when the desktop comes
+      ("System mode on the home screen", enabled by default): when the desktop comes
       to the foreground, restore the mode selected in Android TV settings
       instead of the mode of the previous video. The previous behaviour -
       key `0`: restore the mode that was on screen before the video; it may
@@ -324,11 +324,11 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       the mode alone. The app has a new "Players to fix clamping for" item.
 
     * Defaults for the clamping mechanics on Android 11-14 now follow the
-      verified scheme. `switch.skip.pkg` is empty on every path: the stock
+      verified scheme. "Players AFR interferes with" is empty on every path: the stock
       YouTube is no longer excluded (on 10/11 it was there because of a
       "reset costs 1.5-2.5 s" estimate that did not hold — the real figure is
-      0.26 s). `switch.ceiling.reset` is on by default on both paths: its
-      default follows `switch.bump`, but the reset itself does not depend on
+      0.26 s). "Ceiling reset" is on by default on both paths: its
+      default follows "Fix rate clamping", but the reset itself does not depend on
       the bump and, with the bump off, remains the only protection against
       clamping. The default method is a codec restart
       (`switch.ceiling.method=auto`):
