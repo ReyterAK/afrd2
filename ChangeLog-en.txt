@@ -94,6 +94,15 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       50 Hz, after - 60 Hz in 3.1 s; an empty dump after a successful one -
       still "giving up".
 
+    * ATV14: a SurfaceFlinger mode-table change no longer leaves the desktop
+      at the video rate. The daemon dropped the hold but did not restore the
+      mode, so the desktop stayed at 24 Hz and the next clip recorded 24 as
+      its original and restored it again (live `.50` log, 08.11: leaving the
+      player for the desktop gave 24 Hz). The remembered restore mode (rate
+      and geometry) is now looked up in the new table and applied; an id from
+      the old numbering is never sent. Live check on `.50`: restarting
+      SurfaceFlinger during a 23.976 clip returned 60 Hz.
+
     * Android 12-14: the "Check fractional rates" item is really hidden. It was
       not supposed to appear before either (on the backdoor path SurfaceFlinger
       sets the mode, the probe does not work there, and the rate list is built

@@ -1567,6 +1567,8 @@ static void ceiling_pending_step (const platform_t *plat, int cur_id, bool playi
 /* ATV14-путь: подъём режима до максимума (switch.bump); определение ниже. */
 static int atv14_bump (const platform_t *plat, int *orig_sf_id, int *cur_sf_id,
                        int *want_sf_id, bool *held);
+/* Запомнить режим возврата (id + свойства) для возврата после видео. */
+static void orig_mode_remember (int sf_id);
 /* Зависимости atv14_bump — определения ниже в этом файле. */
 static int atv_current_target (const platform_t *plat, int *w, int *h);
 static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skipped);
@@ -1768,6 +1770,8 @@ static int atv14_bump (const platform_t *plat, int *orig_sf_id, int *cur_sf_id,
 	 * подъёма); это экспертный ключ, умолчание 1. */
 	if (g_restore_bump)
 		*orig_sf_id = bump;
+	if (*held)
+		orig_mode_remember (*orig_sf_id);
 	g_bump_settle_us = now_us ();	/* для отчёта «сколько держался» */
 	trace (0, "bump: режим поднят до максимума (" HZ_FMT " Гц → " HZ_FMT
 	       " Гц) до первого кадра плеера\n",
@@ -2217,6 +2221,41 @@ static void sf_modes_refresh (const platform_t *plat)
  * иначе устаревший want_sf_id уходил бы в транзакцию 1035. */
 static sf_mode_t g_sf_live [SF_MODE_MAX];
 static bool g_sf_table_changed = false;
+
+/* Режим, который был на экране до нашего переключения (цель возврата), вместе
+ * со свойствами. Свойства нужны, когда таблица SurfaceFlinger сменилась:
+ * id из старой нумерации в новую отправлять нельзя, а частоту и геометрию
+ * можно найти заново (живой лог `.50`, 08.11: после видео на рабочем столе
+ * остались 24 Гц — table change снял удержание, не вернув режим). */
+static sf_mode_t g_orig_mode;
+static bool g_orig_mode_valid;
+
+/* Запомнить режим возврата: id + частота/геометрия из текущей таблицы. */
+static void orig_mode_remember (int sf_id)
+{
+	g_orig_mode_valid = false;
+	if (sf_id < 0)
+		return;
+
+	for (int i = 0; i < g_sf_modes_n; i++)
+		if (g_sf_modes [i].id == sf_id)
+		{
+			g_orig_mode = g_sf_modes [i];
+			g_orig_mode_valid = true;
+			return;
+		}
+}
+
+/* Найти запомненный режим в текущей таблице по свойствам. -1 — не найден
+ * (новая таблица другой геометрии/набора частот). */
+static int orig_mode_find (void)
+{
+	if (!g_orig_mode_valid || (g_sf_modes_n <= 0))
+		return -1;
+
+	return sfmodes_find (g_sf_modes, g_sf_modes_n, g_orig_mode.hz,
+	                     g_orig_mode.width, g_orig_mode.height);
+}
 
 /* Сравнение таблиц без учёта порядка строк (порядок вывода dumpsys не гарантирован). */
 static bool sf_modes_equal (const sf_mode_t *a, int na, const sf_mode_t *b, int nb)
@@ -3624,11 +3663,32 @@ static void atv14_invalidate (const platform_t *plat, int *want_sf_id,
 
 	if (*held)
 	{
+		/* Нумерация режимов сменилась — запись «наше применение» больше не
+		 * годится: id из старой таблицы может совпасть с чужим. Но и молча
+		 * оставлять на экране частоту видео нельзя: именно так рабочий стол
+		 * остался на 24 Гц (живой лог `.50`, 08.11). Ищем запомненный режим
+		 * возврата по свойствам в новой таблице и возвращаем его. */
+		int back = orig_mode_find ();
+		if ((back < 0) && (*orig_sf_id >= 0) &&
+		    sfmodes_current_hz (g_sf_modes, g_sf_modes_n, *orig_sf_id))
+			back = *orig_sf_id;
+
+		if (back >= 0)
+		{
+			trace (0, "таблица режимов SurfaceFlinger сменилась — "
+			       "возвращаю исходный режим (id %d)\n", back);
+			if (atv14_restore_mode (plat, back,
+			                        "таблица режимов сменилась, возврат") == 0)
+				*cur_sf_id = back;
+		}
+
 		sink_release_backdoor (plat->sink);
 		guard_note_restored (held);
 		*orig_sf_id = -1;
 		*cur_sf_id = -1;
 	}
+
+	g_orig_mode_valid = false;
 }
 
 /* Пора ли выйти из run_atv14 на перезагрузку конфига: main.c при ret>0
@@ -5804,6 +5864,7 @@ cadence_done: ;
 							{
 								orig_sf_id = cur;
 								held = true;
+								orig_mode_remember (cur);
 							}
 
 							if (atv14_apply_mode (plat, did, "быстрое решение") == 0)
@@ -6484,6 +6545,7 @@ cadence_done: ;
 				trace (1, "цель возврата (preferred id %d) отсутствует в таблице режимов — возврат невозможен\n",
 				       preferred_id);
 			orig_sf_id = back;
+			orig_mode_remember (orig_sf_id);
 		}
 
 		if (act == GUARD_SWITCH)
