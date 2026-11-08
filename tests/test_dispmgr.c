@@ -21,6 +21,26 @@ int main (void)
 	assert (m.width == 1920 && m.height == 1080);
 	assert (m.hz == (int)(59.94006 * 256.0 + 0.5));	/* 15345 */
 
+	/* Android 11: mUserPreferredModeId отсутствует, есть mDefaultModeId */
+	{
+		static const char *dump11 =
+			"mDefaultModeId=5\n"
+			"DisplayModeRecord{mMode={id=5, width=1920, height=1080, fps=59.94006\n";
+		assert (dispmgr_preferred_parse (dump11, &m) == 0);
+		assert (m.id == 5 && m.width == 1920 && m.height == 1080);
+		assert (m.hz == (int)(59.94006 * 256.0 + 0.5));
+	}
+
+	/* mUserPreferredModeId=-1 — тоже берём mDefaultModeId */
+	{
+		static const char *dump11neg =
+			"mUserPreferredModeId=-1\n"
+			"mDefaultModeId=5\n"
+			"DisplayModeRecord{mMode={id=5, width=1920, height=1080, fps=59.94006\n";
+		assert (dispmgr_preferred_parse (dump11neg, &m) == 0);
+		assert (m.id == 5 && m.hz == (int)(59.94006 * 256.0 + 0.5));
+	}
+
 	/* Предпочтение не задано */
 	assert (dispmgr_preferred_parse ("mUserPreferredModeId=-1\n", &m) == -1);
 

@@ -2457,10 +2457,16 @@ static int preferred_mode_id (const platform_t *plat)
 		return -1;
 
 	const char *p = strstr (dump, "mUserPreferredModeId=");
-	if (!p)
-		return -1;
+	int id = p ? atoi (p + strlen ("mUserPreferredModeId=")) : -1;
 
-	int id = atoi (p + strlen ("mUserPreferredModeId="));
+	/* Android 11: mUserPreferredModeId нет (или -1) — пользовательский режим
+	 * это mDefaultModeId (на `.42` 5 = 1080p59.94). */
+	if (id < 0)
+	{
+		p = strstr (dump, "mDefaultModeId=");
+		id = p ? atoi (p + strlen ("mDefaultModeId=")) : -1;
+	}
+
 	return (id >= 0) ? id : -1;
 }
 

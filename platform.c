@@ -74,7 +74,8 @@ platform_t platform_detect (void)
 	 * геометрии. -o обязателен: строка mBaseDisplayInfo целиком длиннее
 	 * буфера. */
 	p.display_dump_cmd = "dumpsys display | grep -o -E "
-	                     "'mUserPreferredModeId=-?[0-9]+|real [0-9]+ x [0-9]+|"
+	                     "'mUserPreferredModeId=-?[0-9]+|mDefaultModeId=-?[0-9]+|"
+	                     "real [0-9]+ x [0-9]+|"
 	                     "DisplayModeRecord[{]mMode=[{]id=[0-9]+, width=[0-9]+, "
 	                     "height=[0-9]+, fps=[0-9.]+'";
 

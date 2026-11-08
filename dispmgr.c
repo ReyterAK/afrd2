@@ -10,6 +10,9 @@
 #include "dispmgr.h"
 
 #define PREF_PREFIX	"mUserPreferredModeId="
+/* Android 11 не печатает mUserPreferredModeId: пользовательский режим — это
+ * mDefaultModeId (на `.42` Vontar X4: 5 = 1080p59.94). */
+#define PREF_DEFAULT	"mDefaultModeId="
 #define REC_PREFIX	"DisplayModeRecord{mMode={"
 
 int dispmgr_preferred_parse (const char *dump, dispmgr_mode_t *out)
@@ -18,10 +21,15 @@ int dispmgr_preferred_parse (const char *dump, dispmgr_mode_t *out)
 		return -1;
 
 	const char *p = strstr (dump, PREF_PREFIX);
-	if (!p)
-		return -1;
+	int pref = p ? atoi (p + strlen (PREF_PREFIX)) : -1;
 
-	int pref = atoi (p + strlen (PREF_PREFIX));
+	/* Нет пользовательского предпочтения или оно -1 — берём defaultMode */
+	if (pref < 0)
+	{
+		p = strstr (dump, PREF_DEFAULT);
+		pref = p ? atoi (p + strlen (PREF_DEFAULT)) : -1;
+	}
+
 	if (pref < 0)
 		return -1;
 
