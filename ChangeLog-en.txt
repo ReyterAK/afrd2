@@ -114,9 +114,14 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
     * The mode raise (`switch.bump.pkg`) is not applied when the current mode
       is already close to the maximum: 59.94 vs 60.00 gives no ceiling gain,
-      but the extra switch is a visible flash. Live `.50` log, 08.11: OTT in
-      the list - raised 59.94 -> 60.00, and 47 s later the measurement
-      returned 59.94.
+      but the extra switch is a visible flash. The maximum is now chosen by
+      the mode policy: available modes + `mode.blacklist.rates` +
+      `mode.use.fract` (1 - 59.94, 2 - 60.00); on ATV14 the raise goes to the
+      chosen group representative, on the vendor path (ATV11) mode names are
+      nominal, so the actual rates are compared there. Verified on `.50`:
+      policy 1 - no raise, 59.94; policy 2 - one raise 59.94 -> 60.00, the
+      measurement does not switch. Live OTT log, 08.11: raised 59.94 ->
+      60.00, and 47 s later the measurement returned 59.94.
 
     * Android 12-14: the "Check fractional rates" item is really hidden. It was
       not supposed to appear before either (on the backdoor path SurfaceFlinger

@@ -1585,6 +1585,23 @@ static int atv14_mode_hz (const platform_t *plat, int id);
  * рассматриваются: поднимать режим в заведомо запрещённый нельзя.
  *
  * Возврат: id режима (ATV14) или индекс в списке ТВ (Android 10/11), -1 — нет. */
+/* Частота представителя группы максимума по политике дробных частот
+ * (mode.use.fract): 1 — дробный (59.94), 2 — целый (60.00), 0/авто — как
+ * есть. 0 — политика ничего не меняет. */
+static int bump_policy_hz (int best_hz)
+{
+	if (best_hz <= 0)
+		return 0;
+
+	int hz = fps_rate_apply_policy (best_hz, 0, g_mode_use_fract);
+	return (hz != best_hz) ? hz : 0;
+}
+
+/* Максимум — не просто самая большая частота из таблицы: учитываем
+ * mode.blacklist.rates (запрещённые не берём) и mode.use.fract (на 59.94/60.00
+ * политика выбирает представителя группы). Иначе на `.50` с
+ * mode.use.fract=1 максимумом оказывался 60.00, подъём уводил 59.94 на него,
+ * а замер возвращал 59.94 (журнал §230). */
 static int bump_target_mode (const platform_t *plat, int w, int h)
 {
 	int best = -1, best_hz = 0;
@@ -1615,6 +1632,18 @@ static int bump_target_mode (const platform_t *plat, int w, int h)
 			}
 		}
 
+		int phz = bump_policy_hz (best_hz);
+		if (phz)
+			for (int i = 0; i < g_modes_n; i++)
+			{
+				display_mode_t *m = &g_modes [i];
+				if ((m->width != w) || (m->height != h) || m->interlaced)
+					continue;
+				if ((display_mode_hz (m) == phz) &&
+				    !rate_is_blacklisted (phz))
+					return i;
+			}
+
 		return best;
 	}
 
@@ -1632,6 +1661,17 @@ static int bump_target_mode (const platform_t *plat, int w, int h)
 			best = m->id;
 		}
 	}
+
+	int phz = bump_policy_hz (best_hz);
+	if (phz)
+		for (int i = 0; i < g_sf_modes_n; i++)
+		{
+			const sf_mode_t *m = &g_sf_modes [i];
+			if ((m->width != w) || (m->height != h))
+				continue;
+			if ((m->hz == phz) && !rate_is_blacklisted (phz))
+				return m->id;
+		}
 
 	return best;
 }
@@ -1734,21 +1774,39 @@ static int atv14_bump (const platform_t *plat, int *orig_sf_id, int *cur_sf_id,
 	int cur = atv_current_target (plat, &bw, &bh);
 	int bump = bump_target_mode (plat, bw, bh);
 
-	if ((cur < 0) || (bump < 0) || (bump == cur))
-		return -1;		/* уже на максимуме — молча */
+	if ((cur < 0) || (bump < 0))
+		return -1;
 
-	/* Максимум и текущий режим могут отличаться на десятые герца
-	 * (59.94 против 60.00): выигрыша в «потолке» нет, а лишняя смена режима
-	 * видна как мигание, после которого замер возвращает прежнюю частоту
-	 * (живой случай `.50`, 08.11: OTT в switch.bump.pkg — 59.94 -> 60.00
-	 * банным подъёмом и через 47 с обратно). Считаем такой подъём
-	 * ненужным. */
+	if (bump == cur)
+	{
+		/* Максимум уже выбран с учётом mode.use.fract и стоит на экране */
+		trace (1, "bump: максимум по политике уже стоит — не поднимаю\n");
+		return -1;
+	}
+
 	int cur_hz = atv14_mode_hz (plat, cur);
 	int bump_hz = atv14_mode_hz (plat, bump);
-	if ((cur_hz > 0) && (bump_hz > 0) && hz_close (cur_hz, bump_hz))
+
+	/* Вендорный путь (Android 10/11): в списке ТВ имя режима одно на пару
+	 * 59.94/60.00, фактическую дробность задаёт frac_rate_policy. Сравнение
+	 * фактических частот здесь надёжнее выбора id: 59.94 против 60.00 — не
+	 * повод для переключения. */
+	if ((plat->sink == SINK_VENDOR_MODE) && (cur_hz > 0) && (bump_hz > 0) &&
+	    hz_close (cur_hz, bump_hz))
 	{
 		trace (1, "bump: режим " HZ_FMT " Гц уже близок к максимуму "
 		       HZ_FMT " Гц — не поднимаю\n", HZ_ARGS (cur_hz), HZ_ARGS (bump_hz));
+		return -1;
+	}
+
+	/* ATV14: максимум уже выбран с учётом mode.use.fract. Для auto (0)
+	 * представитель группы не задан — если текущий режим уже в группе
+	 * максимума, оставляем его, чтобы не мигать 59.94/60.00. */
+	if ((plat->sink != SINK_VENDOR_MODE) && (g_mode_use_fract == 0) &&
+	    (cur_hz > 0) && (bump_hz > 0) &&
+	    (fps_rate_group (cur_hz) == fps_rate_group (bump_hz)))
+	{
+		trace (1, "bump: текущий режим уже в группе максимума — не поднимаю\n");
 		return -1;
 	}
 
