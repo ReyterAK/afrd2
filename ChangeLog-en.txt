@@ -103,6 +103,15 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       the old numbering is never sent. Live check on `.50`: restarting
       SurfaceFlinger during a 23.976 clip returned 60 Hz.
 
+    * New option "System mode on the home screen"
+      (`switch.restore.preferred`, enabled by default): when the desktop comes
+      to the foreground, restore the mode selected in Android TV settings
+      instead of the mode of the previous video. The previous behaviour -
+      key `0`: restore the mode that was on screen before the video; it may
+      be the previous player's rate (24p in one player, a direct switch to
+      another player without the desktop, 50p - and the desktop would get
+      24 Hz). Inactive on Android 6-9.
+
     * Android 12-14: the "Check fractional rates" item is really hidden. It was
       not supposed to appear before either (on the backdoor path SurfaceFlinger
       sets the mode, the probe does not work there, and the rate list is built

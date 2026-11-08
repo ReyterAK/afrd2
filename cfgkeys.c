@@ -135,6 +135,10 @@ static const struct
 	 * защита следующего ролика), 0 — на режим до подъёма (как в 1.1.0).
 	 * Экспертный ключ, в GUI его нет. */
 	{ "switch.restore.bump",	CFGKEY_NEWPATH, NULL },
+	/* Возврат на рабочий стол: 1 — к системному режиму из настроек Android TV
+	 * (умолчание), 0 — к режиму, который был до видео (может оказаться
+	 * частотой прошлого плеера). */
+	{ "switch.restore.preferred",	CFGKEY_NEWPATH, NULL },
 	{ "fps.correct.enable",		CFGKEY_NEWPATH, NULL },
 	{ "fps.correct.list",		CFGKEY_NEWPATH, NULL },
 	/* Одна настройка на поправку AV1: off | проценты; применяется только к

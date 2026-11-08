@@ -193,6 +193,8 @@
         "Restore mode on stop", but with "Fix rate clamping" on it happens anyway.</string>
     <string name="prefs_switch_restore_on_stop">Restore mode on stop</string>
     <string name="prefsum_switch_restore_on_stop">Restore the original HDMI mode when the video ends. Players from the "players to unclamp" list are not restored immediately: the mode is raised at the start of the next clip, and restored once the player leaves the screen, which means fewer flashes between clips. Disabled — the video mode stays until you leave the player.</string>
+    <string name="prefs_switch_restore_preferred">System mode on the home screen</string>
+    <string name="prefsum_switch_restore_preferred">When the desktop comes to the foreground, restore the mode selected in Android TV settings instead of the mode of the previous video. Disabled — restore the mode that was on screen before the video; it may be the previous player\'s rate.</string>
     <string name="prefs_fps_correct_list">Corrections (package=percent)</string>
     <string name="prefsum_fps_correct_list">Percent is how much the player over-reports the
         rate (the same correction the daemon prints as &quot;плеер &lt;пакет&gt;: поправка замера

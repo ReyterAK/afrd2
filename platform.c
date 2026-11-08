@@ -67,10 +67,16 @@ platform_t platform_detect (void)
 	 * activeMode первым. */
 	p.sf_dump_cmd = "dumpsys SurfaceFlinger | grep -E 'activeMode=|refresh-rate|^ *[{]id='";
 	/* display-дамп (~30 КБ) тоже режем: нужны только активное разрешение
-	 * ("real 1920 x 1080") и предпочтение пользователя. -o обязателен: строка
-	 * mBaseDisplayInfo содержит и то, и другое, но целиком длиннее буфера. */
+	 * ("real 1920 x 1080"), предпочтение пользователя и запись этого режима
+	 * в списке DisplayManager. Без записи id предпочтения бесполезен: он из
+	 * другого пространства, чем id SurfaceFlinger (на `.50` preferred id 1 —
+	 * это 59.94, а SF id 1 — 60.00), поэтому режим ищется по частоте и
+	 * геометрии. -o обязателен: строка mBaseDisplayInfo целиком длиннее
+	 * буфера. */
 	p.display_dump_cmd = "dumpsys display | grep -o -E "
-	                     "'mUserPreferredModeId=-?[0-9]+|real [0-9]+ x [0-9]+'";
+	                     "'mUserPreferredModeId=-?[0-9]+|real [0-9]+ x [0-9]+|"
+	                     "DisplayModeRecord[{]mMode=[{]id=[0-9]+, width=[0-9]+, "
+	                     "height=[0-9]+, fps=[0-9.]+'";
 
 	bool have_vdec = (sysfs_exists (VDVC_STATUS) == 0);
 	/* Android 6/7: switch/hdmi/state; Android 8/9: switch/hdmi/cable.0/state.

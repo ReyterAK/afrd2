@@ -28,6 +28,7 @@
 #include "ceiling.h"
 #include "dispserve.h"
 #include "vinfo.h"
+#include "dispmgr.h"
 #include "burst.h"
 
 #define __USE_GNU
@@ -78,6 +79,11 @@ static int g_switch_bump = 0;
  * 0 — на режим, который был до подъёма (как в 1.1.0); тогда зажим следующего
  * ролика лечится только сбросом потолка. Ключ экспертный, в GUI его нет. */
 static int g_restore_bump = 1;
+/* Куда возвращать режим, когда на экран вышел рабочий стол
+ * (switch.restore.preferred, 1 — умолчание): 1 — системный режим из настроек
+ * Android TV, 0 — режим, который был на экране до нашего переключения (может
+ * оказаться частотой прошлого плеера). */
+static int g_restore_preferred = 1;
 /* Сброс «потолка» частоты у плеера (switch.ceiling.reset, Android 10-14).
  * Плеер запоминает частоту дисплея в начале сессии проигрывания и внешнюю
  * смену режима не перечитывает; потолок обновляется перезапуском процесса
@@ -2385,6 +2391,73 @@ static int preferred_mode_id (const platform_t *plat)
 	return (id >= 0) ? id : -1;
 }
 
+/* Пользовательский preferred-режим, переведённый в id ТЕКУЩЕГО пути:
+ * ATV14 — id таблицы SurfaceFlinger, вендорный — индекс в списке disp_cap.
+ * id из DisplayManager отправлять нельзя: пространства нумерации разные (на
+ * `.50` preferred id 1 — это 59.94, а SF id 1 — 60.00). Ищем по частоте и
+ * геометрии из DisplayModeRecord. -1 — предпочтения нет/не разобралось/режима
+ * нет в текущей таблице. */
+static int preferred_target_id (const platform_t *plat)
+{
+	char dump [64 * 1024];
+	dispmgr_mode_t m;
+
+	if ((exec_capture (plat->display_dump_cmd, dump, sizeof (dump)) != 0) ||
+	    (dispmgr_preferred_parse (dump, &m) != 0))
+		return -1;
+
+	if (plat->sink == SINK_VENDOR_MODE)
+	{
+		int best = -1, best_d = 1 << 30;
+
+		for (int i = 0; i < g_modes_n; i++)
+		{
+			if ((g_modes [i].width != m.width) ||
+			    (g_modes [i].height != m.height) ||
+			    g_modes [i].interlaced)
+				continue;
+
+			int d = abs (display_mode_hz (&g_modes [i]) - m.hz);
+			if (d < best_d)
+			{
+				best_d = d;
+				best = i;
+			}
+		}
+
+		return ((best >= 0) && (best_d <= 32)) ? best : -1;
+	}
+
+	if (g_sf_modes_n <= 0)
+		return -1;
+
+	return sfmodes_find (g_sf_modes, g_sf_modes_n, m.hz, m.width, m.height);
+}
+
+/* Куда возвращаться, когда на экран вышел рабочий стол. Системный preferred —
+ * это режим, который пользователь выбрал в настройках Android TV; orig —
+ * режим до нашего переключения, но он может оказаться частотой прошлого видео
+ * (сценарий: 24p в одном плеере, без выхода на рабочий стол переход в другой
+ * плеер, 50p, выход на рабочий стол — orig=24). Рабочему столу нужен системный
+ * режим, иначе браузер/игра получают 24 Гц. Ключ switch.restore.preferred=0
+ * возвращает прежнее поведение (orig); если предпочтение не разобралось или
+ * режима нет в таблице, тоже orig. */
+static int desktop_restore_id (const platform_t *plat, int orig)
+{
+	if (!g_restore_preferred)
+		return orig;
+
+	int pref = preferred_target_id (plat);
+	if (pref < 0)
+		return orig;
+
+	if ((orig >= 0) && (pref != orig))
+		trace (1, "рабочий стол: возврат к системному режиму id %d (было %d)\n",
+		       pref, orig);
+
+	return pref;
+}
+
 /* Ожидание событий API (UDP 127.0.0.1:50505) вместо msleep: демон должен
  * принимать подсказки плеера (frame_rate_hint) и afrd -s.
  * Возврат: 0 = ок (в т.ч. EINTR), -1 = poll сорвался. */
@@ -2585,6 +2658,11 @@ static int g_vinfo_expect_hz;
 static unsigned long long g_last_apply_us;
 static int g_last_apply_id = -1;
 
+/* Применение режима — это возврат (снятие нашего удержания), а не AFR-переход.
+ * Гейт switch.skip.pkg раньше узнавал возврат по подстроке «возврат» в причине;
+ * строка была частью логики и мешала переименовать сообщение. */
+static bool g_apply_restore;
+
 /* Решение по контенту для последнего применённого режима (24.8): нужен для
  * сверки источников — счётчика кадров и подачи видео-слоя. */
 static int g_content_hz;
@@ -2711,11 +2789,12 @@ static int atv14_apply_mode (const platform_t *plat, int sf_id, const char *skip
 
 	/* Плеер из switch.skip.pkg («AFR мешает»): режим ему не меняем ни одним
 	 * путём — ни замером, ни быстрым решением, ни перепроверкой, ни
-	 * переприменением. Возврат к исходному режиму (строки «возврат») не
-	 * блокируется: это снятие нашего же удержания, иначе режим остался бы
-	 * поднятым. Живая находка `.42`: гейт в цикле обходился переприменением, и
-	 * OTT с собственным AFR получал от демона 60 Гц (журнал §116). */
-	if (pkg_skip_active () && (!skipped || (strstr (skipped, "возврат") == NULL)))
+	 * переприменением. Возврат к исходному режиму не блокируется: это снятие
+	 * нашего же удержания, иначе режим остался бы поднятым. Живая находка
+	 * `.42`: гейт в цикле обходился переприменением, и OTT с собственным AFR
+	 * получал от демона 60 Гц (журнал §116). Признак возврата — флаг, а не
+	 * подстрока в тексте причины: текст можно менять, логику — нет. */
+	if (pkg_skip_active () && !g_apply_restore)
 	{
 		trace (1, "skip.pkg: %s — переключение \"%s\" пропущено\n",
 		       pkg_name (), skipped ? skipped : "?");
@@ -2833,7 +2912,9 @@ static int atv14_restore_mode (const platform_t *plat, int sf_id, const char *sk
 		trace (1, "возврат режима: %s\n", skipped);
 
 	colorspace_hold (true);
+	g_apply_restore = true;
 	rc = atv14_apply_mode (plat, sf_id, skipped);
+	g_apply_restore = false;
 	colorspace_hold (false);
 
 	if (rc == 0)
@@ -3190,19 +3271,23 @@ static void sources_crosscheck_log (const vdec_status_t *v, int period_ms, int m
 	       ratio / 100, ratio % 100);
 }
 
-/* Отказ от удержания режима: частоту определить не удалось — вернуть исходный
- * режим, снять флаг backdoor и забыть состояние удержания. */
+/* Отказ от удержания режима: частоту определить не удалось — вернуть режим,
+ * снять флаг backdoor и забыть состояние удержания.
+ * to_desktop — плеер ушёл с экрана / видео потеряно: цель — системный режим
+ * рабочего стола (desktop_restore_id), а не возможная частота прошлого видео. */
 static void atv14_give_up (const platform_t *plat,
-                           int *orig_sf_id, int *cur_sf_id, bool *held)
+                           int *orig_sf_id, int *cur_sf_id, bool *held,
+                           bool to_desktop)
 {
 	if (!*held)
 		return;
 
+	int back = to_desktop ? desktop_restore_id (plat, *orig_sf_id) : *orig_sf_id;
+
 	/* устаревший id в 1035 не уходит: atv14_apply_mode проверит его по
 	 * текущей таблице, а удержание снимется в любом случае */
-	if (atv14_restore_mode (plat, *orig_sf_id,
-	                        "возврат пропущен, флаг backdoor снят") == 0)
-		*cur_sf_id = *orig_sf_id;
+	if (atv14_restore_mode (plat, back, "флаг backdoor снят") == 0)
+		*cur_sf_id = back;
 
 	sink_release_backdoor (plat->sink);
 	guard_note_restored (held);
@@ -4644,7 +4729,7 @@ static int run_atv14 (const platform_t *plat)
 			{
 				trace (0, "видео потеряно: %d мс без данных декодера — возвращаю режим\n",
 				       (int) ((now_us () - g_vdec_last_ok_us) / 1000));
-				atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
+				atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held, false);
 				video = false;
 				want_sf_id = -1;
 			}
@@ -4959,7 +5044,8 @@ static int run_atv14 (const platform_t *plat)
 					trace (0, "плеер %s ушёл с переднего плана (сейчас %s), "
 					       "а счётчик кадров стоит (%s status %u) — снимаю удержание режима\n",
 					       stuck.pkg, top_pkg, v0.device, v0.status);
-					atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
+					atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held,
+					               fg_is_desktop (top_pkg));
 					video = false;
 					want_sf_id = -1;
 					stuck_reset (&stuck);
@@ -6004,7 +6090,7 @@ cadence_done: ;
 						measure_failed = true;
 						want_sf_id = -1;
 						if (!g_sf_table_changed)
-							atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
+							atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held, false);
 					}
 
 					fps_env_reset (&env);
@@ -6327,7 +6413,7 @@ cadence_done: ;
 				 * отправлять нельзя (R41/R43). Удержание снимет блок обработки
 				 * g_sf_table_changed на следующей итерации. */
 				if (!g_sf_table_changed)
-					atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held);
+					atv14_give_up (plat, &orig_sf_id, &cur_sf_id, &held, false);
 				continue;
 			}
 			want_sf_id = cur_sf_id;
@@ -6729,6 +6815,7 @@ cadence_done: ;
 			 * (плеер из списка, выход на рабочий стол) дал рабочий стол на
 			 * 24 Гц и строку «возвращаю режим» каждые 1.7 с. */
 			bool player_left = false;
+			bool desktop_left = false;
 			if (hold_keep)
 			{
 				/* Ждём, пока плеер уйдёт с переднего плана: иначе рабочий стол
@@ -6747,6 +6834,9 @@ cadence_done: ;
 				trace (0, "плеер ушёл с переднего плана — возвращаю режим\n");
 				hold_keep = false;
 				player_left = true;
+				/* Цель — системный режим рабочего стола, но только если на
+				 * экране действительно рабочий стол, а не другой плеер. */
+				desktop_left = fg_is_desktop (fgp);
 			}
 
 			/* Политику возвращаем ДО имени: иначе рабочий стол получил бы
@@ -6758,12 +6848,16 @@ cadence_done: ;
 			                           bump_pkg_allows_pkg (g_cur_pkg),
 			                           player_left, pause_restore))
 			{
-				int rc = atv14_restore_mode (plat, orig_sf_id,
-				                             "возврат пропущен, флаг backdoor снят");
+				/* На рабочий стол возвращаем системный preferred, а не
+				 * возможную частоту прошлого видео; в плеере — orig. */
+				int target = desktop_left
+				           ? desktop_restore_id (plat, orig_sf_id)
+				           : orig_sf_id;
+				int rc = atv14_restore_mode (plat, target, "флаг backdoor снят");
 				if (rc == 0)
 				{
 					guard_note_restored (&held);
-					cur_sf_id = orig_sf_id;
+					cur_sf_id = target;
 					orig_sf_id = -1;
 				}
 				else if (rc == -1)
@@ -6815,7 +6909,7 @@ cadence_done: ;
 	 * нет (или таблица неизвестна), в 1035 он не уходит — снимаем только флаг. */
 	if (held)
 	{
-		atv14_restore_mode (plat, orig_sf_id, "возврат пропущен, флаг backdoor снят");
+		atv14_restore_mode (plat, orig_sf_id, "флаг backdoor снят");
 		sink_release_backdoor (plat->sink);
 		guard_note_restored (&held);
 	}
@@ -7020,6 +7114,10 @@ int afrd_run ()
 	 * защита следующего ролика от низкого «потолка»), 0 — на режим до
 	 * подъёма (поведение 1.1.0). См. g_restore_bump. */
 	g_restore_bump = cfg_get_int ("switch.restore.bump", 1);
+
+	/* Цель возврата на рабочий стол: 1 — системный preferred (умолчание),
+	 * 0 — режим до видео (прежнее поведение). */
+	g_restore_preferred = cfg_get_int ("switch.restore.preferred", 1);
 
 	/* Кому применяются механики зажима (switch.bump.pkg). Ключ не задан —
 	 * НИКОМУ: решение владельца 06.11 после живого разбора на ATV11, где

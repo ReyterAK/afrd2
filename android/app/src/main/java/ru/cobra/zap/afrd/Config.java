@@ -89,6 +89,7 @@ public class Config
         itemType.put ("pause.mode", TYPE_STR);
         itemType.put ("pause.keep", TYPE_BOOL);
         itemType.put ("switch.restore.on.stop", TYPE_BOOL);
+        itemType.put ("switch.restore.preferred", TYPE_BOOL);
         /* «Устранять зажим частоты» (один пункт GUI): подъём режима до
          * максимума на старте видео. Без записи в этой таблице правка тумблера
          * не доезжала бы до afrd.ini (тот же класс дефекта, что был у

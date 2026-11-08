@@ -37,6 +37,9 @@
         <SwitchPreference android:defaultValue="1" android:key="switch_restore_on_stop"
                           android:summary="@string/prefsum_switch_restore_on_stop"
                           android:title="@string/prefs_switch_restore_on_stop"/>
+        <SwitchPreference android:defaultValue="1" android:key="switch_restore_preferred"
+                          android:summary="@string/prefsum_switch_restore_preferred"
+                          android:title="@string/prefs_switch_restore_preferred"/>
         <!-- switch.timeout действует на обоих путях (с разным смыслом), поэтому
              живёт в «Основном», а не в группе задержек старого пути: та на
              Android 10-14 не показывается вовсе. -->
