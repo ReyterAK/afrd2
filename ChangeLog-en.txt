@@ -1,7 +1,7 @@
 AFRd2 — a fork of AFRd (based on AFRd 0.3.2 by Andrey Zabolotnyi,
 anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
-1.2.0 Sun Nov 1 2026
+1.2.0 Sun Nov 8 2026
     Release after 1.1.0: AFR on demand (a session triggered by a button), a real
     "auto" fractional rate policy, a check of the actual display rate, the rate
     taken from the video layer feed (24p no longer drifts to 25/50), content
@@ -111,6 +111,12 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       be the previous player's rate (24p in one player, a direct switch to
       another player without the desktop, 50p - and the desktop would get
       24 Hz). Inactive on Android 6-9.
+
+      On Android 10/11 the system keeps no separate preference: the vendor
+      `setActiveDispMode` also rewrites `mDefaultModeId` (live check on `.42`:
+      60 -> id 19, 24 -> id 18), so the home-screen mode is captured once at
+      daemon start; if `mUserPreferredModeId` exists (Android 12-14), it is
+      read live.
 
     * The mode raise (`switch.bump.pkg`) is not applied when the current mode
       is already close to the maximum: 59.94 vs 60.00 gives no ceiling gain,

@@ -462,6 +462,10 @@
 ! after a video (the launcher stays at the clip's rate). If you want the mode
 ! back, set 10000-12000 ms - it returns after that time, and a new clip inside
 ! the window does not cancel it.
+!
+! On Android 10-14 the home-screen mode is set by `switch.restore.preferred`
+! (on 10/11 - a snapshot taken at daemon start, on 12-14 - the system
+! preferred).
 
 ! If no blinking matters more than the exact rate, add the player to "Players
 ! that AFR disturbs" (group "Players"): AFRd2 will not touch the mode in that
