@@ -10,8 +10,11 @@
 #include "dispmgr.h"
 
 #define PREF_PREFIX	"mUserPreferredModeId="
-/* Android 11 не печатает mUserPreferredModeId: пользовательский режим — это
- * mDefaultModeId (на `.42` Vontar X4: 5 = 1080p59.94). */
+/* Android 11 не печатает mUserPreferredModeId. mDefaultModeId — НЕ отдельная
+ * настройка пользователя, а последний активный режим: вендорный
+ * setActiveDispMode переписывает и его (проверено на `.42`: 60 -> 19,
+ * 24 -> 18, getPrefHdmiDispMode следует за ним же). Поэтому для рабочего
+ * стола демон кэширует значение на старте (vendor_desktop_cache). */
 #define PREF_DEFAULT	"mDefaultModeId="
 #define REC_PREFIX	"DisplayModeRecord{mMode={"
 

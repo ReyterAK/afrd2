@@ -403,7 +403,7 @@ AFRd2 — форк AFRd (Andrey Zabolotnyi) под **GPL-3**. Размещени
 | `burst.broadcast` | Android 10–14 | сообщать о сеансе broadcast-ом `ru.reyter.afrd2.action.BURST_STATE` |
 | `switch.restore.on.stop` | Android 10–14 | — |
 | `switch.restore.bump` | Android 10–14 | куда возвращать режим после подъёма: `1` (умолчание) — на максимум, чтобы следующий ролик не начался с низкого «потолка»; `0` — на режим до подъёма (поведение 1.1.0). Экспертный ключ, в интерфейсе его нет |
-| `switch.restore.preferred` | Android 10–14 | цель возврата, когда на экран вышел рабочий стол: `1` (умолчание) — режим, выбранный в настройках Android TV, `0` — режим, который был до видео (может оказаться частотой прошлого плеера) |
+| `switch.restore.preferred` | Android 10–14 | цель возврата, когда на экран вышел рабочий стол: `1` (умолчание) — режим, выбранный в настройках Android TV (на Android 10/11 без `mUserPreferredModeId` — режим, снятый при старте демона: вендорный HAL переписывает `mDefaultModeId` при каждой смене), `0` — режим, который был до видео (может оказаться частотой прошлого плеера) |
 | `fps.correct.enable` | Android 10–14 | — |
 | `fps.correct.list` | Android 10–14 | — |
 | `fps.correct.av1.offset` | Android 10–14 | — |

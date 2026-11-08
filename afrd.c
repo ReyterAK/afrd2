@@ -2459,8 +2459,9 @@ static int preferred_mode_id (const platform_t *plat)
 	const char *p = strstr (dump, "mUserPreferredModeId=");
 	int id = p ? atoi (p + strlen ("mUserPreferredModeId=")) : -1;
 
-	/* Android 11: mUserPreferredModeId нет (или -1) — пользовательский режим
-	 * это mDefaultModeId (на `.42` 5 = 1080p59.94). */
+	/* Android 11: mUserPreferredModeId нет (или -1); mDefaultModeId — последний
+	 * активный режим, а не настройка пользователя. Для возврата на рабочий стол
+	 * вендорный путь берёт снимок со старта демона (vendor_desktop_cache). */
 	if (id < 0)
 	{
 		p = strstr (dump, "mDefaultModeId=");
@@ -2468,6 +2469,40 @@ static int preferred_mode_id (const platform_t *plat)
 	}
 
 	return (id >= 0) ? id : -1;
+}
+
+/* Android 11 (вендорный путь): отдельного пользовательского режима система не
+ * хранит. Вендорный setActiveDispMode переписывает и mActiveModeId, и
+ * mDefaultModeId (проверено на `.42`: после 1080p60hz -> 19, после 1080p24hz ->
+ * 18), а getPrefHdmiDispMode возвращает тот же последний режим. Поэтому читать
+ * mDefaultModeId в момент возврата нельзя — там будет режим только что
+ * кончившегося видео, и `switch.restore.preferred=1` оставил бы рабочий стол на
+ * частоте видео. Запоминаем режим на старте демона: в обычном сценарии он
+ * запускается на рабочем столе (boot/запуск приложения), это и есть режим
+ * пользователя. Если mUserPreferredModeId есть (Android 12+), он независим и
+ * кэш не нужен. */
+static dispmgr_mode_t g_vendor_desktop_mode;
+static int g_vendor_desktop_valid;
+
+static void vendor_desktop_cache (const platform_t *plat)
+{
+	if (plat->sink != SINK_VENDOR_MODE)
+		return;
+
+	char dump [64 * 1024];
+	dispmgr_mode_t m;
+	if ((exec_capture (plat->display_dump_cmd, dump, sizeof (dump)) != 0) ||
+	    (dispmgr_preferred_parse (dump, &m) != 0))
+		return;
+
+	const char *p = strstr (dump, "mUserPreferredModeId=");
+	if (p && (atoi (p + strlen ("mUserPreferredModeId=")) >= 0))
+		return;
+
+	g_vendor_desktop_mode = m;
+	g_vendor_desktop_valid = 1;
+	trace (1, "режим рабочего стола на старте: %dx%d @ %.2f Гц\n",
+	       m.width, m.height, m.hz / 256.0);
 }
 
 /* Пользовательский preferred-режим, переведённый в id ТЕКУЩЕГО пути:
@@ -2478,12 +2513,18 @@ static int preferred_mode_id (const platform_t *plat)
  * нет в текущей таблице. */
 static int preferred_target_id (const platform_t *plat)
 {
-	char dump [64 * 1024];
 	dispmgr_mode_t m;
 
-	if ((exec_capture (plat->display_dump_cmd, dump, sizeof (dump)) != 0) ||
-	    (dispmgr_preferred_parse (dump, &m) != 0))
-		return -1;
+	if ((plat->sink == SINK_VENDOR_MODE) && g_vendor_desktop_valid)
+		m = g_vendor_desktop_mode;
+	else
+	{
+		char dump [64 * 1024];
+
+		if ((exec_capture (plat->display_dump_cmd, dump, sizeof (dump)) != 0) ||
+		    (dispmgr_preferred_parse (dump, &m) != 0))
+			return -1;
+	}
 
 	if (plat->sink == SINK_VENDOR_MODE)
 	{
@@ -4437,6 +4478,7 @@ static int run_atv14 (const platform_t *plat)
 	}
 
 	preferred_id = preferred_mode_id (plat);
+	vendor_desktop_cache (plat);
 
 	/* Таблицу режимов SurfaceFlinger читаем только на ATV14: на вендорном пути
 	 * Android 10/11 её нет, и прежнее сообщение «переключать режимы нечем»
