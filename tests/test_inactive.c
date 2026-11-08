@@ -207,6 +207,14 @@ static int is_unknown (const char *note)
 	return note && strstr (note, "неизвестный");
 }
 
+/* Ключи-кнопки GUI: ini-ключа у них нет, действие выполняется по нажатию
+ * (probe_rates — проба дробных частот). В cfgkeys/Config им нечего делать;
+ * без этого исключения тест падал на исправном GUI. */
+static int is_gui_action (const char *key)
+{
+	return strcmp (key, "probe_rates") == 0;
+}
+
 static const char *k_config = "android/app/src/main/java/ru/cobra/zap/afrd/Config.java";
 
 /* Ключи, правка которых обязана доезжать до ini: Config.load (SharedPreferences)
@@ -217,8 +225,9 @@ static void check_item_type (const char *cfg)
 {
 	for (int i = 0; i < g_gui_n; i++)
 	{
-		/* toast.hz — настройка приложения: демон её не читает, в ini ей нечего делать */
-		if (strcmp (g_gui [i], "toast_hz") == 0)
+		/* toast.hz — настройка приложения: демон её не читает, в ini ей нечего делать;
+		 * probe_rates — кнопка, у неё тоже нет ini-ключа */
+		if ((strcmp (g_gui [i], "toast_hz") == 0) || is_gui_action (g_gui [i]))
 			continue;
 
 		char ini [KEY_LEN];
@@ -255,6 +264,10 @@ int main (void)
 
 	for (int i = 0; i < g_gui_n; i++)
 	{
+		/* Кнопки GUI (проба частот) — не настройки, ini-ключа у них нет */
+		if (is_gui_action (g_gui [i]))
+			continue;
+
 		char ini [KEY_LEN];
 		key_to_ini (g_gui [i], ini);
 
