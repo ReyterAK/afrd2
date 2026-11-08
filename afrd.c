@@ -1737,6 +1737,21 @@ static int atv14_bump (const platform_t *plat, int *orig_sf_id, int *cur_sf_id,
 	if ((cur < 0) || (bump < 0) || (bump == cur))
 		return -1;		/* уже на максимуме — молча */
 
+	/* Максимум и текущий режим могут отличаться на десятые герца
+	 * (59.94 против 60.00): выигрыша в «потолке» нет, а лишняя смена режима
+	 * видна как мигание, после которого замер возвращает прежнюю частоту
+	 * (живой случай `.50`, 08.11: OTT в switch.bump.pkg — 59.94 -> 60.00
+	 * банным подъёмом и через 47 с обратно). Считаем такой подъём
+	 * ненужным. */
+	int cur_hz = atv14_mode_hz (plat, cur);
+	int bump_hz = atv14_mode_hz (plat, bump);
+	if ((cur_hz > 0) && (bump_hz > 0) && hz_close (cur_hz, bump_hz))
+	{
+		trace (1, "bump: режим " HZ_FMT " Гц уже близок к максимуму "
+		       HZ_FMT " Гц — не поднимаю\n", HZ_ARGS (cur_hz), HZ_ARGS (bump_hz));
+		return -1;
+	}
+
 	bool took_holding = false;
 	if (!*held && (*orig_sf_id < 0))
 	{
@@ -6580,7 +6595,7 @@ cadence_done: ;
 					}
 					else
 					{
-						trace (1, "передний план: %s — поднимаю режим заранее\n", fgp);
+						trace (1, "передний план: %s — проверяю подъём режима\n", fgp);
 
 						if (atv14_bump (plat, &orig_sf_id, &cur_sf_id, &want_sf_id, &held) == 0)
 						{
