@@ -80,6 +80,20 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       60 Hz. Live ATV9 log (25 fps film in Vimu) and a stand check: six seeks
       in a row - the mode stays at 50.
 
+    * Legacy path (Android 6-9): a 30 fps clip switches 50 -> 60 again once a
+      cache dump has succeeded on the box. The "dumps work" flag was latched
+      for the whole daemon run; if the dump for a new clip produced a
+      non-standard rate (9 pts in 304 ms = 29.6 Hz for real 30), hz_round
+      dropped it and vdec_status was no longer considered - 3 s later "Timeout
+      detecting movie frame rate, giving up" and the mode stayed at 50. The
+      dropped raw measurement is now compared with the vdec_status
+      declaration (3 % tolerance): if they agree, the declaration is accepted
+      on the last attempt and the mode goes to 60. A disagreeing or empty dump
+      still prevents the stale 30 from switching a 25 fps clip. Verified on
+      `.48` with a substituted vdec.sysfs: before the fix - "giving up" at
+      50 Hz, after - 60 Hz in 3.1 s; an empty dump after a successful one -
+      still "giving up".
+
     * Android 12-14: the "Check fractional rates" item is really hidden. It was
       not supposed to appear before either (on the backdoor path SurfaceFlinger
       sets the mode, the probe does not work there, and the rate list is built

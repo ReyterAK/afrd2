@@ -304,6 +304,27 @@ static const uint8_t src_weight [SRC_COUNT] =
  * работает как раньше, только решение откладывается до switch.timeout. */
 static bool g_vdec_dumps_seen;
 
+/* Сырая частота, измеренная по дампам кэша в последнем проходе (24.8), и
+ * признак, что дамп в этом проходе вообще разобрался. Нужна для сверки с
+ * vdec_status в last_chance: дамп может дать нестандартную частоту (живой лог
+ * ATV9: 9 pts за 304 мс = 29.6 Гц при реальных 30), hz_round её отбрасывает,
+ * но она подтверждает заявку. Без сверки заявка 30 после первого же удачного
+ * дампа за запуск демона не принималась вовсе — ролик 30 к/с не переключался
+ * 50 -> 60 (жалоба тестера 08.11). */
+static int g_dump_raw_hz;
+static bool g_dump_raw_valid;
+
+/* Заявка vdec_status подтверждена дампом: расхождение не больше 3 %. Порог
+ * шире hz_close (0.5 %): сырой замер по короткому окну гуляет на 1–1.5 %
+ * (29.6 против 30), но 24 и 25 не путает (4 %). */
+static bool vdec_corroborated (int hz)
+{
+	if (!g_dump_raw_valid || (g_dump_raw_hz <= 0) || (hz <= 0))
+		return false;
+
+	return abs (g_dump_raw_hz - hz) * 100 <= hz * 3;
+}
+
 // accept hz when weight sum up to this
 #define ACCEPT_HZ_WEIGHT        100
 
@@ -521,7 +542,8 @@ static int best_fps (bool last_chance)
 		 * ждём точные источники (FRH, дампы кэша), а если дампы на боксе
 		 * вообще не работают — решаем по vdec_status, но только по
 		 * switch.timeout, а не через 0.8 с. */
-		if ((i == SRC_VDEC) && (!last_chance || g_vdec_dumps_seen))
+		if ((i == SRC_VDEC) && (!last_chance ||
+		    (g_vdec_dumps_seen && !vdec_corroborated (stat->hz))))
 			continue;
 
 		if (last_chance) {
@@ -584,7 +606,11 @@ static bool query_vdec_blocks ()
 		return false;
 
 	g_state.hz_samples_stamp = dsize;
-	int hz = hz_round ((nframes * 256000 + timeint / 2) / timeint);
+	/* сырую частоту запоминаем до hz_round: даже отброшенная как
+	 * нестандартная, она подтверждает заявку vdec_status (см. выше) */
+	g_dump_raw_hz = (nframes * 256000 + timeint / 2) / timeint;
+	g_dump_raw_valid = true;
+	int hz = hz_round (g_dump_raw_hz);
 	if (hz == 0)
 		return false;
 
@@ -681,7 +707,9 @@ static bool query_vdec_chunks ()
 	trace (2, "\t> %d pts in %d us, base pts %d\n", avg_count, avg_pts, base_pts);
 
 	// warning: 32 bits easily overflow here, using longlong.
-	int hz = hz_round ((avg_count * 256000000ULL) / avg_pts);
+	g_dump_raw_hz = (int)((avg_count * 256000000ULL) / avg_pts);
+	g_dump_raw_valid = true;
+	int hz = hz_round (g_dump_raw_hz);
 	if (hz == 0)
 		return false;
 
@@ -913,6 +941,10 @@ giveup:			trace (1, "Timeout detecting movie frame rate, giving up\n");
 
 	// ask every source until we have a valid refresh rate
 	if (g_state.hz == 0) {
+		/* сырой замер дампов — только про этот проход: иначе пустой
+		 * дамп унаследовал бы подтверждение прошлого ролика */
+		g_dump_raw_hz = 0;
+		g_dump_raw_valid = false;
 		query_vdec_chunks ();
 		query_vdec_blocks ();
 		query_vdec ();
