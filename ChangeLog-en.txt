@@ -30,79 +30,6 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       (fps.feed.ratio.pct / fps.feed.gap.pct) instead of relying on the median
       alone, so a ragged feed no longer reports "feed is fine".
 
-    * Fixed (live check on ATV14, 02.11): a decision that matches the mode
-      already on screen no longer stops measuring until the end of the video
-      (a 1080i50 channel could stay at 60 Hz); "frame counter is not growing"
-      no longer fires on a new channel from the previous video's timer; the
-      short descent after bump does not trust the layer feed when it disagrees
-      with the decoder's declared rate. Switching from channel 1 (1080i50,
-      50 Hz) to 210 (23.976): 60 -> 24 Hz in ~5 s, no intermediate 50/60.
-      The feed verdict acts only on a confirmed second window, and the mode
-      revert only after a real treatment attempt: a false "feed does not heal"
-      on 1080i50 no longer flickers the mode.
-
-    * "About": the "Testers" field is back (as in the original AFRd) —
-      Acorn@4PDA, SlimHouse@4PDA, valerash88@4PDA.
-
-    * "HDMI format" (cs.select) supports YUV 4:2:2 and 4:2:0 again: the list
-      of items is built from what the TV reports (the dc_cap node) instead of
-      the fixed "Auto / RGB / YUV 4:4:4" set of 1.1.0. The daemon checks a
-      rule against the same node and silently skips a format missing there,
-      so an item "just in case" cannot be shown. On ATV14 and ATV9 the list
-      became "Auto / YUV 4:4:4 / YUV 4:2:2 / RGB" (ATV14 reports 4:2:2 in
-      12-bit only, ATV9 in 8-bit); picking 4:2:2 writes
-      "2160p[4-9].*=420 .*=422", the 4K bandwidth guard stays the first rule.
-      The daemon now fits the depth to the EDID: a rule names the format, and
-      when the current depth is not advertised for it (the system leaves 8-bit
-      after a mode switch), the nearest advertised one is used -- 4:2:2 becomes
-      422,12bit, not 422,8bit which the TV does not have; a depth pinned in the
-      rule itself is never overridden. An unreadable node falls back to the old
-      static set. A custom rule from
-      1.0.x (… .*=422) is still shown as "Custom rules: …" and is not
-      overwritten.
-
-    * No more "double jump" on a wrong player declaration: on ATV11 two
-      different players declared 24 fps for a 50 Hz channel, the daemon switched
-      to 24 Hz at once and the measurement 14 s later said 50, so the mode
-      changed twice. The declared rate is now cross-checked against the frame
-      counter (~0.7 s window): if the counter is already clearly higher
-      (1.5x or more), the fast decision is not applied and the mode changes
-      once, by measurement.
-
-    * Legacy path (Android 6-9): the mode no longer "jumps" 50 <-> 60 after a
-      seek. Right after the decoder is recreated, vdec_status reports a stale
-      "frame rate 30" while the cache dumps are empty in the same window (no
-      frames yet): that source reached the threshold in 0.8 s, the mode went to
-      60 Hz and came back to 50 a second later. Now vdec_status is the source
-      of last resort: it never decides alone while the cache dumps work, and
-      where the dumps are unavailable its verdict is only taken after
-      switch.timeout. A paused clip right after the start no longer sticks at
-      60 Hz. Live ATV9 log (25 fps film in Vimu) and a stand check: six seeks
-      in a row - the mode stays at 50.
-
-    * Legacy path (Android 6-9): a 30 fps clip switches 50 -> 60 again once a
-      cache dump has succeeded on the box. The "dumps work" flag was latched
-      for the whole daemon run; if the dump for a new clip produced a
-      non-standard rate (9 pts in 304 ms = 29.6 Hz for real 30), hz_round
-      dropped it and vdec_status was no longer considered - 3 s later "Timeout
-      detecting movie frame rate, giving up" and the mode stayed at 50. The
-      dropped raw measurement is now compared with the vdec_status
-      declaration (3 % tolerance): if they agree, the declaration is accepted
-      on the last attempt and the mode goes to 60. A disagreeing or empty dump
-      still prevents the stale 30 from switching a 25 fps clip. Verified on
-      `.48` with a substituted vdec.sysfs: before the fix - "giving up" at
-      50 Hz, after - 60 Hz in 3.1 s; an empty dump after a successful one -
-      still "giving up".
-
-    * ATV14: a SurfaceFlinger mode-table change no longer leaves the desktop
-      at the video rate. The daemon dropped the hold but did not restore the
-      mode, so the desktop stayed at 24 Hz and the next clip recorded 24 as
-      its original and restored it again (live `.50` log, 08.11: leaving the
-      player for the desktop gave 24 Hz). The remembered restore mode (rate
-      and geometry) is now looked up in the new table and applied; an id from
-      the old numbering is never sent. Live check on `.50`: restarting
-      SurfaceFlinger during a 23.976 clip returned 60 Hz.
-
     * New option "System mode on the home screen"
       (`switch.restore.preferred`, enabled by default): when the desktop comes
       to the foreground, restore the mode selected in Android TV settings
@@ -118,28 +45,6 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       daemon start; if `mUserPreferredModeId` exists (Android 12-14), it is
       read live.
 
-    * The mode raise (`switch.bump.pkg`) is not applied when the current mode
-      is already close to the maximum: 59.94 vs 60.00 gives no ceiling gain,
-      but the extra switch is a visible flash. The maximum is now chosen by
-      the mode policy: available modes + `mode.blacklist.rates` +
-      `mode.use.fract` (1 - 59.94, 2 - 60.00); on ATV14 the raise goes to the
-      chosen group representative, on the vendor path (ATV11) mode names are
-      nominal, so the actual rates are compared there. Verified on `.50`:
-      policy 1 - no raise, 59.94; policy 2 - one raise 59.94 -> 60.00, the
-      measurement does not switch. Live OTT log, 08.11: raised 59.94 ->
-      60.00, and 47 s later the measurement returned 59.94.
-
-    * Android 12-14: the "Check fractional rates" item is really hidden. It was
-      not supposed to appear before either (on the backdoor path SurfaceFlinger
-      sets the mode, the probe does not work there, and the rate list is built
-      from the mode table), but hiding failed: the path was detected by the
-      number of refreshRate= lines in the SurfaceFlinger dump (a live box has
-      one), and the item was removed from the wrong preference group.
-
-    * FAQ and publication: the "STOP delay" entry now says that on Android 6-9
-      zero means "do not restore the mode after a video" (the launcher stays at
-      the clip rate); set 10000-12000 ms to get the mode back.
-
     * "Restore the color profile" (cs.restore, default 1): when the daemon
       returns the mode (video ended, player left the foreground) it writes back
       the format that was in effect before the switch. Otherwise a broad rule
@@ -152,69 +57,12 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       the same event as the mode return, and cs.select rules are not applied
       on that switch, so the format is not written twice.
 
-    * An unapplied mode no longer leaves the TV without a signal: when
-      SurfaceFlinger/HDMI does not take the requested mode (live case 02.11,
-      tester box X5/ATV14: a 25 fps channel asked for 2160p25, the kernel stayed
-      at 60 Hz and the TV showed "no signal"), the daemon confirms the mismatch
-      by re-reading vinfo after 800 ms, retries the mode through the double
-      rate (25 -> 50: on the tester's box 60 -> 25 did not apply while 50 -> 25
-      did) and, if that fails, keeps the double rate (50 Hz for 25 fps is
-      smoother than 60) or restores the original mode together with the color
-      profile; no more switching until the end of the video.
-
-    * The HDMI format is written only once the mode has settled. Previously the
-      daemon wrote the color space right after the mode transaction, while the
-      mode node still showed the previous mode: that write reconfigures the HDMI
-      path and cancels the switch itself. The tester's log of 03.11 shows it
-      directly — every 60/50 -> 25 Hz switch followed by a format write did not
-      apply, and the single one without a write did; the same effect appears as
-      "SurfaceFlinger mode table changed" (31 -> 37 -> 31). Now the rule is
-      applied at the "mode has settled" point — 2.5 s later, after the actual
-      rate is cross-checked through vinfo; if the rate is wrong, no format is
-      written at all.
-
-    * "Do not change the format" is back in the HDMI format setting. An empty
+    * New item "Do not change the format" in the HDMI format setting. An empty
       cs.select means the daemon never writes the format — neither by a rule nor
       by a "default". 1.1.0 had no such item (every item of the list carried the
       4K protection rule), while an empty rule set in the code meant "apply the
       default", i.e. a write on every mode switch. The item is first; "Auto"
       remains the default.
-
-    * Giving up on an unapplied mode now lasts until the end of the video: the
-      measurement recheck (fps.recheck.delay.ms) no longer clears the "nothing to
-      measure" flag after ~0.6 s, and a decoder restart caused by our own mode
-      switch no longer counts as a new video — that used to depend on the clamp
-      lists, so for a player without a "ceiling" the give-up lived 6 seconds (in
-      the tester's log of 03.11: 18 switches in 6.5 minutes and four full cycles
-      on one channel). Now there is at most one cycle per video. The sequence
-      itself ("verified → retried → gave up") moved to seq.c and is checked
-      against recorded logs (tests/test_seq.c).
-
-    * The HDMI format is no longer written on "stale" timers: the feed check
-      applied it on the schedule of a previous switch and could write the format
-      in the middle of a new transition. Now it writes only after the actual
-      rate has been verified, and it re-arms on the retry; the rate check itself
-      is no longer cancelled by a decoder restart caused by our own switch.
-
-    * The app no longer crashes on a config the daemon accepts:
-      `switch.timeout=3000 # ms` (a legal line for the daemon) raised
-      NumberFormatException in MainActivity and the settings screen would not
-      open — the reset button lives in that same screen. The value is parsed by
-      the daemon's rules now (the comment is cut off), and a non-numeric value of
-      an integer key is preserved as is.
-
-    * "No more switching until the end of the video" is no longer bypassed: the
-      player hint, "no mode for X Hz" and a failed quick decision now raise the
-      same give-up flag as a failed retry.
-
-    * The on-demand AFR session now ends together with the video: a stop, the
-      end of the clip or a pause beyond the limit restore the mode and close the
-      session. Before, the session lived until its deadline, and a pause inside
-      it added two more switches although only one was promised.
-
-    * A rejected mode on the new path (the backdoor refused) is no longer retried
-      every ~300 ms: the target is dropped, the measurement stops, one line in
-      the log. Previously this was done on the vendor path only.
 
     * Hand-written ini settings survive an APK update: the profile from resources
       is merged with the current file — active keys of the release win, while the
@@ -403,15 +251,6 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       unfinished (after switching to 24 Hz the TV lost the signal and the cause
       was not established), the rate comes from the explicit AV1 correction.
 
-    * Fixed the layer feed parsing: the expected interval was passed to awk as
-      -v exp=…, and exp is a built-in awk function, so the variable was never
-      set. The outlier threshold was computed from the display period: a
-      steady 24p got gap=69 %, a correct layer measurement was rejected, and
-      the cadence check printed "неровная: 84-96 %" on healthy video. It did
-      not affect decisions, but the diagnostics lied. After the fix the same
-      measurement gives gap=0 and "подача в порядке: 42 мс при периоде 42 мс,
-      выбросов 2-9 %".
-
     * Content transition: an ad at the start of a video no longer spoils the
       measurement. The layer window is split in halves by time and rate classes
       are compared (30 vs 24), not values; on a class change the measurement,
@@ -425,30 +264,6 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       otherwise a content change under the pin stays invisible (live case:
       channel 25 -> 24 fps, the pin held 50 Hz while the envelope already saw
       23.98).
-
-    * Fixed: an AFR on-demand session returned the mode to the original one
-      when its time ran out — three switches in a row in the middle of a film
-      (60 -> 24 -> 60 -> 24). Now on timeout, with video playing and the mode
-      held, the session simply ends ("срок истёк — режим оставляю до конца
-      видео"), the measurement recheck comes back and the normal loop goes on.
-      Restoring the mode stays with cancel (burst 0), a video change and a real
-      stop; with enable=0 the daemon goes passive after restoring on a stop
-      instead of staying enabled for the next videos.
-
-    * Fixed: the fractional rate policy was not applied to sources that name
-      the rate exactly — the fast decision from the frame rate field and the
-      player hint (frame_rate_hint). With "prefer fractional" on 23.976 fps
-      video the daemon first set integer 24.00 and about 15 s later, after the
-      measurement, 23.98: two switches on one video. The policy now maps any
-      decision to the fractional member (24.00 -> 23.976, 30 -> 29.97,
-      60 -> 59.94; 25/50 have no pair). With "prefer integer" the behaviour is
-      unchanged — there was no second switch before either.
-
-    * Fixed: the layer probe command was truncated by a 1 KB buffer (it grew to
-      ~1.24 KB), awk silently failed, and the probe did not work for any
-      player, Cobalt included: the log carried a false "слой: статистика не
-      получена". The buffer is 2 KB now, and truncation is logged as its own
-      line instead of looking like missing marks.
 
     * New: the "AFR burst" mini-app (package ru.reyter.afrd2.burst) for button
       mappers. A separate package is needed because tvQuickActions and TV
