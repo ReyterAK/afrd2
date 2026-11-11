@@ -106,7 +106,7 @@
         <ru.cobra.zap.xprefs.XEditTextPreference android:key="mode_extra" android:selectAllOnFocus="false"
                             android:singleLine="true" android:summary="@string/prefsum_mode_extra"
                             android:title="@string/prefs_mode_extra"/>
-        <ru.cobra.zap.xprefs.XListPreference android:defaultValue="2160p[4-9].*=420"
+        <ru.cobra.zap.xprefs.XListPreference android:defaultValue=""
                             android:entries="@array/cs_policy"
                             android:entryValues="@array/cs_policy_value" android:key="cs_select"
                             android:summary="@string/prefsum_cs_select"

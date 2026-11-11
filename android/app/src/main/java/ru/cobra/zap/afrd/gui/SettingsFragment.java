@@ -550,8 +550,6 @@ public class SettingsFragment extends PreferenceFragment
     {
         if (value.isEmpty ())
             return R.string.cs_policy_none;
-        if (value.equals (CsPolicy.BASE_4K))
-            return R.string.cs_policy_auto;
         if (value.endsWith ("=rgb"))
             return R.string.cs_policy_rgb;
         if (value.endsWith ("=444"))

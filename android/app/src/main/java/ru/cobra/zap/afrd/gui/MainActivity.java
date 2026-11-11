@@ -44,6 +44,7 @@ import java.util.Map;
 import java.util.Vector;
 
 import ru.cobra.zap.afrd.Av1Migrate;
+import ru.cobra.zap.afrd.CsMigrate;
 import ru.cobra.zap.afrd.RootShell;
 import ru.cobra.zap.afrd.Config;
 import ru.cobra.zap.afrd.Control;
@@ -313,6 +314,32 @@ public class MainActivity extends Activity
         Log.i ("afrd2", "настройка fps.correct.av1=auto перенесена в " + pct + " %");
     }
 
+    /* Миграция «Формат HDMI»: пункт «Авто» удалён (§237), его значение
+     * (2160p[4-9].*=420) переводится в «Не изменять формат» (пусто). Правило и
+     * тест — CsMigrate/tests/CsMigrateTest.java. Одноразово: флаг в requisites,
+     * правку, сделанную после обновления, не трогаем никогда. */
+    private void csAutoMigrate (Config conf)
+    {
+        SharedPreferences req = getSharedPreferences ("requisites", 0);
+        if (req.getBoolean ("cs_auto_none", false))
+            return;
+
+        String cs = mOptions.getString ("cs_select", null);
+        String none = CsMigrate.noneFor (cs);
+        if (none != null)
+        {
+            mOptions.edit ().putString ("cs_select", none).apply ();
+            /* Строка настроек и демон должны показывать одно и то же:
+             * conf.load(mOptions) ниже просто нечего перекрывать, поэтому
+             * пустое значение кладём и в конфиг — поверх профильного правила,
+             * если оно там осталось от прежней установки. */
+            conf.put ("cs.select", none);
+            Log.i ("afrd2", "настройка cs.select=" + cs + " (Авто) перенесена в «Не изменять»");
+        }
+
+        req.edit ().putBoolean ("cs_auto_none", true).apply ();
+    }
+
     private boolean updateConfig ()
     {
         av1Migrate ();
@@ -334,6 +361,7 @@ public class MainActivity extends Activity
              * в конфиг, — иначе наложение настроек сразу же подменит профильное
              * значение старым умолчанием XML. */
             resetInertKeys (conf);
+            csAutoMigrate (conf);
 
             conf.load (mOptions);
 

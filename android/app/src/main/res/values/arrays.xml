@@ -38,13 +38,11 @@
          HDMI не пролезает. -->
     <string-array name="cs_policy">
         <item>@string/cs_policy_none</item>
-        <item>@string/cs_policy_auto</item>
         <item>@string/cs_policy_rgb</item>
         <item>@string/cs_policy_yuv444</item>
     </string-array>
     <string-array name="cs_policy_value">
         <item></item>
-        <item>2160p[4-9].*=420</item>
         <item>2160p[4-9].*=420 .*=rgb</item>
         <item>2160p[4-9].*=420 .*=444</item>
     </string-array>

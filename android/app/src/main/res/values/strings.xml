@@ -69,7 +69,6 @@
         «Do not change» leaves the format to the system: the daemon does not write it at all
     </string>
     <string name="cs_policy_none">Do not change the format</string>
-    <string name="cs_policy_auto">Auto (4:2:0 on 4K only)</string>
     <string name="cs_policy_rgb">RGB instead of YUV</string>
     <string name="cs_policy_yuv444">YUV 4:4:4</string>
     <string name="cs_policy_yuv422">YUV 4:2:2</string>

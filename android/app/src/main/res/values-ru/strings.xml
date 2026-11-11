@@ -69,7 +69,6 @@
         «Не изменять» оставляет формат системе: демон не пишет его вообще
     </string>
     <string name="cs_policy_none">Не изменять формат</string>
-    <string name="cs_policy_auto">Авто (4:2:0 только на 4K)</string>
     <string name="cs_policy_rgb">RGB вместо YUV</string>
     <string name="cs_policy_yuv444">YUV 4:4:4</string>
     <string name="cs_policy_yuv422">YUV 4:2:2</string>

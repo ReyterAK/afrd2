@@ -38,21 +38,26 @@ public class CsPolicyTest
             eq ("защита 4K в [" + v + "]",
                 v.isEmpty () || v.startsWith (CsPolicy.BASE_4K), true);
 
-        /* Пункты различаются только выбором формата для остальных режимов. */
-        eq ("авто", fixed.get (1), CsPolicy.BASE_4K);
-        eq ("rgb", fixed.get (2), CsPolicy.BASE_4K + " .*=rgb");
-        eq ("444", fixed.get (3), CsPolicy.BASE_4K + " .*=444");
+        /* Пункты различаются только выбором формата для остальных режимов.
+         * Отдельного «Авто» (голое правило 4K) больше нет: оно удалено, потому
+         * что обещало «максимум качества», а фактически при несовпадении
+         * правила писало стартовый профиль (журнал §236). */
+        eq ("пунктов", CsPolicy.VALUES.length, 3);
+        eq ("rgb", fixed.get (1), CsPolicy.BASE_4K + " .*=rgb");
+        eq ("444", fixed.get (2), CsPolicy.BASE_4K + " .*=444");
 
-        /* Профиль ATV14 (config/afrd2.ini) — это «Авто». */
-        eq ("профиль 11-14", CsPolicy.indexOf ("2160p[4-9].*=420", fixed), 1);
+        /* Профиль ATV14 (config/afrd2.ini) — «Не изменять»: пустое значение.
+         * Старое «Авто» пунктом списка больше не является (его переносит
+         * CsMigrate, проверяется в CsMigrateTest). */
+        eq ("профиль 11-14", CsPolicy.indexOf ("2160p[4-9].*=420", fixed), -1);
         /* Профиль Android 6-9 (config/afrd-android8+.ini) явно ставит 444 всем
-         * остальным режимам — настройка показывает это честно, а не «Авто». */
-        eq ("профиль 6-9", CsPolicy.indexOf ("2160p[4-9].*=420 .*=444", fixed), 3);
+         * остальным режимам — настройка показывает это честно. */
+        eq ("профиль 6-9", CsPolicy.indexOf ("2160p[4-9].*=420 .*=444", fixed), 2);
 
         /* Лишние пробелы и порядок «как написал пользователь» не мешают:
          * значение могло остаться от текстового поля прежних версий. */
-        eq ("пробелы", CsPolicy.indexOf ("  2160p[4-9].*=420    ", fixed), 1);
-        eq ("переносы", CsPolicy.indexOf ("2160p[4-9].*=420\t.*=rgb", fixed), 2);
+        eq ("пробелы", CsPolicy.indexOf ("  2160p[4-9].*=420 .*=444   ", fixed), 2);
+        eq ("переносы", CsPolicy.indexOf ("2160p[4-9].*=420\t.*=rgb", fixed), 1);
 
         /* Своё значение не подменяется: показываем его как есть. */
         eq ("свой текст", CsPolicy.indexOf ("1080p.*=rgb", fixed), -1);
@@ -67,18 +72,17 @@ public class CsPolicyTest
         eq ("dc_cap: форматы", caps.toString (), "[444, 422, rgb]");
 
         List<String> dyn = CsPolicy.valuesFor (caps);
-        eq ("динамических пунктов", dyn.size (), 5);
+        eq ("динамических пунктов", dyn.size (), 4);
         eq ("динамический 0", dyn.get (0), CsPolicy.NONE_VALUE);
-        eq ("динамический авто", dyn.get (1), CsPolicy.BASE_4K);
-        eq ("динамический 444", dyn.get (2), CsPolicy.BASE_4K + " .*=444");
-        eq ("динамический 422", dyn.get (3), CsPolicy.BASE_4K + " .*=422");
-        eq ("динамический rgb", dyn.get (4), CsPolicy.BASE_4K + " .*=rgb");
+        eq ("динамический 444", dyn.get (1), CsPolicy.BASE_4K + " .*=444");
+        eq ("динамический 422", dyn.get (2), CsPolicy.BASE_4K + " .*=422");
+        eq ("динамический rgb", dyn.get (3), CsPolicy.BASE_4K + " .*=rgb");
         for (String v : dyn)
             eq ("4K-защита в [" + v + "]",
                 v.isEmpty () || v.startsWith (CsPolicy.BASE_4K), true);
 
         /* Индекс считается по тому же списку, который показан. */
-        eq ("индекс 422", CsPolicy.indexOf (CsPolicy.BASE_4K + " .*=422", dyn), 3);
+        eq ("индекс 422", CsPolicy.indexOf (CsPolicy.BASE_4K + " .*=422", dyn), 2);
         eq ("индекс чужого", CsPolicy.indexOf ("1080p.*=rgb", dyn), -1);
 
         /* Без узла — прежний статический набор. */
