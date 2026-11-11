@@ -208,11 +208,16 @@
 ? bad karma etc.
 
 ! Open "Settings" -> "Other" -> "HDMI format (color space)" and choose
-! "RGB instead of YUV" - YUV444 will be replaced with RGB. The "Auto" item
-! returns the previous behaviour. The first item, "Do not change the format",
-! leaves the format to the system: the daemon never writes it, neither by a
-! rule nor by a "default". The 4K bandwidth rule (4:2:0 is kept there) is
-! preserved in every item except that one.
+! "RGB instead of YUV" - YUV444 will be replaced with RGB. To return to the
+! previous behaviour, pick the first item, "Do not change the format" (the
+! default): it leaves the format to the system, the daemon never writes it,
+! neither by a rule nor by a "default". The 4K bandwidth rule (4:2:0 is kept
+! there) is preserved in every item except that one.
+
+! There is no "Auto" item in new versions. If it was selected earlier (for
+! example, after an update from 1.2.0), the app migrates it to "Do not change
+! the format" once, so the config gets an empty `cs.select` rule. Custom rules
+! and the other items are not touched.
 
 ! Next to it, in "Misc", there is the "Restore the color profile" switch: when
 ! the video ends, the daemon returns the mode and, together with it, the

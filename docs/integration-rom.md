@@ -200,7 +200,8 @@ afrd -D /etc/afrd.ini      # -D: уйти в фон, записать pid
    (классификация частот, сборка значения, предел десяти записей). В прошивке меню должно
    показывать ЧАСТОТЫ, а не имена режимов: демон сравнивает частоту запрета с частотой режима
    численно, и 23.976 с 24 — разные записи.
-2. **«Формат HDMI»** (`cs.select`): «Авто (4:2:0 только на 4K)» плюс по пункту на каждый
+2. **«Формат HDMI»** (`cs.select`): «Не изменять формат» (умолчание; пустое значение —
+   демон не пишет формат вообще) плюс по пункту на каждый
    формат из `dc_cap` телевизора (демон сверяет правило с этим же узлом и молча пропускает
    формат, которого там нет). Лечит «зелень» и часть чёрных экранов. **Обязательно сохранить
    правило `2160p[4-9].*=420` во всех пунктах** — на 3840×2160 при 50/60 Гц сигнал 4:4:4 и RGB
@@ -249,7 +250,7 @@ afrd -D /etc/afrd.ini      # -D: уйти в фон, записать pid
 |---|---|---|
 | `config/afrd-android7-.ini` | Android 6/7 | `hdmi.state=/sys/class/switch/hdmi/state` |
 | `config/afrd-android8+.ini` | Android 8/9/10 | `hdmi.state=…/cable.0/state`, `switch.delay.off=10000`, `switch.blackout=150`, `switch.timeout=3000`, `mode.use.fract=0`, `cs.select=2160p[4-9].*=420 .*=444` |
-| `config/afrd2.ini` | Android 11–14 | `trigger.*`, `fps.*`, `pause.keep=1`, `switch.restore.on.stop=1`, `switch.delay.off=0`, `burst.ms`/`burst.broadcast=1`, `vendor.disp.cli`, `vendor.disp.cap`, `cs.select=2160p[4-9].*=420` |
+| `config/afrd2.ini` | Android 11–14 | `trigger.*`, `fps.*`, `pause.keep=1`, `switch.restore.on.stop=1`, `switch.delay.off=0`, `burst.ms`/`burst.broadcast=1`, `vendor.disp.cli`, `vendor.disp.cap`, `cs.select=` (пусто — «Не изменять формат») |
 
 Что в них стоит поменять под прошивку:
 
