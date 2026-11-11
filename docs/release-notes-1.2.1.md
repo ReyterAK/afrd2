@@ -1,12 +1,12 @@
-# AFRd2 1.3.0 — текст выпуска GitHub
+# AFRd2 1.2.1 — текст выпуска GitHub
 
-Текст для страницы Releases (тег `1.3.0`). Исходники тега — этот же репозиторий.
-**Ниже — только отличия от 1.2.0**; полный журнал изменений 1.3.0 — в
+Текст для страницы Releases (тег `1.2.1`). Исходники тега — этот же репозиторий.
+**Патч-выпуск: только отличия от 1.2.0**; полный журнал изменений 1.2.1 — в
 `ChangeLog-ru.txt` / `ChangeLog-en.txt`.
 
 ---
 
-## AFRd2 1.3.0
+## AFRd2 1.2.1
 
 Автоподбор частоты обновления HDMI под частоту кадров видео для Amlogic.
 Форк [AFRd](https://github.com/anpaza/afrd) 0.3.2 (Андрей Заболотный, anpaza), GPL-3.
@@ -45,7 +45,7 @@
 
 Одновременно должен работать только один экземпляр демона.
 
-* **APK** (интерфейс, настройки, ЧАВО): `ru.reyter.afrd2-1.3.0-release.apk`,
+* **APK** (интерфейс, настройки, ЧАВО): `ru.reyter.afrd2-1.2.1-release.apk`,
   пакет `ru.reyter.afrd2`. Открыть приложение, дать root и включить автоподбор.
 * **Мини-приложение «AFR burst»** (`burstapp-release.apk`, пакет
   `ru.reyter.afrd2.burst`) — необязательное, ставится рядом с APK и служит
@@ -54,7 +54,7 @@
 * **Magisk-модуль** (автостарт без приложения): `afrd2-magisk-armeabi-v7a.zip` или
   `afrd2-magisk-arm64-v8a.zip` — Magisk → Модули → «Установить из памяти» →
   перезагрузка. Модуль ничего не пишет в системные разделы.
-* **Комплект для ROM-разработчика** (`afrd2-1.3.0-for-rom-dev.zip`): демоны под обе
+* **Комплект для ROM-разработчика** (`afrd2-1.2.1-for-rom-dev.zip`): демоны под обе
   ABI, профиль `afrd.ini`, APK и три документа — `integration-rom.md` (встраивание в
   прошивку), `afr-on-demand.md` и `afr-on-demand-answer-to-rom.md`.
 
@@ -66,19 +66,19 @@
 
 | Файл | Размер | MD5 | SHA-256 |
 |---|---|---|---|
-| `ru.reyter.afrd2-1.3.0-release.apk` | 519957 Б | `26f15e8914d40522f5ef870399832326` | `d6259f41ae835ea19c488c41dfc1e3253c3ef86f1b7986a94779658d569d8d03` |
-| `burstapp-release.apk` | 129632 Б | `9e8e1fc946c6a69a87b02af9cba7ef1c` | `cfd03d9d4696de182f9579a70f93aff963afcd3523ae1f6306b45b8bf0e73fe9` |
-| `afrd2-magisk-armeabi-v7a.zip` | 86195 Б | `e54fea07fabb62ef5ac8b7e4ac990fe0` | `e0302c4a704c58de1a5f38a32c58263641ad1439556f8a8e2288dbbc4683a57c` |
-| `afrd2-magisk-arm64-v8a.zip` | 100381 Б | `5b146cc7fddd019f0259fce94a1faffb` | `648bbde9b909c575d8e8861f87a6384ae0d4910e9eb3f4e89b30ac4e12d001ef` |
-| `afrd2-1.3.0-for-rom-dev.zip` | 647647 Б | `a68dceb4a586a318c5568f7cd97e0efe` | `273f47d8b374321b0112caac3f5ea281e12929d378d6830205b12910085c9169` |
-| `README.md.zip` | 53114 Б | `616061f686d9a6946f237b01e6d37bc9` | `5fd5e510aea7ac2e409803756be5e2a1fc1bd5cea4efec64e2348764f9f136f1` |
+| `ru.reyter.afrd2-1.2.1-release.apk` | 519943 Б | `2b81bfe8cdc65e99671e1313da3cb7fa` | `d3284e4b7e2f1c9c0a15de5ac65e33d80f9b3587050b48926e30b4abe2a21834` |
+| `burstapp-release.apk` | 129632 Б | `c42f984412b95fff222c5ff3f2b342b7` | `6800a08167642b539550615f84c6e1a6365524b5433a1627a9b77faecbc76acc` |
+| `afrd2-magisk-armeabi-v7a.zip` | 86193 Б | `3649123ccb6b996f7f7ee3449d304f0f` | `6699f632e833272f4c03da6d027389ca55290848fea156a7624d7c83f02d3a6a` |
+| `afrd2-magisk-arm64-v8a.zip` | 100361 Б | `4556e3a0f1aa88d96344ebc39a1658e3` | `8fc90b60e97711dd691289aa48a781cf8c74f2883d91a4a9cefd3e6e42f0888c` |
+| `afrd2-1.2.1-for-rom-dev.zip` | 647618 Б | `7e259915a117a582bc2f336cb47615e1` | `db6db007fe24a135f0fcf6800b3acb66ba12cefbea3a19c759ab4be1dbea1df2` |
+| `README.md.zip` | 53114 Б | `2e0a91cb662ff261b28efafb5e84ce9c` | `4ea958a5581b554076f2a1ac95a55f6f0ddd5ab6699ad6601a1ded8468a2f02c` |
 
-Демоны: `afrd-1.3.0-armeabi-v7a` 122596 Б (`b5457d89…`),
-`afrd-1.3.0-arm64-v8a` 173992 Б (`8a3de5fd…`). Строка «built at» — 2026-11-11
-09:51. Сверяйтесь по размеру/md5: повторная сборка меняет только штамп времени.
+Демоны: `afrd-1.2.1-armeabi-v7a` 122596 Б (`95baa014…`),
+`afrd-1.2.1-arm64-v8a` 173992 Б (`4924a776…`). Строка «built at» — 2026-11-11
+10:11:45. Сверяйтесь по размеру/md5: повторная сборка меняет только штамп времени.
 
 APK подписан релизным ключом; обновления ставятся поверх только той же подписью.
-Демон собран из исходников тега `1.3.0`.
+Демон собран из исходников тега `1.2.1`.
 
 ### Лицензия
 

@@ -1,7 +1,7 @@
 AFRd2 — a fork of AFRd (based on AFRd 0.3.2 by Andrey Zabolotnyi,
 anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
 
-1.3.0 Wed Nov 11 2026
+1.2.1 Wed Nov 11 2026
     "HDMI format" setting: the "Auto" item is removed, the daemon no longer
     changes the format by default; a saved "Auto" is migrated to "Do not
     change" on update.
