@@ -66,16 +66,16 @@
 
 | Файл | Размер | MD5 | SHA-256 |
 |---|---|---|---|
-| `ru.reyter.afrd2-1.2.1-release.apk` | 519943 Б | `2b81bfe8cdc65e99671e1313da3cb7fa` | `d3284e4b7e2f1c9c0a15de5ac65e33d80f9b3587050b48926e30b4abe2a21834` |
-| `burstapp-release.apk` | 129632 Б | `c42f984412b95fff222c5ff3f2b342b7` | `6800a08167642b539550615f84c6e1a6365524b5433a1627a9b77faecbc76acc` |
-| `afrd2-magisk-armeabi-v7a.zip` | 86193 Б | `3649123ccb6b996f7f7ee3449d304f0f` | `6699f632e833272f4c03da6d027389ca55290848fea156a7624d7c83f02d3a6a` |
-| `afrd2-magisk-arm64-v8a.zip` | 100361 Б | `4556e3a0f1aa88d96344ebc39a1658e3` | `8fc90b60e97711dd691289aa48a781cf8c74f2883d91a4a9cefd3e6e42f0888c` |
-| `afrd2-1.2.1-for-rom-dev.zip` | 647618 Б | `7e259915a117a582bc2f336cb47615e1` | `db6db007fe24a135f0fcf6800b3acb66ba12cefbea3a19c759ab4be1dbea1df2` |
+| `ru.reyter.afrd2-1.2.1-release.apk` | 519940 Б | `522b983d0a730c77324dbe70eab86462` | `b212042b0bd3a365e40a721ebdb72723d6f600a0965fd473dc8568bf28a2d3ba` |
+| `burstapp-release.apk` | 129632 Б | `bcc79180a3c0c156a5f58a6c2e4ece90` | `c8ca34bc10fb008aaf16923ca99c7fa420c0ef4354cbaf3a94c31d1f9684222b` |
+| `afrd2-magisk-armeabi-v7a.zip` | 86195 Б | `b6969e00329e1c194d8bc2d683e3cc97` | `f169dbcb6db405181e104d7cf66d06de08634c9f0fb97386539f985bf199737c` |
+| `afrd2-magisk-arm64-v8a.zip` | 100368 Б | `3eb6ceb9bbadd4c5e170f9161107fba5` | `491885bd484e662ac381b1c4272360e39a6e4bcf6ab9be8d6e8216cf181dab21` |
+| `afrd2-1.2.1-for-rom-dev.zip` | 647650 Б | `1734a3b2427a5c1a584c5feff4e3e829` | `9fcb83398f7359e03bfaa815db51bcaa8ad5cf9406f69b9b676fa6038ad17fcc` |
 | `README.md.zip` | 53114 Б | `2e0a91cb662ff261b28efafb5e84ce9c` | `4ea958a5581b554076f2a1ac95a55f6f0ddd5ab6699ad6601a1ded8468a2f02c` |
 
-Демоны: `afrd-1.2.1-armeabi-v7a` 122596 Б (`95baa014…`),
-`afrd-1.2.1-arm64-v8a` 173992 Б (`4924a776…`). Строка «built at» — 2026-11-11
-10:11:45. Сверяйтесь по размеру/md5: повторная сборка меняет только штамп времени.
+Демоны: `afrd-1.2.1-armeabi-v7a` 122596 Б (`26fb5d09…`),
+`afrd-1.2.1-arm64-v8a` 173992 Б (`ab63d505…`). Строка «built at» — 2026-11-11
+11:23:24. Сверяйтесь по размеру/md5: повторная сборка меняет только штамп времени.
 
 APK подписан релизным ключом; обновления ставятся поверх только той же подписью.
 Демон собран из исходников тега `1.2.1`.
