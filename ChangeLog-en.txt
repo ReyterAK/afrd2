@@ -19,6 +19,13 @@ anpaza @ 4pda). License: GPL-3. Details and limitations: see README.
       not touched.
     * Android 6-9 profiles are unchanged: they keep `… .*=444` (shown as
       "YUV 4:4:4"), with the 4K rule inside.
+    * Android 12-14: a SurfaceFlinger mode-table change (TV power-on, EDID
+      change, SF restart) is handled at once and does not cancel a rate that
+      was just selected, if the mode was applied from the new table. Before,
+      an event arriving just before a video start was handled 15-20 s later —
+      after the fast decision — and the mode went back to the original 60 Hz
+      (24 -> 60 -> 24), while the notification showed 0.00 Hz during the
+      measurement.
 
 1.2.0 Sun Nov 8 2026
     Release after 1.1.0: AFR on demand (a session triggered by a button), a real
