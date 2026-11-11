@@ -57,6 +57,25 @@ int sfmodes_select (const sf_mode_t *modes, int n, int hz, int width, int height
                     int prefer_exact, sf_hz_filter_t allowed, void *ctx,
                     sf_choice_t *out);
 
+/* Что делать с удержанным режимом, когда таблица режимов SurfaceFlinger
+ * сменилась (dumpsys после hotplug/рестарта SF). Нумерация id могла измениться,
+ * поэтому id из старой таблицы в транзакцию 1035 отправлять нельзя, а оставлять
+ * на экране частоту видео без удержания — тоже нельзя (рабочий стол на 24 Гц,
+ * журнал §228). Но если наше применение режима уже было ПО новой таблице и его
+ * id в ней есть, удержание действительно и снимать его не нужно (§238). */
+typedef enum
+{
+	SF_CHANGE_CLEAR = 0,	/* удержания нет — сбросить кэш решений */
+	SF_CHANGE_KEEP = 1,	/* id действителен в новой таблице — режим не трогать */
+	SF_CHANGE_INVALIDATE = 2	/* вернуть исходный режим и перерезолвить */
+} sf_change_action_t;
+
+/* held — режим удержан нами; applied_after — последнее применение было после
+ * смены таблицы; applied_id_valid — id последнего применения есть в новой
+ * таблице. */
+sf_change_action_t sf_change_action (bool held, bool applied_after,
+                                     bool applied_id_valid);
+
 /* Частота (24.8) по id режима. 0, если id не найден. */
 int sfmodes_current_hz (const sf_mode_t *modes, int n, int id);
 

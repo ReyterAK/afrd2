@@ -84,6 +84,19 @@ int sfmodes_active_hz (const char *dump)
 	return -1;
 }
 
+sf_change_action_t sf_change_action (bool held, bool applied_after,
+                                     bool applied_id_valid)
+{
+	if (!held)
+		return SF_CHANGE_CLEAR;
+
+	/* Применение было по новой таблице, и id в ней есть: нумерация наша. */
+	if (applied_after && applied_id_valid)
+		return SF_CHANGE_KEEP;
+
+	return SF_CHANGE_INVALIDATE;
+}
+
 int sfmodes_find (const sf_mode_t *modes, int n, int hz, int width, int height)
 {
 	int best = -1, best_d = 1 << 30;

@@ -2300,6 +2300,10 @@ static void sf_modes_refresh (const platform_t *plat)
  * иначе устаревший want_sf_id уходил бы в транзакцию 1035. */
 static sf_mode_t g_sf_live [SF_MODE_MAX];
 static bool g_sf_table_changed = false;
+/* Когда таблица сменилась: по этой метке отличаем смену ДО нашего применения
+ * режима (id уже из новой таблицы, удержание трогать не надо) от смены ПОСЛЕ
+ * него (id могли перенумеровать). См. sf_change_action. */
+static unsigned long long g_sf_table_change_us;
 
 /* Режим, который был на экране до нашего переключения (цель возврата), вместе
  * со свойствами. Свойства нужны, когда таблица SurfaceFlinger сменилась:
@@ -2376,6 +2380,7 @@ static int sf_modes_sync (const char *dump)
 	memcpy (g_sf_modes, g_sf_live, (size_t) n * sizeof (g_sf_modes [0]));
 	g_sf_modes_n = n;
 	g_sf_table_changed = true;
+	g_sf_table_change_us = now_us ();
 
 	trace (1, "таблица режимов SurfaceFlinger сменилась: %d режимов\n", n);
 	return 1;
@@ -3866,6 +3871,8 @@ static void atv14_invalidate (const platform_t *plat, int *want_sf_id,
 	g_last_apply_us = 0;
 	g_last_apply_id = -1;
 
+	bool restored = false;
+
 	if (*held)
 	{
 		/* Нумерация режимов сменилась — запись «наше применение» больше не
@@ -3884,16 +3891,28 @@ static void atv14_invalidate (const platform_t *plat, int *want_sf_id,
 			       "возвращаю исходный режим (id %d)\n", back);
 			if (atv14_restore_mode (plat, back,
 			                        "таблица режимов сменилась, возврат") == 0)
+			{
 				*cur_sf_id = back;
+				restored = true;
+			}
 		}
 
 		sink_release_backdoor (plat->sink);
 		guard_note_restored (held);
 		*orig_sf_id = -1;
-		*cur_sf_id = -1;
 	}
 
 	g_orig_mode_valid = false;
+
+	/* Id для статистики из новой таблицы: сбрасывать его в -1 нельзя — GUI и
+	 * API показывали «0.00 Гц» до следующего перерезолва, а блок замера с его
+	 * continue откладывает это на 15-20 с (живой лог `.50`, 11.11). Если режим
+	 * вернули, берём его id; иначе спрашиваем активный режим у системы. */
+	if (!restored)
+	{
+		int cur = atv_current_target (plat, NULL, NULL);
+		*cur_sf_id = (cur >= 0) ? cur : -1;
+	}
 }
 
 /* Пора ли выйти из run_atv14 на перезагрузку конфига: main.c при ret>0
@@ -4786,6 +4805,61 @@ static int run_atv14 (const platform_t *plat)
 		}
 
 		ticks++;
+
+		/* Смена таблицы режимов SurfaceFlinger (hotplug, рестарт SF) —
+		 * обрабатываем в НАЧАЛЕ итерации. Раньше блок стоял в конце, после
+		 * замера, а замер уходит на continue на каждом опросе: событие,
+		 * пришедшее перед стартом видео, обрабатывалось через 15-20 с, уже
+		 * после быстрого решения, и atv14_invalidate возвращала исходный
+		 * режим — на экране 24 -> 60 -> 24 (живой лог `.50` 11.11: таблица
+		 * 07:10:27, решение 24 в 07:10:30, возврат 60 в 07:10:48, снова 24 в
+		 * 07:11:04). Если наше применение уже было по новой таблице, его id
+		 * действителен и удержание не снимаем (sf_change_action). */
+		if (g_sf_table_changed)
+		{
+			g_sf_table_changed = false;
+
+			/* рестарт уже учтён по таблице — чтобы проверка PID не сработала
+			 * по тому же событию второй раз */
+			pid_t sf_pid = pidof ("surfaceflinger");
+			if (sf_pid > 0)
+				last_sf_pid = sf_pid;
+
+			preferred_id = preferred_mode_id (plat);
+
+			bool applied_after = (g_last_apply_us != 0) &&
+			                     (g_last_apply_us >= g_sf_table_change_us);
+			bool applied_valid = applied_after && (g_last_apply_id >= 0) &&
+			                     (sfmodes_current_hz (g_sf_modes, g_sf_modes_n,
+			                                          g_last_apply_id) != 0);
+			sf_change_action_t act = sf_change_action (held, applied_after,
+			                                           applied_valid);
+
+			if (act == SF_CHANGE_KEEP)
+			{
+				trace (1, "таблица режимов SurfaceFlinger сменилась до нашего "
+				       "переключения — режим не трогаю\n");
+				/* id применённого режима действителен в новой таблице: и
+				 * статистика, и сравнение в цикле должны это видеть. */
+				cur_sf_id = g_last_apply_id;
+
+				/* А id возврата мог быть взят из прежней нумерации:
+				 * ищем его в новой таблице по свойствам, иначе позже
+				 * отправили бы в транзакцию 1035 чужой id. Не нашли —
+				 * возврата по этому id не будет (останется preferred
+				 * или текущий режим). */
+				if (g_orig_mode_valid)
+					orig_sf_id = orig_mode_find ();
+			}
+			else
+			{
+				trace (1, "таблица режимов SurfaceFlinger сменилась: снимаю "
+				       "удержание, перерезолвлю режим\n");
+				atv14_invalidate (plat, &want_sf_id, &orig_sf_id, &cur_sf_id,
+				                  &held, &measure_failed, &retries);
+			}
+			continue;
+		}
 
 		/* R34б: статистика для GUI и API (afrd -s, status) — в ATV14 её
 		 * больше никто не обновляет */
@@ -6606,27 +6680,6 @@ cadence_done: ;
 			int cur = atv_current_target (plat, NULL, NULL);
 			if (cur >= 0)
 				cur_sf_id = cur;
-		}
-
-		/* Таблица режимов сменилась (рестарт SurfaceFlinger) — нумерация id
-		 * уже другая, и кэшированный want_sf_id в транзакцию 1035 пускать
-		 * нельзя. Проверка по PID (выше) срабатывает реже, а этот признак
-		 * виден сразу: он и закрывает окно до неё. */
-		if (g_sf_table_changed)
-		{
-			g_sf_table_changed = false;
-
-			/* рестарт уже учтён по таблице — чтобы проверка PID не сработала
-			 * по тому же событию второй раз */
-			pid_t sf_pid = pidof ("surfaceflinger");
-			if (sf_pid > 0)
-				last_sf_pid = sf_pid;
-
-			preferred_id = preferred_mode_id (plat);
-			trace (1, "таблица режимов SurfaceFlinger сменилась: снимаю удержание, перерезолвлю режим\n");
-			atv14_invalidate (plat, &want_sf_id, &orig_sf_id, &cur_sf_id,
-			                  &held, &measure_failed, &retries);
-			continue;
 		}
 
 		/* Плеер из switch.skip.pkg: ничего не переключаем и не удерживаем.

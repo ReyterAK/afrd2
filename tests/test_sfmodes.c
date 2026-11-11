@@ -291,6 +291,31 @@ static void test_android11 (void)
 	assert (sfmodes_active_hz (NULL) == -1);
 }
 
+/* Смена таблицы режимов SurfaceFlinger: что делать с удержанием (журнал §238).
+ *
+ * Живой лог `.50`: включение ТВ дало «таблица режимов SurfaceFlinger
+ * сменилась: 14 режимов» в 07:10:27, быстрым решением демон применил 24p в
+ * 07:10:30, а обработка флага дошла только в 07:10:48 (блок замера уходит на
+ * continue) — и atv14_invalidate вернула исходные 60 Гц. Через 15 с замер снова
+ * дал 24: на экране 24 -> 60 -> 24. Если наше применение уже было по новой
+ * таблице, его id действителен и снимать удержание не нужно. */
+static void test_change_action (void)
+{
+	/* Удержания нет — только сбросить кэш решений. */
+	assert (sf_change_action (false, false, false) == SF_CHANGE_CLEAR);
+	assert (sf_change_action (false, true, true) == SF_CHANGE_CLEAR);
+
+	/* Применили после смены таблицы, id в новой таблице есть — оставляем. */
+	assert (sf_change_action (true, true, true) == SF_CHANGE_KEEP);
+
+	/* Применили после смены, но id в новой таблице пропал — вернуть исходный. */
+	assert (sf_change_action (true, true, false) == SF_CHANGE_INVALIDATE);
+
+	/* Применили до смены: id могли перенумеровать — вернуть исходный. */
+	assert (sf_change_action (true, false, true) == SF_CHANGE_INVALIDATE);
+	assert (sf_change_action (true, false, false) == SF_CHANGE_INVALIDATE);
+}
+
 int main (void)
 {
 	test_synthetic ();
@@ -299,6 +324,7 @@ int main (void)
 	test_select_live ();
 	test_restore_target ();
 	test_android11 ();
+	test_change_action ();
 
 	printf ("sfmodes: OK\n");
 	return 0;
