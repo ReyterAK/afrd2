@@ -66,16 +66,16 @@
 
 | Файл | Размер | MD5 | SHA-256 |
 |---|---|---|---|
-| `ru.reyter.afrd2-1.2.1-release.apk` | 519940 Б | `522b983d0a730c77324dbe70eab86462` | `b212042b0bd3a365e40a721ebdb72723d6f600a0965fd473dc8568bf28a2d3ba` |
-| `burstapp-release.apk` | 129632 Б | `bcc79180a3c0c156a5f58a6c2e4ece90` | `c8ca34bc10fb008aaf16923ca99c7fa420c0ef4354cbaf3a94c31d1f9684222b` |
-| `afrd2-magisk-armeabi-v7a.zip` | 86195 Б | `b6969e00329e1c194d8bc2d683e3cc97` | `f169dbcb6db405181e104d7cf66d06de08634c9f0fb97386539f985bf199737c` |
-| `afrd2-magisk-arm64-v8a.zip` | 100368 Б | `3eb6ceb9bbadd4c5e170f9161107fba5` | `491885bd484e662ac381b1c4272360e39a6e4bcf6ab9be8d6e8216cf181dab21` |
-| `afrd2-1.2.1-for-rom-dev.zip` | 647650 Б | `1734a3b2427a5c1a584c5feff4e3e829` | `9fcb83398f7359e03bfaa815db51bcaa8ad5cf9406f69b9b676fa6038ad17fcc` |
-| `README.md.zip` | 53114 Б | `2e0a91cb662ff261b28efafb5e84ce9c` | `4ea958a5581b554076f2a1ac95a55f6f0ddd5ab6699ad6601a1ded8468a2f02c` |
+| `ru.reyter.afrd2-1.2.1-release.apk` | 519948 Б | `64d62ea5a4229b25da1a50d9e7377f2c` | `b91d81594141a9b2d09b497e4fbd61f1e10fe4449e5ec3680440aa45672de7d3` |
+| `burstapp-release.apk` | 129632 Б | `31cae2976be467baea345ca6468fcca9` | `b7173283d6131c3cc8e5303f7ff612348a9bdf46e69811732d37882a40f25dc4` |
+| `afrd2-magisk-armeabi-v7a.zip` | 86196 Б | `2f0022134055ffe62fb7db298d457748` | `d3f2ca8d8b0bfae3c17c0275d778f57c6f7e6c5af8de83f7eb0bc42b96f7a5c2` |
+| `afrd2-magisk-arm64-v8a.zip` | 100369 Б | `872ee46a8fe6a229fb5cada3881b84cd` | `a04b6a6069a348cc197afbda5553801d4c61dd91629f70577985e13812673f4f` |
+| `afrd2-1.2.1-for-rom-dev.zip` | 648937 Б | `b25b369518714cbd905156ddd52f086b` | `1b2c227b23a8e9e21d52e714d8ccaa09be135e2a2c70e718bfde8a87331ee0d3` |
+| `README.md.zip` | 53114 Б | `e71b31c63ecad4a1bd83f4321a843418` | `6b3b7e8d3143bc83c1a61bb4c96a34a3424a5b774baaf2231aa3834afaedb28d` |
 
-Демоны: `afrd-1.2.1-armeabi-v7a` 122596 Б (`26fb5d09…`),
-`afrd-1.2.1-arm64-v8a` 173992 Б (`ab63d505…`). Строка «built at» — 2026-11-11
-11:23:24. Сверяйтесь по размеру/md5: повторная сборка меняет только штамп времени.
+Демоны: `afrd-1.2.1-armeabi-v7a` 122596 Б (`cdb51a33…`),
+`afrd-1.2.1-arm64-v8a` 173992 Б (`1bc502c5…`). Строка «built at» — 2026-11-16
+09:04:30. Сверяйтесь по размеру/md5: повторная сборка меняет только штамп времени.
 
 APK подписан релизным ключом; обновления ставятся поверх только той же подписью.
 Демон собран из исходников тега `1.2.1`.
